@@ -1,0 +1,15 @@
+{
+  "name": "nalanda-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Nalanda Educational Ecosystem - Student, Teacher, and Admin Portals",
+  "scripts": {
+    "dev:student:frontend": "cd student/frontend && npm run dev",
+    "dev:student:backend": "cd student/backend && npm run dev",
+    "dev:teacher:frontend": "cd teacher/frontend && npm run dev",
+    "dev:teacher:backend": "cd teacher/backend && npm run dev",
+    "dev:admin:frontend": "cd admin/frontend && npm run dev",
+    "dev:admin:backend": "cd admin/backend && npm run dev",
+    "build:student": "cd student/frontend && npm run build"
+  }
+}

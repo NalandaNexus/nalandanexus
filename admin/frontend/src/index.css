@@ -1,0 +1,77 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: 'Inter', 'Manrope', system-ui, -apple-system, sans-serif;
+    background-color: #EDEAE0;
+    color: #2B2B28;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Tabular figures for all numerical/mono data */
+  .font-data, .font-mono {
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .font-display {
+    font-family: 'Fraunces', Georgia, serif;
+  }
+}
+
+/* Custom subtle scrollbars fitting institutional aesthetic */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #EDEAE0;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #DFDACB;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #22355E;
+}
+
+/* Status utility badges */
+.badge-good {
+  background-color: rgba(92, 122, 94, 0.12);
+  color: #5C7A5E;
+  border: 1px solid rgba(92, 122, 94, 0.3);
+}
+
+.badge-attention {
+  background-color: rgba(201, 154, 46, 0.12);
+  color: #C99A2E;
+  border: 1px solid rgba(201, 154, 46, 0.3);
+}
+
+.badge-blocked {
+  background-color: rgba(193, 53, 43, 0.12);
+  color: #C1352B;
+  border: 1px solid rgba(193, 53, 43, 0.3);
+}
+
+.badge-neutral {
+  background-color: rgba(155, 150, 144, 0.12);
+  color: #9B9690;
+  border: 1px solid rgba(155, 150, 144, 0.3);
+}
+
+/* Animation utilities */
+@keyframes subtlePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.animate-subtle-pulse {
+  animation: subtlePulse 2.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}

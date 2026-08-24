@@ -1,0 +1,540 @@
+﻿=== STEP 104: c:\Users\adars\Downloads\Nalanda\teacher\frontend\index.html ===
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..900;1,9..144,400..900&family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  </head>
+  <body class="bg-[#0B101B] text-slate-100 font-sans antialiased selection:bg-[#C99A2E] selection:text-[#2B2B28]">
+=== STEP 110: c:\Users\adars\Downloads\Nalanda\teacher\frontend\tailwind.config.js ===
+export default {
+  content: [
+    "./index.html",
+    "./src/**/*.{js,ts,jsx,tsx}",
+  ],
+  darkMode: 'class',
+  theme: {
+    extend: {
+      fontFamily: {
+        display: ['Fraunces', 'serif'],
+        sans: ['Inter', 'Plus Jakarta Sans', 'system-ui', '-apple-system', 'sans-serif'],
+        mono: ['"IBM Plex Mono"', '"JetBrains Mono"', 'monospace'],
+      },
+      colors: {
+        nexus: {
+          ink: '#22355E',
+          'ink-light': '#314B82',
+          terracotta: '#AB5236',
+          'terracotta-hover': '#94452C',
+          gold: '#C99A2E',
+          'gold-light': '#DFC168',
+          'gold-dark': '#A0771E',
+          sage: '#5C7A5E',
+          'sage-light': '#7A9E7C',
+          blocked: '#C1352B',
+          neutral: '#9B9690',
+          parchment: '#EDEAE0',
+          charcoal: '#2B2B28',
+          bg: '#0B101B',
+          surface: '#131B2E',
+          card: '#182238',
+          cardHover: '#1E2C48',
+          border: '#243354',
+          borderSubtle: '#1C2943',
+        },
+        brand: {
+          50: '#ecfeff',
+          100: '#cffafe',
+          500: '#06b6d4',
+          600: '#0891b2',
+          700: '#0e7490',
+          900: '#164e63',
+        }
+      }
+    },
+  },
+  plugins: [],
+}
+=== STEP 114: c:\Users\adars\Downloads\Nalanda\teacher\frontend\src\index.css ===
+:root {
+  color-scheme: dark;
+  --font-display: 'Fraunces', serif;
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background-color: #0B101B;
+  color: #EDEAE0;
+  font-family: var(--font-sans);
+}
+
+/* Signature Risk Pulsing Animations (Only auto-animated element on dashboard) */
+@keyframes pulse-act-now {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(193, 53, 43, 0.7);
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 0.9;
+    box-shadow: 0 0 0 7px rgba(193, 53, 43, 0);
+  }
+}
+
+@keyframes pulse-watch {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.95;
+    box-shadow: 0 0 0 0 rgba(201, 154, 46, 0.5);
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: 0.85;
+    box-shadow: 0 0 0 5px rgba(201, 154, 46, 0);
+  }
+}
+
+.risk-pulse-act-now {
+  animation: pulse-act-now 1.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.risk-pulse-watch {
+  animation: pulse-watch 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .risk-pulse-act-now,
+  .risk-pulse-watch,
+  .animate-pulse,
+  .animate-spin {
+    animation: none !important;
+  }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-6px); }
+  40%, 80% { transform: translateX(6px); }
+}
+
+.animate-shake {
+  animation: shake 0.35s cubic-bezier(.36,.07,.19,.97) both;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0B101B;
+}
+::-webkit-scrollbar-thumb {
+  background: #243354;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #314B82;
+}
+
+/* Tabular figures for IBM Plex Mono numbers */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+=== STEP 185: c:\Users\adars\Downloads\Nalanda\teacher\frontend\src\App.jsx ===
+import React from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { TeacherAuthProvider } from './context/TeacherAuthContext';
+import TeacherThemeProvider from './theme/ThemeProvider';
+import TeacherProtectedRoute from './components/TeacherProtectedRoute';
+import TeacherLayout from './components/TeacherLayout';
+import TeacherLoginPage from './pages/TeacherLoginPage';
+import DashboardPage from './pages/DashboardPage';
+import ClassesPage from './pages/ClassesPage';
+import CoursesPage from './pages/CoursesPage';
+import GradingPage from './pages/GradingPage';
+import StudentsPage from './pages/StudentsPage';
+import AttendancePage from './pages/AttendancePage';
+import ExamsPage from './pages/ExamsPage';
+import GradesPage from './pages/GradesPage';
+import MessagesPage from './pages/MessagesPage';
+import ResourcesPage from './pages/ResourcesPage';
+import CalendarPage from './pages/CalendarPage';
+import ReportsPage from './pages/ReportsPage';
+import LiveSchedulePage from './pages/LiveSchedulePage';
+import SettingsPage from './pages/SettingsPage';
+
+export default function App() {
+  return (
+    <TeacherAuthProvider>
+      <TeacherThemeProvider>
+        <BrowserRouter>
+          <Routes>
+            {/* Public Authentication Route (100% untouched) */}
+            <Route path="/login" element={<TeacherLoginPage />} />
+
+            {/* Protected Faculty Suite Routes */}
+            <Route
+              path="/"
+              element={
+                <TeacherProtectedRoute>
+                  <TeacherLayout />
+                </TeacherProtectedRoute>
+              }
+            >
+              <Route index element={<DashboardPage />} />
+              <Route path="classes" element={<ClassesPage />} />
+              <Route path="courses" element={<CoursesPage />} />
+              <Route path="grading" element={<GradingPage />} />
+              <Route path="assignments" element={<GradingPage />} />
+              <Route path="students" element={<StudentsPage />} />
+              <Route path="attendance" element={<AttendancePage />} />
+              <Route path="exams" element={<ExamsPage />} />
+              <Route path="grades" element={<GradesPage />} />
+              <Route path="messages" element={<MessagesPage />} />
+              <Route path="resources" element={<ResourcesPage />} />
+              <Route path="calendar" element={<CalendarPage />} />
+              <Route path="reports" element={<ReportsPage />} />
+              <Route path="live" element={<LiveSchedulePage />} />
+              <Route path="settings" element={<SettingsPage />} />
+            </Route>
+
+            {/* Catch-all fallback */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </BrowserRouter>
+      </TeacherThemeProvider>
+    </TeacherAuthProvider>
+  );
+}
+=== STEP 216: c:\Users\adars\Downloads\Nalanda\teacher\frontend\src\context\TeacherAuthContext.jsx ===
+      if (res && res.ok) {
+        const data = await res.json();
+        const authenticatedUser = data.user || {
+          id: 'tch-001',
+          name: 'Dr. Rajesh Varma',
+          email,
+          role: 'teacher',
+          title: 'Senior Faculty & Lead Educator',
+          tier: 'pro',
+          isPro: true,
+          authorizedClasses: ['12A', '12B', '11A', '11B', '10A', '10B', '9A', '9B'],
+          department: 'Physics & Physical Sciences',
+        };
+        localStorage.setItem('nalanda_teacher_user', JSON.stringify(authenticatedUser));
+        if (rememberMe) {
+          localStorage.setItem('nalanda_teacher_remembered_email', email);
+        }
+        setUser(authenticatedUser);
+        setIsLoading(false);
+        return { success: true, user: authenticatedUser };
+      }
+    } catch {
+      // Fallback
+    }
+
+    // Local fallback check
+    if (email && password) {
+      const authenticatedUser = {
+        id: 'tch-001',
+        name: email.toLowerCase().includes('rajesh')
+          ? 'Dr. Rajesh Varma'
+          : 'Prof. Faculty Member',
+        email,
+        role: 'teacher',
+        title: 'Senior Faculty & Lead Educator',
+        tier: 'pro',
+        isPro: true,
+        authorizedClasses: ['12A', '12B', '11A', '11B', '10A', '10B', '9A', '9B'],
+        department: 'Physics & Physical Sciences',
+      };
+      localStorage.setItem('nalanda_teacher_user', JSON.stringify(authenticatedUser));
+      if (rememberMe) {
+        localStorage.setItem('nalanda_teacher_remembered_email', email);
+      }
+      setUser(authenticatedUser);
+      setIsLoading(false);
+      return { success: true, user: authenticatedUser };
+    }
+=== STEP 225: c:\Users\adars\Downloads\Nalanda\teacher\frontend\src\components\TeacherLayout.jsx ===
+        {/* Sidebar Footer: Pro Status & Teacher Profile */}
+        <div className="space-y-3 pt-3 border-t border-[#243354]/80">
+          {/* Dynamic Pro Status Box */}
+          <div className="p-3 rounded-xl bg-gradient-to-br from-[#182238] to-[#131B2E] border border-[#C99A2E]/40 shadow-inner">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[11px] font-extrabold text-[#DFC168] uppercase tracking-wider flex items-center gap-1.5">
+                <Sparkles className="w-3 h-3 text-[#C99A2E]" />
+                {user?.tier === 'free' ? 'FREE TEACHER' : 'PRO TEACHER'}
+              </span>
+              <span
+                className={`w-2 h-2 rounded-full ${user?.tier === 'free' ? 'bg-[#9B9690]' : 'bg-[#5C7A5E]'}`}
+                title={user?.tier === 'free' ? 'Standard Tier' : 'Pro Tier Active'}
+              />
+            </div>
+            <p className="text-[10px] text-[#9B9690] leading-tight">
+              {user?.tier === 'free'
+                ? 'Upgrade to unlock real-time analytics & diagnostics.'
+                : 'Advanced analytics & real-time socket updates unlocked.'}
+            </p>
+          </div>
+=== STEP 229: c:\Users\adars\Downloads\Nalanda\teacher\frontend\src\components\common\GlobalSearchModal.jsx ===
+import React, { useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Search, X, User, BookOpen, Layers, FileText, ArrowRight } from 'lucide-react';
+import RiskPulseIndicator from './RiskPulseIndicator';
+
+export default function GlobalSearchModal({
+  isOpen,
+  onClose,
+  searchQuery,
+  setSearchQuery,
+  searchResults,
+  onSelectStudent,
+}) {
+  const inputRef = useRef(null);
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (isOpen) {
+      setTimeout(() => inputRef.current?.focus(), 50);
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+      }
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
+  const handleResultClick = (res) => {
+    onClose();
+    if (res.type === 'student' && onSelectStudent) {
+      onSelectStudent(res.data);
+    } else if (res.type === 'class') {
+      navigate('/classes');
+    } else if (res.type === 'assignment') {
+      navigate('/grading');
+    } else if (res.type === 'concept') {
+      navigate('/');
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-start justify-center pt-20 p-4 animate-in fade-in duration-150">
+      <div
+        className="w-full max-w-2xl bg-[#131B2E] border border-[#243354] rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[80vh]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Search Input Bar */}
+        <div className="p-4 border-b border-[#243354] flex items-center gap-3 bg-[#0F1626]">
+          <Search className="w-5 h-5 text-[#C99A2E] flex-shrink-0" />
+          <input
+            ref={inputRef}
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search students (e.g. Rahul Sharma), classes, topics (Optics), assignments..."
+            className="w-full bg-transparent text-sm text-[#EDEAE0] placeholder-[#9B9690] focus:outline-none font-sans"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="p-1 rounded text-[#9B9690] hover:text-[#EDEAE0]"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+          <button
+            onClick={onClose}
+            className="text-xs font-semibold text-[#9B9690] hover:text-[#EDEAE0] px-2 py-1 bg-[#182238] rounded border border-[#243354]"
+          >
+            ESC
+          </button>
+        </div>
+
+        {/* Quick Suggestion Pills */}
+        <div className="px-4 py-2.5 bg-[#0B101B] border-b border-[#243354]/60 flex items-center gap-2 overflow-x-auto text-[11px] text-[#9B9690]">
+          <span className="font-semibold text-[#C99A2E]">Suggestions:</span>
+          {['Rahul Sharma', 'Priya Singh', 'Optics', 'Class 12A', 'Class 11A', 'Mechanics'].map((tag) => (
+            <button
+              key={tag}
+              onClick={() => setSearchQuery(tag)}
+              className="px-2.5 py-0.5 rounded-full bg-[#131B2E] hover:bg-[#22355E]/40 border border-[#243354] text-[#EDEAE0] whitespace-nowrap transition-colors"
+            >
+              {tag}
+            </button>
+          ))}
+        </div>
+
+        {/* Search Results List */}
+        <div className="overflow-y-auto p-3 space-y-1 divide-y divide-[#243354]/40">
+          {!searchQuery.trim() ? (
+            <div className="p-8 text-center text-xs text-[#9B9690]">
+              <Search className="w-8 h-8 text-[#314B82] mx-auto mb-2 opacity-50" />
+              <p className="font-medium text-[#EDEAE0]">Type a student name, class section, or subject concept.</p>
+              <p className="text-[11px] text-[#9B9690] mt-1">Instant 1-click drill-down across all 256 students & 8 classes.</p>
+            </div>
+          ) : searchResults.length === 0 ? (
+            <div className="p-8 text-center text-xs text-[#9B9690]">
+              No results found matching &quot;<span className="text-[#EDEAE0]">{searchQuery}</span>&quot;.
+            </div>
+          ) : (
+            searchResults.map((res) => {
+              const isStudent = res.type === 'student';
+              const isClass = res.type === 'class';
+              const isConcept = res.type === 'concept';
+              const isAssignment = res.type === 'assignment';
+
+              return (
+                <div
+                  key={`${res.type}-${res.id}`}
+                  onClick={() => handleResultClick(res)}
+                  className="p-3 rounded-xl hover:bg-[#22355E]/30 cursor-pointer flex items-center justify-between transition-colors group"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-9 h-9 rounded-lg bg-[#182238] border border-[#243354] flex items-center justify-center flex-shrink-0 text-[#C99A2E]">
+                      {isStudent && <User className="w-4 h-4" />}
+                      {isClass && <Layers className="w-4 h-4" />}
+                      {isConcept && <BookOpen className="w-4 h-4" />}
+                      {isAssignment && <FileText className="w-4 h-4" />}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-[#EDEAE0] group-hover:text-[#C99A2E] transition-colors truncate">
+                          {res.title}
+                        </span>
+                        {isStudent && res.data.riskLevel !== 'good' && (
+                          <RiskPulseIndicator level={res.data.riskLevel} size="sm" />
+                        )}
+                        <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-[#182238] text-[#9B9690] border border-[#243354]">
+                          {res.type}
+                        </span>
+                      </div>
+                      <p className="text-xs text-[#9B9690] truncate mt-0.5">{res.subtitle}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-semibold text-[#C99A2E] group-hover:translate-x-0.5 transition-transform flex items-center gap-1">
+                      {isStudent ? 'Open Profile' : isClass ? 'Open Class' : isAssignment ? 'Open Grading' : 'Inspect'} <ArrowRight className="w-3 h-3" />
+                    </span>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+=== STEP 233: c:\Users\adars\Downloads\Nalanda\teacher\frontend\src\components\dashboard\LiveClassPanel.jsx ===
+import React, { useState } from 'react';
+import { Video, Users, CheckCircle2, AlertCircle, Sparkles, Send, HelpCircle, ArrowRight, ChevronUp, ChevronDown } from 'lucide-react';
+
+export default function LiveClassPanel({
+  liveState,
+  onPushChallengeQuestion,
+}) {
+  const [challengeSent, setChallengeSent] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
+
+  const handlePush = (studentId) => {
+    setChallengeSent(true);
+    if (onPushChallengeQuestion) onPushChallengeQuestion(studentId);
+    setTimeout(() => setChallengeSent(false), 3000);
+  };
+
+  if (!liveState || !liveState.isActive) {
+    return (
+      <section aria-labelledby="live-classroom-heading" className="p-4 rounded-2xl bg-[#131B2E] border border-[#243354] flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-xl bg-[#0B101B] border border-[#243354] flex items-center justify-center text-[#9B9690]">
+            <Video className="w-4 h-4" />
+          </div>
+          <div>
+            <h3 id="live-classroom-heading" className="text-xs font-bold text-[#EDEAE0]">
+              No Live Class Currently Active
+            </h3>
+            <p className="text-[11px] text-[#9B9690]">
+              Next scheduled lecture starts at 11:00 AM (Physics 12B). Launch studio from schedule when ready.
+            </p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section aria-labelledby="live-classroom-heading" className="p-5 sm:p-6 rounded-2xl bg-gradient-to-r from-[#14233D] via-[#131B2E] to-[#14233D] border border-[#5C7A5E]/60 shadow-xl space-y-5 relative overflow-hidden">
+      {/* Ambient Live Glow */}
+      <div className="absolute -top-10 -right-10 w-64 h-64 bg-[#5C7A5E]/15 rounded-full filter blur-3xl pointer-events-none" />
+
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 relative z-10">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-[#5C7A5E]/20 border border-[#5C7A5E]/60 flex items-center justify-center text-[#7A9E7C]">
+            <Video className="w-5 h-5 animate-pulse" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-[#5C7A5E] text-white">
+                LIVE CLASSROOM IN SESSION
+              </span>
+              <span className="text-xs font-bold text-[#EDEAE0]">{liveState.className}</span>
+            </div>
+            <h3 id="live-classroom-heading" className="text-base font-bold text-[#EDEAE0] font-display mt-0.5">
+              {liveState.subject}: {liveState.topic}
+            </h3>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 text-xs font-mono text-[#EDEAE0] bg-[#0B101B]/80 px-3 py-1.5 rounded-xl border border-[#243354]">
+            <Users className="w-4 h-4 text-[#5C7A5E]" />
+            <span>
+              {liveState.activeStudents} / {liveState.totalStudents} Active
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsCollapsed(!isCollapsed)}
+            className="p-1.5 rounded-xl bg-[#0B101B] hover:bg-[#182238] border border-[#243354] text-[#9B9690] hover:text-[#EDEAE0] transition-colors"
+            title={isCollapsed ? 'Expand Studio Panel' : 'Collapse Studio Panel'}
+          >
+            {isCollapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+          </button>
+        </div>
+      </div>
+
+      {!isCollapsed && (
+        <>
+=== STEP 239: c:\Users\adars\Downloads\Nalanda\teacher\frontend\src\components\dashboard\LiveClassPanel.jsx ===
+        <button
+          type="button"
+          onClick={() => handlePush('all')}
+          disabled={challengeSent}
+          className="px-4 py-2 rounded-xl bg-[#AB5236] hover:bg-[#94452C] text-white text-xs font-bold transition-all shadow-md flex items-center justify-center gap-1.5 self-start sm:self-center disabled:opacity-50"
+        >
+          <Send className="w-3.5 h-3.5" />
+          {challengeSent ? 'Challenge Dispatched!' : 'Push Olympiad Challenge Problem'}
+        </button>
+      </div>
+        </>
+      )}
+    </section>
+  );
+}

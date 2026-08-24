@@ -1,0 +1,249 @@
+import { asyncHandler } from '../utils/asyncHandler.js';
+import { sendSuccess } from '../utils/apiResponse.js';
+import { AppError } from '../utils/AppError.js';
+import { Course } from '../models/Course.js';
+import { ContactMessage } from '../models/ContactMessage.js';
+import { Enrollment } from '../models/Enrollment.js';
+import { Announcement } from '../models/Announcement.js';
+import { Resource } from '../models/Resource.js';
+import { User } from '../models/User.js';
+import { TaskSubmission } from '../models/TaskSubmission.js';
+import { Post } from '../models/Post.js';
+
+function toPublicCourse(course, enrolledCourseIds) {
+  const obj = course.toObject ? course.toObject({ virtuals: true }) : course;
+  return {
+    id: String(obj._id),
+    slug: obj.slug,
+    title: obj.title,
+    subtitle: obj.subtitle,
+    tagline: obj.tagline,
+    description: obj.description,
+    category: obj.category,
+    pillar: obj.pillar,
+    rating: obj.rating,
+    reviewsCount: obj.reviewsCount,
+    grades: obj.grades,
+    difficulty: obj.difficulty,
+    duration: obj.duration,
+    bannerImage: obj.bannerImage,
+    priceInPaise: obj.priceInPaise,
+    originalPriceInPaise: obj.originalPriceInPaise,
+    currency: obj.currency,
+    isPurchasable: obj.isPurchasable,
+    isFeatured: obj.isFeatured,
+    isPopular: obj.isPopular,
+    instructor: obj.instructor,
+    skills: obj.skills,
+    totalLessons: obj.totalLessons,
+    totalModules: (obj.modules || []).length,
+    isEnrolled: enrolledCourseIds ? enrolledCourseIds.has(String(obj._id)) : false,
+  };
+}
+
+/**
+ * ?popular=true / ?featured=true filter on the real, admin-controlled
+ * isPopular/isFeatured flags - never a client-supplied ranking, never a
+ * frontend .slice() over arbitrary DB order. limit is capped so a caller
+ * can't force an unbounded query.
+ */
+export const listCourses = asyncHandler(async (req, res) => {
+  const filter = { isPublished: true };
+  if (req.query.popular === 'true') filter.isPopular = true;
+  if (req.query.featured === 'true') filter.isFeatured = true;
+
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 0, 0), 50) || 0;
+  let query = Course.find(filter).sort({ createdAt: 1 });
+  if (limit) query = query.limit(limit);
+  const courses = await query;
+
+  let enrolledCourseIds = null;
+  if (req.user) {
+    const enrollments = await Enrollment.find({ userId: req.user._id, status: 'active' }).select('courseId');
+    enrolledCourseIds = new Set(enrollments.map((e) => String(e.courseId)));
+  }
+
+  return sendSuccess(res, { data: courses.map((c) => toPublicCourse(c, enrolledCourseIds)) });
+});
+
+export const getCourseBySlug = asyncHandler(async (req, res) => {
+  const course = await Course.findOne({ slug: req.params.slug, isPublished: true });
+  if (!course) throw AppError.notFound('Course not found', 'COURSE_NOT_FOUND');
+
+  let enrolledCourseIds = null;
+  let isEnrolled = false;
+  if (req.user) {
+    const enrollment = await Enrollment.findOne({ userId: req.user._id, courseId: course._id, status: 'active' });
+    isEnrolled = Boolean(enrollment);
+    enrolledCourseIds = new Set(isEnrolled ? [String(course._id)] : []);
+  }
+
+  const data = toPublicCourse(course, enrolledCourseIds);
+  // Public detail view also exposes module/lesson titles (syllabus) but not video URLs unless enrolled.
+  data.modules = course.modules.map((m) => ({
+    moduleId: m.moduleId,
+    title: m.title,
+    order: m.order,
+    lessons: m.lessons.map((l) => ({
+      lessonId: l.lessonId,
+      title: l.title,
+      duration: l.duration,
+      order: l.order,
+      videoUrl: isEnrolled ? l.videoUrl : undefined,
+    })),
+  }));
+
+  return sendSuccess(res, { data });
+});
+
+/**
+ * Public, unauthenticated announcements for the Landing Page. Deliberately
+ * scoped to institution-wide announcements only (courseIds empty) - a
+ * course-specific announcement stays visible only to that course's actual
+ * enrolled/authenticated audience via GET /api/student/announcements. The
+ * backend decides this scoping; no query parameter can widen it (see
+ * master doc's "never trust the browser for authorization").
+ */
+export const listPublicAnnouncements = asyncHandler(async (req, res) => {
+  const now = new Date();
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 6, 1), 20);
+
+  const announcements = await Announcement.find({
+    isPublished: true,
+    publishAt: { $lte: now },
+    courseIds: { $size: 0 },
+    $or: [{ expiresAt: null }, { expiresAt: { $gt: now } }],
+  })
+    .sort({ publishAt: -1 })
+    .limit(limit)
+    .select('title content type publishAt externalAuthorName source')
+    .lean();
+
+  return sendSuccess(res, {
+    data: announcements.map((a) => ({
+      id: String(a._id),
+      title: a.title,
+      content: a.content,
+      type: a.type,
+      publishAt: a.publishAt,
+      authorName: a.externalAuthorName || 'Nalanda Nexus',
+    })),
+  });
+});
+
+/**
+ * Public, unauthenticated resources (magazines, event photos, program
+ * materials) for the Landing Page's Resources section - bridged in from
+ * admin/backend uploads via POST /api/internal/resources. Real server-side
+ * pagination and search (no client-side slicing), matching the "no fake
+ * data" convention used by listCourses/listPublicAnnouncements above.
+ */
+export const listPublicResources = asyncHandler(async (req, res) => {
+  const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+  const pageSize = Math.min(Math.max(parseInt(req.query.pageSize, 10) || 12, 1), 50);
+
+  const filter = { isPublished: true };
+  if (['magazine', 'event', 'program'].includes(req.query.type)) filter.type = req.query.type;
+  if (req.query.search) filter.$text = { $search: String(req.query.search).slice(0, 200) };
+
+  const [items, total] = await Promise.all([
+    Resource.find(filter)
+      .sort({ publishedAt: -1 })
+      .skip((page - 1) * pageSize)
+      .limit(pageSize)
+      .select('title description type fileUrl fileName fileType fileSizeBytes uploadedByName publishedAt')
+      .lean(),
+    Resource.countDocuments(filter),
+  ]);
+
+  return sendSuccess(res, {
+    data: items.map((r) => ({
+      id: String(r._id),
+      title: r.title,
+      description: r.description,
+      type: r.type,
+      fileUrl: r.fileUrl,
+      fileName: r.fileName,
+      fileType: r.fileType,
+      fileSizeBytes: r.fileSizeBytes,
+      uploadedByName: r.uploadedByName,
+      publishedAt: r.publishedAt,
+    })),
+    meta: { page, pageSize, total, totalPages: Math.max(Math.ceil(total / pageSize), 1) },
+  });
+});
+
+/**
+ * Real, aggregated platform-wide stats for the Landing Page's stat strip -
+ * every number here is a genuine count/average from the database, never a
+ * hardcoded marketing figure. "Expert Mentors" and "Tasks Completed" are
+ * honestly named after what's actually tracked (distinct course instructors,
+ * completed task submissions) rather than inventing an unbacked concept like
+ * "Projects" or "Countries" just to match a marketing label.
+ */
+export const listPublicStats = asyncHandler(async (req, res) => {
+  const [activeLearners, courses, mentors, tasksCompleted, ratingAgg, communityPosts] = await Promise.all([
+    User.countDocuments({ role: 'student', isActive: true }),
+    Course.find({ isPublished: true }).select('modules instructor.name').lean(),
+    Course.distinct('instructor.name', { isPublished: true, 'instructor.name': { $nin: [null, ''] } }),
+    TaskSubmission.countDocuments({ isCompleted: true }),
+    Course.aggregate([
+      { $match: { isPublished: true, rating: { $gt: 0 } } },
+      { $group: { _id: null, avgRating: { $avg: '$rating' } } },
+    ]),
+    Post.countDocuments({}),
+  ]);
+
+  const totalModules = courses.reduce((sum, c) => sum + (c.modules?.length || 0), 0);
+  const avgRating = ratingAgg[0]?.avgRating || 0;
+
+  return sendSuccess(res, {
+    data: {
+      activeLearners,
+      totalCourses: courses.length,
+      totalModules,
+      expertMentors: mentors.length,
+      tasksCompleted,
+      avgRatingPercent: Math.round((avgRating / 5) * 100),
+      communityPosts,
+    },
+  });
+});
+
+/**
+ * Real community posts (the same feed Community.jsx shows to logged-in
+ * students) surfaced on the Landing Page as genuine "impact stories" -
+ * replaces a set of fabricated named testimonials with actual student
+ * content. Only the author's first name is shown publicly (no email, no
+ * full identity exposed to anonymous visitors).
+ */
+export const listPublicHighlights = asyncHandler(async (req, res) => {
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 5, 1), 10);
+  const posts = await Post.find({})
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .populate('userId', 'name avatar')
+    .select('body createdAt userId')
+    .lean();
+
+  return sendSuccess(res, {
+    data: posts
+      .filter((p) => p.userId)
+      .map((p) => ({
+        id: String(p._id),
+        quote: p.body,
+        author: p.userId.name?.split(' ')[0] || 'A learner',
+        avatar: p.userId.avatar || null,
+      })),
+  });
+});
+
+export const submitContactMessage = asyncHandler(async (req, res) => {
+  const { name, email, phone, subject, message } = req.body;
+  const record = await ContactMessage.create({ name, email, phone, subject, message });
+  return sendSuccess(res, {
+    status: 201,
+    message: 'Thanks for reaching out! Our team will get back to you soon.',
+    data: { id: record._id },
+  });
+});

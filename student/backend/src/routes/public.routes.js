@@ -1,0 +1,17 @@
+import { Router } from 'express';
+import * as publicController from '../controllers/public.controller.js';
+import { attachUserIfPresent } from '../middleware/authenticate.js';
+import { validate } from '../middleware/validate.js';
+import { contactSchema } from '../validators/contact.validators.js';
+
+const router = Router();
+
+router.get('/courses', attachUserIfPresent, publicController.listCourses);
+router.get('/courses/:slug', attachUserIfPresent, publicController.getCourseBySlug);
+router.get('/announcements', publicController.listPublicAnnouncements);
+router.get('/resources', publicController.listPublicResources);
+router.get('/stats', publicController.listPublicStats);
+router.get('/highlights', publicController.listPublicHighlights);
+router.post('/contact', validate(contactSchema), publicController.submitContactMessage);
+
+export default router;

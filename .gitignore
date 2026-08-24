@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Environment files (never commit real secrets; .env.example files are intentionally kept)
+.env
+.env.*
+!.env.example
+
+# Frontend build output
+dist/
+build/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Uploaded user files (local-disk storage; auto-created at runtime, not meant to ship in the repo)
+**/backend/uploads/
+
+# Test coverage
+coverage/
+
+# OS/editor cruft
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

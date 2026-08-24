@@ -1,0 +1,117 @@
+﻿@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: 'Inter', 'Manrope', system-ui, -apple-system, sans-serif;
+    background-color: #EDEAE0;
+    color: #2B2B28;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Tabular figures for all numerical/data points (IBM Plex Mono) */
+  .font-data, .font-mono, [data-mono] {
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Display font for headings and section titles (Fraunces) */
+  .font-display {
+    font-family: 'Fraunces', Georgia, serif;
+  }
+}
+
+/* Custom subtle scrollbars fitting institutional parchment aesthetic */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #EDEAE0;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #DFDACB;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #22355E;
+}
+
+/* Status utility badges (matching Admin design system) */
+.badge-good {
+  background-color: rgba(92, 122, 94, 0.12);
+  color: #5C7A5E;
+  border: 1px solid rgba(92, 122, 94, 0.3);
+}
+
+.badge-attention {
+  background-color: rgba(201, 154, 46, 0.12);
+  color: #C99A2E;
+  border: 1px solid rgba(201, 154, 46, 0.3);
+}
+
+.badge-blocked {
+  background-color: rgba(193, 53, 43, 0.12);
+  color: #C1352B;
+  border: 1px solid rgba(193, 53, 43, 0.3);
+}
+
+.badge-neutral {
+  background-color: rgba(155, 150, 144, 0.12);
+  color: #9B9690;
+  border: 1px solid rgba(155, 150, 144, 0.3);
+}
+
+/* Signature Risk Pulsing Animations (Only dynamic state indicator on dashboard) */
+@keyframes pulse-act-now {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgba(193, 53, 43, 0.7);
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 0.9;
+    box-shadow: 0 0 0 7px rgba(193, 53, 43, 0);
+  }
+}
+
+@keyframes pulse-watch {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.95;
+    box-shadow: 0 0 0 0 rgba(201, 154, 46, 0.5);
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: 0.85;
+    box-shadow: 0 0 0 5px rgba(201, 154, 46, 0);
+  }
+}
+
+.risk-pulse-act-now {
+  animation: pulse-act-now 1.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.risk-pulse-watch {
+  animation: pulse-watch 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .risk-pulse-act-now,
+  .risk-pulse-watch,
+  .animate-pulse,
+  .animate-spin {
+    animation: none !important;
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}

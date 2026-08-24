@@ -1,0 +1,91 @@
+import mongoose from 'mongoose';
+
+const { Schema } = mongoose;
+
+const lessonSchema = new Schema(
+  {
+    lessonId: { type: String, required: true }, // stable slug, e.g. "l-4"
+    title: { type: String, required: true },
+    duration: { type: String, default: '' },
+    order: { type: Number, required: true },
+    videoUrl: { type: String, default: '' },
+    isPublished: { type: Boolean, default: true },
+    isLocked: { type: Boolean, default: false },
+  },
+  { _id: false }
+);
+
+const moduleSchema = new Schema(
+  {
+    moduleId: { type: String, required: true }, // e.g. "mod-2"
+    title: { type: String, required: true },
+    order: { type: Number, required: true },
+    lessons: [lessonSchema],
+  },
+  { _id: false }
+);
+
+const courseSchema = new Schema(
+  {
+    slug: { type: String, required: true, unique: true, index: true },
+    title: { type: String, required: true },
+    subtitle: { type: String, default: '' },
+    tagline: { type: String, default: '' },
+    description: { type: String, default: '' },
+    category: { type: String, default: 'foundation', index: true },
+    // Which of the 3 pillars (Communicate/Compute/Create) this course belongs
+    // to - drives the public Learn page's pillar filter.
+    pillar: { type: String, enum: ['communicate', 'compute', 'create'], default: 'compute' },
+    rating: { type: Number, default: 4.8, min: 0, max: 5 },
+    reviewsCount: { type: Number, default: 0, min: 0 },
+    grades: [{ type: String }], // e.g. ["3","4",...,"12"] - class/grade applicability
+    difficulty: { type: String, default: 'Beginner Friendly' },
+    duration: { type: String, default: '' },
+    bannerImage: { type: String, default: '' },
+    videoUrl: { type: String, default: '' },
+
+    priceInPaise: { type: Number, required: true, default: 0 }, // 0 = free course
+    originalPriceInPaise: { type: Number, default: null },
+    currency: { type: String, default: 'INR' },
+    isPurchasable: { type: Boolean, default: true }, // false = "Upcoming" catalog placeholder
+    isPublished: { type: Boolean, default: true },
+    // Admin-controlled visibility flags for the public Landing Page's
+    // Popular/Featured sections (see public.controller.js#listCourses) -
+    // real fields a course either has or doesn't, never a frontend-side
+    // .slice() over arbitrary DB order. isFeatured marks the single
+    // primary/hero course (e.g. Prarambh); isPopular marks the broader
+    // "Popular Courses" set.
+    isFeatured: { type: Boolean, default: false, index: true },
+    isPopular: { type: Boolean, default: false, index: true },
+
+    instructor: {
+      name: { type: String, default: '' },
+      role: { type: String, default: '' },
+      avatar: { type: String, default: '' },
+    },
+    skills: [{ type: String }],
+
+    modules: [moduleSchema],
+
+    // Set only for courses delivered by admin/backend's cross-portal bridge
+    // (see routes/internal.routes.js) rather than authored/seeded natively
+    // here. sourceId is the admin portal's own Course _id. Deliberately NO
+    // default on sourceId - a sparse index only excludes a document when
+    // the field is genuinely ABSENT, not merely `null` (see the identical,
+    // real bug already fixed on Task/LiveClass/Quiz/Announcement).
+    source: { type: String, enum: ['native', 'admin-portal'], default: 'native' },
+    sourceId: { type: String },
+  },
+  { timestamps: true }
+);
+
+courseSchema.index({ sourceId: 1 }, { unique: true, sparse: true });
+
+courseSchema.virtual('totalLessons').get(function computeTotalLessons() {
+  return (this.modules || []).reduce((sum, m) => sum + (m.lessons?.length || 0), 0);
+});
+
+courseSchema.set('toJSON', { virtuals: true });
+courseSchema.set('toObject', { virtuals: true });
+
+export const Course = mongoose.model('Course', courseSchema);

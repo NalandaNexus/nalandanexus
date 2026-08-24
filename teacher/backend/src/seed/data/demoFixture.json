@@ -1,0 +1,1390 @@
+{
+  "classes": [
+    {
+      "code": "12A",
+      "name": "Class 12A",
+      "subject": "Physics \u2014 Advanced Electrodynamics & Optics",
+      "grade": "12",
+      "section": "A",
+      "schedule": "Mon, Wed, Fri 03:00 PM",
+      "room": "Lab 3"
+    },
+    {
+      "code": "12B",
+      "name": "Class 12B",
+      "subject": "Physics \u2014 Core Electromagnetism & Ray Optics",
+      "grade": "12",
+      "section": "B",
+      "schedule": "Tue, Thu, Sat 11:00 AM",
+      "room": "Hall B"
+    },
+    {
+      "code": "11A",
+      "name": "Class 11A",
+      "subject": "Physics \u2014 Classical Mechanics & Vectors",
+      "grade": "11",
+      "section": "A",
+      "schedule": "Mon, Wed, Fri 08:00 AM",
+      "room": "Studio 1"
+    },
+    {
+      "code": "11B",
+      "name": "Class 11B",
+      "subject": "Physics \u2014 Mechanics & Wave Dynamics",
+      "grade": "11",
+      "section": "B",
+      "schedule": "Tue, Thu 09:30 AM",
+      "room": "Hall A"
+    },
+    {
+      "code": "10A",
+      "name": "Class 10A",
+      "subject": "General Science \u2014 Physics Foundations",
+      "grade": "10",
+      "section": "A",
+      "schedule": "Mon, Thu 01:30 PM",
+      "room": "Room 101"
+    },
+    {
+      "code": "10B",
+      "name": "Class 10B",
+      "subject": "Introductory Physics \u2014 Force & Energy",
+      "grade": "10",
+      "section": "B",
+      "schedule": "Wed, Fri 01:30 PM",
+      "room": "Room 102"
+    },
+    {
+      "code": "9A",
+      "name": "Class 9A",
+      "subject": "STEM Core \u2014 Physical Sciences",
+      "grade": "9",
+      "section": "A",
+      "schedule": "Tue, Fri 10:00 AM",
+      "room": "Lab 1"
+    },
+    {
+      "code": "9B",
+      "name": "Class 9B",
+      "subject": "Physics Explorations \u2014 Motion & Heat",
+      "grade": "9",
+      "section": "B",
+      "schedule": "Mon, Thu 11:30 AM",
+      "room": "Lab 2"
+    }
+  ],
+  "students": [
+    {
+      "name": "Rahul Sharma",
+      "email": "rahul.sharma@nalanda.edu",
+      "classCode": "12B"
+    },
+    {
+      "name": "Priya Singh",
+      "email": "priya.singh@nalanda.edu",
+      "classCode": "11A"
+    },
+    {
+      "name": "Aman Verma",
+      "email": "aman.verma@nalanda.edu",
+      "classCode": "11A"
+    },
+    {
+      "name": "Neha Gupta",
+      "email": "neha.gupta@nalanda.edu",
+      "classCode": "12B"
+    },
+    {
+      "name": "Siddharth Mehta",
+      "email": "siddharth.mehta@nalanda.edu",
+      "classCode": "9B"
+    },
+    {
+      "name": "Priya Verma",
+      "email": "priya.verma@nalanda.edu",
+      "classCode": "12A"
+    },
+    {
+      "name": "Diya Mehta",
+      "email": "diya.mehta@nalanda.edu",
+      "classCode": "12A"
+    },
+    {
+      "name": "Vikram Saxena",
+      "email": "vikram.saxena@nalanda.edu",
+      "classCode": "12A"
+    },
+    {
+      "name": "Yashvardhan Mishra",
+      "email": "yashvardhan.mishra@nalanda.edu",
+      "classCode": "12A"
+    },
+    {
+      "name": "Riya Goswami",
+      "email": "riya.goswami@nalanda.edu",
+      "classCode": "12A"
+    },
+    {
+      "name": "Shreya Roy",
+      "email": "shreya.roy@nalanda.edu",
+      "classCode": "12A"
+    },
+    {
+      "name": "Divya Kulkarni",
+      "email": "divya.kulkarni@nalanda.edu",
+      "classCode": "12A"
+    },
+    {
+      "name": "Swati Trivedi",
+      "email": "swati.trivedi@nalanda.edu",
+      "classCode": "12A"
+    },
+    {
+      "name": "Lavanya Aggarwal",
+      "email": "lavanya.aggarwal@nalanda.edu",
+      "classCode": "12A"
+    },
+    {
+      "name": "Alok Singh",
+      "email": "alok.singh@nalanda.edu",
+      "classCode": "12A"
+    },
+    {
+      "name": "Payal Nair",
+      "email": "payal.nair@nalanda.edu",
+      "classCode": "12A"
+    },
+    {
+      "name": "Deepika Bose",
+      "email": "deepika.bose@nalanda.edu",
+      "classCode": "12A"
+    },
+    {
+      "name": "Priya Kapoor",
+      "email": "priya.kapoor@nalanda.edu",
+      "classCode": "12A"
+    },
+    {
+      "name": "Diya Bhatt",
+      "email": "diya.bhatt@nalanda.edu",
+      "classCode": "12A"
+    },
+    {
+      "name": "Vikram Patel",
+      "email": "vikram.patel@nalanda.edu",
+      "classCode": "12A"
+    },
+    {
+      "name": "Yashvardhan Rao",
+      "email": "yashvardhan.rao@nalanda.edu",
+      "classCode": "12A"
+    },
+    {
+      "name": "Riya Menon",
+      "email": "riya.menon@nalanda.edu",
+      "classCode": "12A"
+    },
+    {
+      "name": "Shreya Pillai",
+      "email": "shreya.pillai@nalanda.edu",
+      "classCode": "12A"
+    },
+    {
+      "name": "Divya Sharma",
+      "email": "divya.sharma@nalanda.edu",
+      "classCode": "12A"
+    },
+    {
+      "name": "Swati Malhotra",
+      "email": "swati.malhotra@nalanda.edu",
+      "classCode": "12A"
+    },
+    {
+      "name": "Lavanya Chopra",
+      "email": "lavanya.chopra@nalanda.edu",
+      "classCode": "12A"
+    },
+    {
+      "name": "Alok Bhatia",
+      "email": "alok.bhatia@nalanda.edu",
+      "classCode": "12A"
+    },
+    {
+      "name": "Payal Sen",
+      "email": "payal.sen@nalanda.edu",
+      "classCode": "12A"
+    },
+    {
+      "name": "Deepika Gupta",
+      "email": "deepika.gupta@nalanda.edu",
+      "classCode": "12A"
+    },
+    {
+      "name": "Priya Deshmukh",
+      "email": "priya.deshmukh@nalanda.edu",
+      "classCode": "12A"
+    },
+    {
+      "name": "Diya Reddy",
+      "email": "diya.reddy@nalanda.edu",
+      "classCode": "12A"
+    },
+    {
+      "name": "Vikram Choudhury",
+      "email": "vikram.choudhury@nalanda.edu",
+      "classCode": "12A"
+    },
+    {
+      "name": "Yashvardhan Chatterjee",
+      "email": "yashvardhan.chatterjee@nalanda.edu",
+      "classCode": "12A"
+    },
+    {
+      "name": "Riya Iyer",
+      "email": "riya.iyer@nalanda.edu",
+      "classCode": "12A"
+    },
+    {
+      "name": "Shreya Joshi",
+      "email": "shreya.joshi@nalanda.edu",
+      "classCode": "12A"
+    },
+    {
+      "name": "Divya Banerjee",
+      "email": "divya.banerjee@nalanda.edu",
+      "classCode": "12A"
+    },
+    {
+      "name": "Swati Dhar",
+      "email": "swati.dhar@nalanda.edu",
+      "classCode": "12A"
+    },
+    {
+      "name": "Lavanya Verma",
+      "email": "lavanya.verma@nalanda.edu",
+      "classCode": "12B"
+    },
+    {
+      "name": "Alok Mehta",
+      "email": "alok.mehta@nalanda.edu",
+      "classCode": "12B"
+    },
+    {
+      "name": "Payal Saxena",
+      "email": "payal.saxena@nalanda.edu",
+      "classCode": "12B"
+    },
+    {
+      "name": "Deepika Mishra",
+      "email": "deepika.mishra@nalanda.edu",
+      "classCode": "12B"
+    },
+    {
+      "name": "Priya Goswami",
+      "email": "priya.goswami@nalanda.edu",
+      "classCode": "12B"
+    },
+    {
+      "name": "Diya Roy",
+      "email": "diya.roy@nalanda.edu",
+      "classCode": "12B"
+    },
+    {
+      "name": "Vikram Kulkarni",
+      "email": "vikram.kulkarni@nalanda.edu",
+      "classCode": "12B"
+    },
+    {
+      "name": "Yashvardhan Trivedi",
+      "email": "yashvardhan.trivedi@nalanda.edu",
+      "classCode": "12B"
+    },
+    {
+      "name": "Riya Aggarwal",
+      "email": "riya.aggarwal@nalanda.edu",
+      "classCode": "12B"
+    },
+    {
+      "name": "Shreya Singh",
+      "email": "shreya.singh@nalanda.edu",
+      "classCode": "12B"
+    },
+    {
+      "name": "Divya Nair",
+      "email": "divya.nair@nalanda.edu",
+      "classCode": "12B"
+    },
+    {
+      "name": "Swati Bose",
+      "email": "swati.bose@nalanda.edu",
+      "classCode": "12B"
+    },
+    {
+      "name": "Lavanya Kapoor",
+      "email": "lavanya.kapoor@nalanda.edu",
+      "classCode": "12B"
+    },
+    {
+      "name": "Alok Bhatt",
+      "email": "alok.bhatt@nalanda.edu",
+      "classCode": "12B"
+    },
+    {
+      "name": "Payal Patel",
+      "email": "payal.patel@nalanda.edu",
+      "classCode": "12B"
+    },
+    {
+      "name": "Deepika Rao",
+      "email": "deepika.rao@nalanda.edu",
+      "classCode": "12B"
+    },
+    {
+      "name": "Priya Menon",
+      "email": "priya.menon@nalanda.edu",
+      "classCode": "12B"
+    },
+    {
+      "name": "Diya Pillai",
+      "email": "diya.pillai@nalanda.edu",
+      "classCode": "12B"
+    },
+    {
+      "name": "Vikram Sharma",
+      "email": "vikram.sharma@nalanda.edu",
+      "classCode": "12B"
+    },
+    {
+      "name": "Yashvardhan Malhotra",
+      "email": "yashvardhan.malhotra@nalanda.edu",
+      "classCode": "12B"
+    },
+    {
+      "name": "Riya Chopra",
+      "email": "riya.chopra@nalanda.edu",
+      "classCode": "12B"
+    },
+    {
+      "name": "Shreya Bhatia",
+      "email": "shreya.bhatia@nalanda.edu",
+      "classCode": "12B"
+    },
+    {
+      "name": "Divya Sen",
+      "email": "divya.sen@nalanda.edu",
+      "classCode": "12B"
+    },
+    {
+      "name": "Swati Gupta",
+      "email": "swati.gupta@nalanda.edu",
+      "classCode": "12B"
+    },
+    {
+      "name": "Lavanya Deshmukh",
+      "email": "lavanya.deshmukh@nalanda.edu",
+      "classCode": "12B"
+    },
+    {
+      "name": "Alok Reddy",
+      "email": "alok.reddy@nalanda.edu",
+      "classCode": "12B"
+    },
+    {
+      "name": "Payal Choudhury",
+      "email": "payal.choudhury@nalanda.edu",
+      "classCode": "12B"
+    },
+    {
+      "name": "Deepika Chatterjee",
+      "email": "deepika.chatterjee@nalanda.edu",
+      "classCode": "12B"
+    },
+    {
+      "name": "Priya Iyer",
+      "email": "priya.iyer@nalanda.edu",
+      "classCode": "12B"
+    },
+    {
+      "name": "Diya Joshi",
+      "email": "diya.joshi@nalanda.edu",
+      "classCode": "12B"
+    },
+    {
+      "name": "Vikram Banerjee",
+      "email": "vikram.banerjee@nalanda.edu",
+      "classCode": "12B"
+    },
+    {
+      "name": "Yashvardhan Dhar",
+      "email": "yashvardhan.dhar@nalanda.edu",
+      "classCode": "12B"
+    },
+    {
+      "name": "Riya Verma",
+      "email": "riya.verma@nalanda.edu",
+      "classCode": "11A"
+    },
+    {
+      "name": "Shreya Mehta",
+      "email": "shreya.mehta@nalanda.edu",
+      "classCode": "11A"
+    },
+    {
+      "name": "Divya Saxena",
+      "email": "divya.saxena@nalanda.edu",
+      "classCode": "11A"
+    },
+    {
+      "name": "Swati Mishra",
+      "email": "swati.mishra@nalanda.edu",
+      "classCode": "11A"
+    },
+    {
+      "name": "Lavanya Goswami",
+      "email": "lavanya.goswami@nalanda.edu",
+      "classCode": "11A"
+    },
+    {
+      "name": "Alok Roy",
+      "email": "alok.roy@nalanda.edu",
+      "classCode": "11A"
+    },
+    {
+      "name": "Payal Kulkarni",
+      "email": "payal.kulkarni@nalanda.edu",
+      "classCode": "11A"
+    },
+    {
+      "name": "Deepika Trivedi",
+      "email": "deepika.trivedi@nalanda.edu",
+      "classCode": "11A"
+    },
+    {
+      "name": "Priya Aggarwal",
+      "email": "priya.aggarwal@nalanda.edu",
+      "classCode": "11A"
+    },
+    {
+      "name": "Diya Singh",
+      "email": "diya.singh@nalanda.edu",
+      "classCode": "11A"
+    },
+    {
+      "name": "Vikram Nair",
+      "email": "vikram.nair@nalanda.edu",
+      "classCode": "11A"
+    },
+    {
+      "name": "Yashvardhan Bose",
+      "email": "yashvardhan.bose@nalanda.edu",
+      "classCode": "11A"
+    },
+    {
+      "name": "Riya Kapoor",
+      "email": "riya.kapoor@nalanda.edu",
+      "classCode": "11A"
+    },
+    {
+      "name": "Shreya Bhatt",
+      "email": "shreya.bhatt@nalanda.edu",
+      "classCode": "11A"
+    },
+    {
+      "name": "Divya Patel",
+      "email": "divya.patel@nalanda.edu",
+      "classCode": "11A"
+    },
+    {
+      "name": "Swati Rao",
+      "email": "swati.rao@nalanda.edu",
+      "classCode": "11A"
+    },
+    {
+      "name": "Lavanya Menon",
+      "email": "lavanya.menon@nalanda.edu",
+      "classCode": "11A"
+    },
+    {
+      "name": "Alok Pillai",
+      "email": "alok.pillai@nalanda.edu",
+      "classCode": "11A"
+    },
+    {
+      "name": "Payal Sharma",
+      "email": "payal.sharma@nalanda.edu",
+      "classCode": "11A"
+    },
+    {
+      "name": "Deepika Malhotra",
+      "email": "deepika.malhotra@nalanda.edu",
+      "classCode": "11A"
+    },
+    {
+      "name": "Priya Chopra",
+      "email": "priya.chopra@nalanda.edu",
+      "classCode": "11A"
+    },
+    {
+      "name": "Diya Bhatia",
+      "email": "diya.bhatia@nalanda.edu",
+      "classCode": "11A"
+    },
+    {
+      "name": "Vikram Sen",
+      "email": "vikram.sen@nalanda.edu",
+      "classCode": "11A"
+    },
+    {
+      "name": "Yashvardhan Gupta",
+      "email": "yashvardhan.gupta@nalanda.edu",
+      "classCode": "11A"
+    },
+    {
+      "name": "Riya Deshmukh",
+      "email": "riya.deshmukh@nalanda.edu",
+      "classCode": "11A"
+    },
+    {
+      "name": "Shreya Reddy",
+      "email": "shreya.reddy@nalanda.edu",
+      "classCode": "11A"
+    },
+    {
+      "name": "Divya Choudhury",
+      "email": "divya.choudhury@nalanda.edu",
+      "classCode": "11A"
+    },
+    {
+      "name": "Swati Chatterjee",
+      "email": "swati.chatterjee@nalanda.edu",
+      "classCode": "11A"
+    },
+    {
+      "name": "Lavanya Iyer",
+      "email": "lavanya.iyer@nalanda.edu",
+      "classCode": "11A"
+    },
+    {
+      "name": "Alok Joshi",
+      "email": "alok.joshi@nalanda.edu",
+      "classCode": "11A"
+    },
+    {
+      "name": "Payal Banerjee",
+      "email": "payal.banerjee@nalanda.edu",
+      "classCode": "11A"
+    },
+    {
+      "name": "Deepika Dhar",
+      "email": "deepika.dhar@nalanda.edu",
+      "classCode": "11A"
+    },
+    {
+      "name": "Priya Verma",
+      "email": "priya.verma@nalanda.edu",
+      "classCode": "11B"
+    },
+    {
+      "name": "Diya Mehta",
+      "email": "diya.mehta@nalanda.edu",
+      "classCode": "11B"
+    },
+    {
+      "name": "Vikram Saxena",
+      "email": "vikram.saxena@nalanda.edu",
+      "classCode": "11B"
+    },
+    {
+      "name": "Yashvardhan Mishra",
+      "email": "yashvardhan.mishra@nalanda.edu",
+      "classCode": "11B"
+    },
+    {
+      "name": "Riya Goswami",
+      "email": "riya.goswami@nalanda.edu",
+      "classCode": "11B"
+    },
+    {
+      "name": "Shreya Roy",
+      "email": "shreya.roy@nalanda.edu",
+      "classCode": "11B"
+    },
+    {
+      "name": "Divya Kulkarni",
+      "email": "divya.kulkarni@nalanda.edu",
+      "classCode": "11B"
+    },
+    {
+      "name": "Swati Trivedi",
+      "email": "swati.trivedi@nalanda.edu",
+      "classCode": "11B"
+    },
+    {
+      "name": "Lavanya Aggarwal",
+      "email": "lavanya.aggarwal@nalanda.edu",
+      "classCode": "11B"
+    },
+    {
+      "name": "Alok Singh",
+      "email": "alok.singh@nalanda.edu",
+      "classCode": "11B"
+    },
+    {
+      "name": "Payal Nair",
+      "email": "payal.nair@nalanda.edu",
+      "classCode": "11B"
+    },
+    {
+      "name": "Deepika Bose",
+      "email": "deepika.bose@nalanda.edu",
+      "classCode": "11B"
+    },
+    {
+      "name": "Priya Kapoor",
+      "email": "priya.kapoor@nalanda.edu",
+      "classCode": "11B"
+    },
+    {
+      "name": "Diya Bhatt",
+      "email": "diya.bhatt@nalanda.edu",
+      "classCode": "11B"
+    },
+    {
+      "name": "Vikram Patel",
+      "email": "vikram.patel@nalanda.edu",
+      "classCode": "11B"
+    },
+    {
+      "name": "Yashvardhan Rao",
+      "email": "yashvardhan.rao@nalanda.edu",
+      "classCode": "11B"
+    },
+    {
+      "name": "Riya Menon",
+      "email": "riya.menon@nalanda.edu",
+      "classCode": "11B"
+    },
+    {
+      "name": "Shreya Pillai",
+      "email": "shreya.pillai@nalanda.edu",
+      "classCode": "11B"
+    },
+    {
+      "name": "Divya Sharma",
+      "email": "divya.sharma@nalanda.edu",
+      "classCode": "11B"
+    },
+    {
+      "name": "Swati Malhotra",
+      "email": "swati.malhotra@nalanda.edu",
+      "classCode": "11B"
+    },
+    {
+      "name": "Lavanya Chopra",
+      "email": "lavanya.chopra@nalanda.edu",
+      "classCode": "11B"
+    },
+    {
+      "name": "Alok Bhatia",
+      "email": "alok.bhatia@nalanda.edu",
+      "classCode": "11B"
+    },
+    {
+      "name": "Payal Sen",
+      "email": "payal.sen@nalanda.edu",
+      "classCode": "11B"
+    },
+    {
+      "name": "Deepika Gupta",
+      "email": "deepika.gupta@nalanda.edu",
+      "classCode": "11B"
+    },
+    {
+      "name": "Priya Deshmukh",
+      "email": "priya.deshmukh@nalanda.edu",
+      "classCode": "11B"
+    },
+    {
+      "name": "Diya Reddy",
+      "email": "diya.reddy@nalanda.edu",
+      "classCode": "11B"
+    },
+    {
+      "name": "Vikram Choudhury",
+      "email": "vikram.choudhury@nalanda.edu",
+      "classCode": "11B"
+    },
+    {
+      "name": "Yashvardhan Chatterjee",
+      "email": "yashvardhan.chatterjee@nalanda.edu",
+      "classCode": "11B"
+    },
+    {
+      "name": "Riya Iyer",
+      "email": "riya.iyer@nalanda.edu",
+      "classCode": "11B"
+    },
+    {
+      "name": "Shreya Joshi",
+      "email": "shreya.joshi@nalanda.edu",
+      "classCode": "11B"
+    },
+    {
+      "name": "Tarun Goswami",
+      "email": "tarun.goswami@nalanda.edu",
+      "classCode": "10A"
+    },
+    {
+      "name": "Bhavna Roy",
+      "email": "bhavna.roy@nalanda.edu",
+      "classCode": "10A"
+    },
+    {
+      "name": "Shruti Kulkarni",
+      "email": "shruti.kulkarni@nalanda.edu",
+      "classCode": "10A"
+    },
+    {
+      "name": "Sakshi Trivedi",
+      "email": "sakshi.trivedi@nalanda.edu",
+      "classCode": "10A"
+    },
+    {
+      "name": "Anjali Aggarwal",
+      "email": "anjali.aggarwal@nalanda.edu",
+      "classCode": "10A"
+    },
+    {
+      "name": "Neha Singh",
+      "email": "neha.singh@nalanda.edu",
+      "classCode": "10A"
+    },
+    {
+      "name": "Sneha Nair",
+      "email": "sneha.nair@nalanda.edu",
+      "classCode": "10A"
+    },
+    {
+      "name": "Siddharth Bose",
+      "email": "siddharth.bose@nalanda.edu",
+      "classCode": "10A"
+    },
+    {
+      "name": "Aditya Kapoor",
+      "email": "aditya.kapoor@nalanda.edu",
+      "classCode": "10A"
+    },
+    {
+      "name": "Meera Bhatt",
+      "email": "meera.bhatt@nalanda.edu",
+      "classCode": "10A"
+    },
+    {
+      "name": "Simran Patel",
+      "email": "simran.patel@nalanda.edu",
+      "classCode": "10A"
+    },
+    {
+      "name": "Nandini Rao",
+      "email": "nandini.rao@nalanda.edu",
+      "classCode": "10A"
+    },
+    {
+      "name": "Tarun Menon",
+      "email": "tarun.menon@nalanda.edu",
+      "classCode": "10A"
+    },
+    {
+      "name": "Bhavna Pillai",
+      "email": "bhavna.pillai@nalanda.edu",
+      "classCode": "10A"
+    },
+    {
+      "name": "Shruti Sharma",
+      "email": "shruti.sharma@nalanda.edu",
+      "classCode": "10A"
+    },
+    {
+      "name": "Sakshi Malhotra",
+      "email": "sakshi.malhotra@nalanda.edu",
+      "classCode": "10A"
+    },
+    {
+      "name": "Anjali Chopra",
+      "email": "anjali.chopra@nalanda.edu",
+      "classCode": "10A"
+    },
+    {
+      "name": "Neha Bhatia",
+      "email": "neha.bhatia@nalanda.edu",
+      "classCode": "10A"
+    },
+    {
+      "name": "Sneha Sen",
+      "email": "sneha.sen@nalanda.edu",
+      "classCode": "10A"
+    },
+    {
+      "name": "Siddharth Gupta",
+      "email": "siddharth.gupta@nalanda.edu",
+      "classCode": "10A"
+    },
+    {
+      "name": "Aditya Deshmukh",
+      "email": "aditya.deshmukh@nalanda.edu",
+      "classCode": "10A"
+    },
+    {
+      "name": "Meera Reddy",
+      "email": "meera.reddy@nalanda.edu",
+      "classCode": "10A"
+    },
+    {
+      "name": "Simran Choudhury",
+      "email": "simran.choudhury@nalanda.edu",
+      "classCode": "10A"
+    },
+    {
+      "name": "Nandini Chatterjee",
+      "email": "nandini.chatterjee@nalanda.edu",
+      "classCode": "10A"
+    },
+    {
+      "name": "Tarun Iyer",
+      "email": "tarun.iyer@nalanda.edu",
+      "classCode": "10A"
+    },
+    {
+      "name": "Bhavna Joshi",
+      "email": "bhavna.joshi@nalanda.edu",
+      "classCode": "10A"
+    },
+    {
+      "name": "Shruti Banerjee",
+      "email": "shruti.banerjee@nalanda.edu",
+      "classCode": "10A"
+    },
+    {
+      "name": "Sakshi Dhar",
+      "email": "sakshi.dhar@nalanda.edu",
+      "classCode": "10A"
+    },
+    {
+      "name": "Anjali Verma",
+      "email": "anjali.verma@nalanda.edu",
+      "classCode": "10A"
+    },
+    {
+      "name": "Neha Mehta",
+      "email": "neha.mehta@nalanda.edu",
+      "classCode": "10A"
+    },
+    {
+      "name": "Sneha Saxena",
+      "email": "sneha.saxena@nalanda.edu",
+      "classCode": "10A"
+    },
+    {
+      "name": "Siddharth Mishra",
+      "email": "siddharth.mishra@nalanda.edu",
+      "classCode": "10A"
+    },
+    {
+      "name": "Aditya Goswami",
+      "email": "aditya.goswami@nalanda.edu",
+      "classCode": "10B"
+    },
+    {
+      "name": "Meera Roy",
+      "email": "meera.roy@nalanda.edu",
+      "classCode": "10B"
+    },
+    {
+      "name": "Simran Kulkarni",
+      "email": "simran.kulkarni@nalanda.edu",
+      "classCode": "10B"
+    },
+    {
+      "name": "Nandini Trivedi",
+      "email": "nandini.trivedi@nalanda.edu",
+      "classCode": "10B"
+    },
+    {
+      "name": "Tarun Aggarwal",
+      "email": "tarun.aggarwal@nalanda.edu",
+      "classCode": "10B"
+    },
+    {
+      "name": "Bhavna Singh",
+      "email": "bhavna.singh@nalanda.edu",
+      "classCode": "10B"
+    },
+    {
+      "name": "Shruti Nair",
+      "email": "shruti.nair@nalanda.edu",
+      "classCode": "10B"
+    },
+    {
+      "name": "Sakshi Bose",
+      "email": "sakshi.bose@nalanda.edu",
+      "classCode": "10B"
+    },
+    {
+      "name": "Anjali Kapoor",
+      "email": "anjali.kapoor@nalanda.edu",
+      "classCode": "10B"
+    },
+    {
+      "name": "Neha Bhatt",
+      "email": "neha.bhatt@nalanda.edu",
+      "classCode": "10B"
+    },
+    {
+      "name": "Sneha Patel",
+      "email": "sneha.patel@nalanda.edu",
+      "classCode": "10B"
+    },
+    {
+      "name": "Siddharth Rao",
+      "email": "siddharth.rao@nalanda.edu",
+      "classCode": "10B"
+    },
+    {
+      "name": "Aditya Menon",
+      "email": "aditya.menon@nalanda.edu",
+      "classCode": "10B"
+    },
+    {
+      "name": "Meera Pillai",
+      "email": "meera.pillai@nalanda.edu",
+      "classCode": "10B"
+    },
+    {
+      "name": "Simran Sharma",
+      "email": "simran.sharma@nalanda.edu",
+      "classCode": "10B"
+    },
+    {
+      "name": "Nandini Malhotra",
+      "email": "nandini.malhotra@nalanda.edu",
+      "classCode": "10B"
+    },
+    {
+      "name": "Tarun Chopra",
+      "email": "tarun.chopra@nalanda.edu",
+      "classCode": "10B"
+    },
+    {
+      "name": "Bhavna Bhatia",
+      "email": "bhavna.bhatia@nalanda.edu",
+      "classCode": "10B"
+    },
+    {
+      "name": "Shruti Sen",
+      "email": "shruti.sen@nalanda.edu",
+      "classCode": "10B"
+    },
+    {
+      "name": "Sakshi Gupta",
+      "email": "sakshi.gupta@nalanda.edu",
+      "classCode": "10B"
+    },
+    {
+      "name": "Anjali Deshmukh",
+      "email": "anjali.deshmukh@nalanda.edu",
+      "classCode": "10B"
+    },
+    {
+      "name": "Neha Reddy",
+      "email": "neha.reddy@nalanda.edu",
+      "classCode": "10B"
+    },
+    {
+      "name": "Sneha Choudhury",
+      "email": "sneha.choudhury@nalanda.edu",
+      "classCode": "10B"
+    },
+    {
+      "name": "Siddharth Chatterjee",
+      "email": "siddharth.chatterjee@nalanda.edu",
+      "classCode": "10B"
+    },
+    {
+      "name": "Aditya Iyer",
+      "email": "aditya.iyer@nalanda.edu",
+      "classCode": "10B"
+    },
+    {
+      "name": "Meera Joshi",
+      "email": "meera.joshi@nalanda.edu",
+      "classCode": "10B"
+    },
+    {
+      "name": "Simran Banerjee",
+      "email": "simran.banerjee@nalanda.edu",
+      "classCode": "10B"
+    },
+    {
+      "name": "Nandini Dhar",
+      "email": "nandini.dhar@nalanda.edu",
+      "classCode": "10B"
+    },
+    {
+      "name": "Tarun Verma",
+      "email": "tarun.verma@nalanda.edu",
+      "classCode": "10B"
+    },
+    {
+      "name": "Bhavna Mehta",
+      "email": "bhavna.mehta@nalanda.edu",
+      "classCode": "10B"
+    },
+    {
+      "name": "Deepika Aggarwal",
+      "email": "deepika.aggarwal@nalanda.edu",
+      "classCode": "9A"
+    },
+    {
+      "name": "Priya Singh",
+      "email": "priya.singh@nalanda.edu",
+      "classCode": "9A"
+    },
+    {
+      "name": "Diya Nair",
+      "email": "diya.nair@nalanda.edu",
+      "classCode": "9A"
+    },
+    {
+      "name": "Vikram Bose",
+      "email": "vikram.bose@nalanda.edu",
+      "classCode": "9A"
+    },
+    {
+      "name": "Yashvardhan Kapoor",
+      "email": "yashvardhan.kapoor@nalanda.edu",
+      "classCode": "9A"
+    },
+    {
+      "name": "Riya Bhatt",
+      "email": "riya.bhatt@nalanda.edu",
+      "classCode": "9A"
+    },
+    {
+      "name": "Shreya Patel",
+      "email": "shreya.patel@nalanda.edu",
+      "classCode": "9A"
+    },
+    {
+      "name": "Divya Rao",
+      "email": "divya.rao@nalanda.edu",
+      "classCode": "9A"
+    },
+    {
+      "name": "Swati Menon",
+      "email": "swati.menon@nalanda.edu",
+      "classCode": "9A"
+    },
+    {
+      "name": "Lavanya Pillai",
+      "email": "lavanya.pillai@nalanda.edu",
+      "classCode": "9A"
+    },
+    {
+      "name": "Alok Sharma",
+      "email": "alok.sharma@nalanda.edu",
+      "classCode": "9A"
+    },
+    {
+      "name": "Payal Malhotra",
+      "email": "payal.malhotra@nalanda.edu",
+      "classCode": "9A"
+    },
+    {
+      "name": "Deepika Chopra",
+      "email": "deepika.chopra@nalanda.edu",
+      "classCode": "9A"
+    },
+    {
+      "name": "Priya Bhatia",
+      "email": "priya.bhatia@nalanda.edu",
+      "classCode": "9A"
+    },
+    {
+      "name": "Diya Sen",
+      "email": "diya.sen@nalanda.edu",
+      "classCode": "9A"
+    },
+    {
+      "name": "Vikram Gupta",
+      "email": "vikram.gupta@nalanda.edu",
+      "classCode": "9A"
+    },
+    {
+      "name": "Yashvardhan Deshmukh",
+      "email": "yashvardhan.deshmukh@nalanda.edu",
+      "classCode": "9A"
+    },
+    {
+      "name": "Riya Reddy",
+      "email": "riya.reddy@nalanda.edu",
+      "classCode": "9A"
+    },
+    {
+      "name": "Shreya Choudhury",
+      "email": "shreya.choudhury@nalanda.edu",
+      "classCode": "9A"
+    },
+    {
+      "name": "Divya Chatterjee",
+      "email": "divya.chatterjee@nalanda.edu",
+      "classCode": "9A"
+    },
+    {
+      "name": "Swati Iyer",
+      "email": "swati.iyer@nalanda.edu",
+      "classCode": "9A"
+    },
+    {
+      "name": "Lavanya Joshi",
+      "email": "lavanya.joshi@nalanda.edu",
+      "classCode": "9A"
+    },
+    {
+      "name": "Alok Banerjee",
+      "email": "alok.banerjee@nalanda.edu",
+      "classCode": "9A"
+    },
+    {
+      "name": "Payal Dhar",
+      "email": "payal.dhar@nalanda.edu",
+      "classCode": "9A"
+    },
+    {
+      "name": "Deepika Verma",
+      "email": "deepika.verma@nalanda.edu",
+      "classCode": "9A"
+    },
+    {
+      "name": "Priya Mehta",
+      "email": "priya.mehta@nalanda.edu",
+      "classCode": "9A"
+    },
+    {
+      "name": "Diya Saxena",
+      "email": "diya.saxena@nalanda.edu",
+      "classCode": "9A"
+    },
+    {
+      "name": "Vikram Mishra",
+      "email": "vikram.mishra@nalanda.edu",
+      "classCode": "9A"
+    },
+    {
+      "name": "Yashvardhan Goswami",
+      "email": "yashvardhan.goswami@nalanda.edu",
+      "classCode": "9A"
+    },
+    {
+      "name": "Riya Roy",
+      "email": "riya.roy@nalanda.edu",
+      "classCode": "9A"
+    },
+    {
+      "name": "Shreya Kulkarni",
+      "email": "shreya.kulkarni@nalanda.edu",
+      "classCode": "9A"
+    },
+    {
+      "name": "Divya Trivedi",
+      "email": "divya.trivedi@nalanda.edu",
+      "classCode": "9A"
+    },
+    {
+      "name": "Swati Aggarwal",
+      "email": "swati.aggarwal@nalanda.edu",
+      "classCode": "9B"
+    },
+    {
+      "name": "Lavanya Singh",
+      "email": "lavanya.singh@nalanda.edu",
+      "classCode": "9B"
+    },
+    {
+      "name": "Alok Nair",
+      "email": "alok.nair@nalanda.edu",
+      "classCode": "9B"
+    },
+    {
+      "name": "Payal Bose",
+      "email": "payal.bose@nalanda.edu",
+      "classCode": "9B"
+    },
+    {
+      "name": "Deepika Kapoor",
+      "email": "deepika.kapoor@nalanda.edu",
+      "classCode": "9B"
+    },
+    {
+      "name": "Priya Bhatt",
+      "email": "priya.bhatt@nalanda.edu",
+      "classCode": "9B"
+    },
+    {
+      "name": "Diya Patel",
+      "email": "diya.patel@nalanda.edu",
+      "classCode": "9B"
+    },
+    {
+      "name": "Vikram Rao",
+      "email": "vikram.rao@nalanda.edu",
+      "classCode": "9B"
+    },
+    {
+      "name": "Yashvardhan Menon",
+      "email": "yashvardhan.menon@nalanda.edu",
+      "classCode": "9B"
+    },
+    {
+      "name": "Riya Pillai",
+      "email": "riya.pillai@nalanda.edu",
+      "classCode": "9B"
+    },
+    {
+      "name": "Shreya Sharma",
+      "email": "shreya.sharma@nalanda.edu",
+      "classCode": "9B"
+    },
+    {
+      "name": "Divya Malhotra",
+      "email": "divya.malhotra@nalanda.edu",
+      "classCode": "9B"
+    },
+    {
+      "name": "Swati Chopra",
+      "email": "swati.chopra@nalanda.edu",
+      "classCode": "9B"
+    },
+    {
+      "name": "Lavanya Bhatia",
+      "email": "lavanya.bhatia@nalanda.edu",
+      "classCode": "9B"
+    },
+    {
+      "name": "Alok Sen",
+      "email": "alok.sen@nalanda.edu",
+      "classCode": "9B"
+    },
+    {
+      "name": "Payal Gupta",
+      "email": "payal.gupta@nalanda.edu",
+      "classCode": "9B"
+    },
+    {
+      "name": "Deepika Deshmukh",
+      "email": "deepika.deshmukh@nalanda.edu",
+      "classCode": "9B"
+    },
+    {
+      "name": "Priya Reddy",
+      "email": "priya.reddy@nalanda.edu",
+      "classCode": "9B"
+    },
+    {
+      "name": "Diya Choudhury",
+      "email": "diya.choudhury@nalanda.edu",
+      "classCode": "9B"
+    },
+    {
+      "name": "Vikram Chatterjee",
+      "email": "vikram.chatterjee@nalanda.edu",
+      "classCode": "9B"
+    },
+    {
+      "name": "Yashvardhan Iyer",
+      "email": "yashvardhan.iyer@nalanda.edu",
+      "classCode": "9B"
+    },
+    {
+      "name": "Riya Joshi",
+      "email": "riya.joshi@nalanda.edu",
+      "classCode": "9B"
+    },
+    {
+      "name": "Shreya Banerjee",
+      "email": "shreya.banerjee@nalanda.edu",
+      "classCode": "9B"
+    },
+    {
+      "name": "Divya Dhar",
+      "email": "divya.dhar@nalanda.edu",
+      "classCode": "9B"
+    },
+    {
+      "name": "Swati Verma",
+      "email": "swati.verma@nalanda.edu",
+      "classCode": "9B"
+    },
+    {
+      "name": "Lavanya Mehta",
+      "email": "lavanya.mehta@nalanda.edu",
+      "classCode": "9B"
+    },
+    {
+      "name": "Alok Saxena",
+      "email": "alok.saxena@nalanda.edu",
+      "classCode": "9B"
+    },
+    {
+      "name": "Payal Mishra",
+      "email": "payal.mishra@nalanda.edu",
+      "classCode": "9B"
+    },
+    {
+      "name": "Deepika Goswami",
+      "email": "deepika.goswami@nalanda.edu",
+      "classCode": "9B"
+    },
+    {
+      "name": "Priya Roy",
+      "email": "priya.roy@nalanda.edu",
+      "classCode": "9B"
+    },
+    {
+      "name": "Diya Kulkarni",
+      "email": "diya.kulkarni@nalanda.edu",
+      "classCode": "9B"
+    }
+  ],
+  "concepts": [
+    {
+      "key": "optics",
+      "name": "Optics",
+      "description": "Wave & Ray Optics, Refraction, Snell Law",
+      "subject": "Physics"
+    },
+    {
+      "key": "mechanics",
+      "name": "Mechanics",
+      "description": "Newton Laws, Kinematics, Friction, Rotational Dynamics",
+      "subject": "Physics"
+    },
+    {
+      "key": "electromagnetism",
+      "name": "Electromagnetism",
+      "description": "Coulomb Law, Gauss Law, Magnetic Induction",
+      "subject": "Physics"
+    },
+    {
+      "key": "thermodynamics",
+      "name": "Thermodynamics",
+      "description": "Heat Engines, Entropy, Kinetic Theory of Gases",
+      "subject": "Physics"
+    },
+    {
+      "key": "modern_physics",
+      "name": "Modern Physics",
+      "description": "Photoelectric Effect, Dual Nature, Atomic Spectra",
+      "subject": "Physics"
+    }
+  ]
+}

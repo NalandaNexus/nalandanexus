@@ -1,0 +1,413 @@
+/**
+ * Real HTTP client for the Nalanda Teacher backend (see backend/API_DOCUMENTATION.md).
+ *
+ * Every method here hits a real endpoint and returns real, live-computed data
+ * — there is no mock/demo fallback baked in. If the backend is unreachable or
+ * returns an error, callers get a rejected promise carrying an `ApiClientError`
+ * (with `.status` / `.code` / `.details`) so the UI can show a real error or
+ * empty state instead of silently substituting fake data.
+ */
+
+const API_BASE_URL = import.meta.env.VITE_TEACHER_API_URL || 'http://localhost:5002/api/teacher';
+
+// Cross-portal navigation links shown in the teacher UI (e.g. "Other Nalanda Portals").
+export const ADMIN_PORTAL_URL = import.meta.env.VITE_ADMIN_PORTAL_URL || 'http://localhost:5175';
+export const STUDENT_PORTAL_URL = import.meta.env.VITE_STUDENT_PORTAL_URL || 'http://localhost:3000';
+
+export class ApiClientError extends Error {
+  constructor(message, { status, code, details } = {}) {
+    super(message);
+    this.name = 'ApiClientError';
+    this.status = status ?? 0; // 0 = network-level failure (no response at all)
+    this.code = code || 'UNKNOWN_ERROR';
+    this.details = details;
+  }
+}
+
+/**
+ * One place that decides "the session is no longer valid" so every page
+ * doesn't have to special-case 401s itself. TeacherAuthContext registers
+ * itself here on mount.
+ */
+let sessionExpiredHandler = null;
+export function onSessionExpired(handler) {
+  sessionExpiredHandler = handler;
+}
+
+async function request(path, { method = 'GET', body, query, isFormData = false } = {}) {
+  let url = `${API_BASE_URL}${path}`;
+  if (query && Object.keys(query).length) {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(query)) {
+      if (value === undefined || value === null || value === '') continue;
+      params.set(key, value);
+    }
+    const qs = params.toString();
+    if (qs) url += `?${qs}`;
+  }
+
+  let res;
+  try {
+    res = await fetch(url, {
+      method,
+      credentials: 'include', // send/receive the httpOnly session cookie
+      headers: isFormData ? undefined : body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+      body: body !== undefined ? (isFormData ? body : JSON.stringify(body)) : undefined,
+    });
+  } catch (networkErr) {
+    throw new ApiClientError(
+      'Could not reach the Nalanda Teacher server. Check your connection and that the backend is running.',
+      { status: 0, code: 'NETWORK_ERROR' }
+    );
+  }
+
+  let json = null;
+  try {
+    json = await res.json();
+  } catch {
+    // Non-JSON response (e.g. a proxy error page) — fall through, handled below.
+  }
+
+  if (!res.ok) {
+    const message = json?.message || `Request failed with status ${res.status}.`;
+    const code = json?.error?.code || 'HTTP_ERROR';
+    if (res.status === 401 && sessionExpiredHandler) {
+      sessionExpiredHandler(code);
+    }
+    throw new ApiClientError(message, { status: res.status, code, details: json?.error?.details });
+  }
+
+  return json; // { success, message, data, meta? }
+}
+
+const get = (path, query) => request(path, { method: 'GET', query });
+const post = (path, body) => request(path, { method: 'POST', body: body ?? {} });
+const patch = (path, body) => request(path, { method: 'PATCH', body: body ?? {} });
+const del = (path) => request(path, { method: 'DELETE' });
+const postForm = (path, formData) => request(path, { method: 'POST', body: formData, isFormData: true });
+
+class TeacherApiService {
+  // ---- Auth ----
+  login(email, password, rememberMe) {
+    return post('/auth/login', { email, password, rememberMe }).then((r) => r.data);
+  }
+  logout() {
+    return post('/auth/logout').then((r) => r.data);
+  }
+  logoutAllSessions() {
+    return post('/auth/logout-all').then((r) => r.data);
+  }
+  me() {
+    return get('/auth/me').then((r) => r.data);
+  }
+  changePassword(currentPassword, newPassword) {
+    return post('/auth/change-password', { currentPassword, newPassword }).then((r) => r.data);
+  }
+
+  // ---- Profile ----
+  getProfile() {
+    return get('/profile').then((r) => r.data);
+  }
+  updateProfile(updates) {
+    return patch('/profile', updates).then((r) => r.data);
+  }
+  updatePreferences(preferences) {
+    return patch('/profile/preferences', preferences).then((r) => r.data);
+  }
+  uploadAvatar(file) {
+    const form = new FormData();
+    form.append('avatar', file);
+    return postForm('/profile/avatar', form).then((r) => r.data);
+  }
+
+  // ---- Dashboard ----
+  getDashboardOverview() {
+    return get('/dashboard/overview').then((r) => r.data);
+  }
+
+  // ---- Classes ----
+  getClasses(status) {
+    return get('/classes', { status }).then((r) => r.data);
+  }
+  getClassById(classId) {
+    return get(`/classes/${classId}`).then((r) => r.data);
+  }
+  createClass(payload) {
+    return post('/classes', payload).then((r) => r.data);
+  }
+  updateClass(classId, updates) {
+    return patch(`/classes/${classId}`, updates).then((r) => r.data);
+  }
+  archiveClass(classId) {
+    return del(`/classes/${classId}`).then((r) => r.data);
+  }
+  getClassStudents(classId, params = {}) {
+    return get(`/classes/${classId}/students`, params).then((r) => r);
+  }
+  getClassLeaderboard(classId, params = {}) {
+    return get(`/classes/${classId}/leaderboard`, params).then((r) => r.data);
+  }
+  getStudentCourseOptions() {
+    return get('/classes/course-options').then((r) => r.data);
+  }
+  syncClassEnrollment(classId) {
+    return post(`/classes/${classId}/sync-enrollment`).then((r) => r.data);
+  }
+
+  // ---- Students ----
+  getStudents(filters = {}) {
+    return get('/students', filters).then((r) => r);
+  }
+  getStudentById(studentId) {
+    return get(`/students/${studentId}`).then((r) => r.data);
+  }
+  createStudent(payload) {
+    return post('/students', payload).then((r) => r.data);
+  }
+  updateStudent(studentId, updates) {
+    return patch(`/students/${studentId}`, updates).then((r) => r.data);
+  }
+  archiveStudent(studentId) {
+    return del(`/students/${studentId}`).then((r) => r.data);
+  }
+
+  // ---- Assignments ----
+  getAssignments(params = {}) {
+    return get('/assignments', params).then((r) => r.data);
+  }
+  getAssignmentById(assignmentId) {
+    return get(`/assignments/${assignmentId}`).then((r) => r.data);
+  }
+  createAssignment(payload) {
+    return post('/assignments', payload).then((r) => r.data);
+  }
+  updateAssignment(assignmentId, updates) {
+    return patch(`/assignments/${assignmentId}`, updates).then((r) => r.data);
+  }
+  archiveAssignment(assignmentId) {
+    return del(`/assignments/${assignmentId}`).then((r) => r.data);
+  }
+  getAssignmentSubmissions(assignmentId) {
+    return get(`/assignments/${assignmentId}/submissions`).then((r) => r.data);
+  }
+
+  // ---- Submissions ----
+  getSubmission(submissionId) {
+    return get(`/submissions/${submissionId}`).then((r) => r.data);
+  }
+  recordSubmission(submissionId, payload) {
+    return patch(`/submissions/${submissionId}/record`, payload).then((r) => r.data);
+  }
+  gradeSubmission(submissionId, score, feedback) {
+    return patch(`/submissions/${submissionId}/grade`, { score, feedback }).then((r) => r.data);
+  }
+
+  // ---- Schedule ----
+  getSchedule(date) {
+    return get('/schedule', { date }).then((r) => r.data);
+  }
+  createSession(payload) {
+    return post('/schedule', payload).then((r) => r.data);
+  }
+  updateSession(sessionId, updates) {
+    return patch(`/schedule/${sessionId}`, updates).then((r) => r.data);
+  }
+  cancelSession(sessionId) {
+    return del(`/schedule/${sessionId}`).then((r) => r.data);
+  }
+  getLiveSession() {
+    return get('/schedule/live').then((r) => r.data);
+  }
+  getTimetable(params = {}) {
+    return get('/timetable', params).then((r) => r.data);
+  }
+
+  // ---- Attendance ----
+  getAttendance(params = {}) {
+    return get('/attendance', params).then((r) => r.data);
+  }
+  markAttendance(classId, date, records) {
+    return post('/attendance', { classId, date, records }).then((r) => r.data);
+  }
+  getAttendanceAnalytics(classId, days) {
+    return get(`/attendance/analytics/${classId}`, { days }).then((r) => r.data);
+  }
+
+  // ---- Analytics ----
+  getAvgScoreBreakdown() {
+    return get('/analytics/avg-score-breakdown').then((r) => r.data);
+  }
+  getConceptPerformance() {
+    return get('/analytics/concepts').then((r) => r.data);
+  }
+  getGradebook(classId) {
+    return get('/analytics/gradebook', { classId }).then((r) => r.data);
+  }
+  getPerformanceTrend(params = {}) {
+    const query = { ...params };
+    if (Array.isArray(query.studentIds)) query.studentIds = query.studentIds.join(',');
+    return get('/analytics/performance-trend', query).then((r) => r.data);
+  }
+
+  // ---- Notifications ----
+  getNotifications(params = {}) {
+    return get('/notifications', params).then((r) => ({ notifications: r.data || [], unreadCount: r.meta?.unreadCount ?? 0, meta: r.meta }));
+  }
+  getUnreadNotificationCount() {
+    return get('/notifications/unread-count').then((r) => r.data.count);
+  }
+  markNotificationRead(notificationId) {
+    return patch(`/notifications/${notificationId}/read`).then((r) => r.data);
+  }
+  markAllNotificationsRead() {
+    return patch('/notifications/read-all').then((r) => r.data);
+  }
+  deleteNotification(notificationId) {
+    return del(`/notifications/${notificationId}`).then((r) => r.data);
+  }
+
+  // ---- Courses ----
+  getCourses() {
+    return get('/courses').then((r) => r.data);
+  }
+  getAssignedCourses() {
+    return get('/courses/assigned').then((r) => r.data);
+  }
+  createCourse(payload) {
+    return post('/courses', payload).then((r) => r.data);
+  }
+  updateCourse(courseId, updates) {
+    return patch(`/courses/${courseId}`, updates).then((r) => r.data);
+  }
+  archiveCourse(courseId) {
+    return del(`/courses/${courseId}`).then((r) => r.data);
+  }
+
+  // ---- Exams ----
+  getExams() {
+    return get('/exams').then((r) => r.data);
+  }
+  createExam(payload) {
+    return post('/exams', payload).then((r) => r.data);
+  }
+  updateExam(examId, updates) {
+    return patch(`/exams/${examId}`, updates).then((r) => r.data);
+  }
+  deleteExam(examId) {
+    return del(`/exams/${examId}`).then((r) => r.data);
+  }
+
+  // ---- Resources ----
+  getResources() {
+    return get('/resources').then((r) => r.data);
+  }
+  uploadResource({ title, subject, classId }, file) {
+    const form = new FormData();
+    form.append('file', file);
+    form.append('title', title);
+    if (subject) form.append('subject', subject);
+    if (classId) form.append('classId', classId);
+    return postForm('/resources', form).then((r) => r.data);
+  }
+  downloadResource(resourceId) {
+    return post(`/resources/${resourceId}/download`).then((r) => r.data);
+  }
+  deleteResource(resourceId) {
+    return del(`/resources/${resourceId}`).then((r) => r.data);
+  }
+
+  // ---- Messages ----
+  getConversations() {
+    return get('/messages/conversations').then((r) => r.data);
+  }
+  startConversation(studentId) {
+    return post('/messages/conversations', { studentId }).then((r) => r.data);
+  }
+  getMessages(conversationId) {
+    return get(`/messages/conversations/${conversationId}`).then((r) => r.data);
+  }
+  sendMessage(conversationId, text) {
+    return post(`/messages/conversations/${conversationId}/messages`, { text }).then((r) => r.data);
+  }
+  markConversationRead(conversationId) {
+    return patch(`/messages/conversations/${conversationId}/read`).then((r) => r.data);
+  }
+
+  // ---- Announcements / Events / Convocation ----
+  getAnnouncements(params = {}) {
+    return get('/announcements', params).then((r) => r);
+  }
+  getAnnouncementById(announcementId) {
+    return get(`/announcements/${announcementId}`).then((r) => r.data);
+  }
+  createAnnouncement(payload, file) {
+    if (file) {
+      const form = new FormData();
+      for (const [key, value] of Object.entries(payload)) {
+        if (value === undefined || value === null) continue;
+        if (key === 'classes' && Array.isArray(value)) form.append(key, JSON.stringify(value));
+        else form.append(key, value);
+      }
+      form.append('attachment', file);
+      return postForm('/announcements', form).then((r) => r.data);
+    }
+    return post('/announcements', payload).then((r) => r.data);
+  }
+  updateAnnouncement(announcementId, updates) {
+    return patch(`/announcements/${announcementId}`, updates).then((r) => r.data);
+  }
+  publishAnnouncement(announcementId) {
+    return post(`/announcements/${announcementId}/publish`).then((r) => r.data);
+  }
+  archiveAnnouncement(announcementId) {
+    return post(`/announcements/${announcementId}/archive`).then((r) => r.data);
+  }
+  deleteAnnouncement(announcementId) {
+    return del(`/announcements/${announcementId}`).then((r) => r.data);
+  }
+  getAdminAnnouncements(params = {}) {
+    // AdminAnnouncement has no `id` virtual (unlike every other model in
+    // this app) — normalized here so consumers can treat it like any other
+    // list response instead of each needing to know to fall back to `_id`.
+    return get('/announcements/admin', params).then((r) => ({ ...r, data: (r.data || []).map((a) => ({ ...a, id: a.id || a._id })) }));
+  }
+
+  // ---- Reports ----
+  // A plain <a href> can't reliably carry the auth cookie cross-origin, so
+  // this fetches the CSV as an authenticated blob and triggers a
+  // client-side download — the same pattern already proven on the Admin
+  // Portal's Reports page.
+  async downloadReport(type, filters = {}) {
+    const query = new URLSearchParams({ type, ...filters }).toString();
+    const res = await fetch(`${API_BASE_URL}/reports/export?${query}`, { credentials: 'include' });
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
+      throw new ApiClientError(json.message || 'Failed to generate report', { status: res.status });
+    }
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `nalanda-${type}-report.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  }
+
+  // ---- Search ----
+  search(q) {
+    return get('/search', { q }).then((r) => r.data);
+  }
+
+  /** Resolves a backend-relative file URL (e.g. from Resource.fileUrl) to an absolute one. */
+  resolveFileUrl(relativeUrl) {
+    if (!relativeUrl) return relativeUrl;
+    if (/^https?:\/\//i.test(relativeUrl)) return relativeUrl;
+    const origin = API_BASE_URL.replace(/\/api\/teacher\/?$/, '');
+    return `${origin}${relativeUrl}`;
+  }
+}
+
+export const teacherApiService = new TeacherApiService();
+export default teacherApiService;

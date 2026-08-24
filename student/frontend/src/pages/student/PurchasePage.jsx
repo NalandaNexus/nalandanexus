@@ -1,0 +1,155 @@
+import React, { useState, useEffect } from 'react';
+import { Navigate, useNavigate } from 'react-router-dom';
+import { CheckCircle2, ShieldCheck, Sparkles, BookOpen, Award, Calendar } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
+import { useStudent } from '../../context/StudentContext';
+import { courseService } from '../../services/courseService';
+import { paymentService } from '../../services/paymentService';
+
+const COURSE_SLUG = 'prarambh';
+
+const STATUS_LABEL = {
+  'creating-order': 'Creating your order…',
+  'awaiting-checkout': 'Opening secure Razorpay checkout…',
+  'verifying-payment': 'Verifying your payment…',
+  verified: 'Payment verified! Setting up your course…',
+  'enrolled-free': 'Enrolling you…',
+};
+
+export default function PurchasePage() {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const { isEnrolled, refreshData } = useStudent();
+
+  const [course, setCourse] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isPurchasing, setIsPurchasing] = useState(false);
+  const [statusKey, setStatusKey] = useState('');
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    courseService
+      .getPublicCourse(COURSE_SLUG)
+      .then((data) => {
+        if (!cancelled) setCourse(data);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err.message || 'Unable to load course details.');
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Already purchased - no reason to see the paywall again.
+  if (isEnrolled === true) {
+    return <Navigate to="/student/dashboard" replace />;
+  }
+
+  const handlePurchase = async () => {
+    setIsPurchasing(true);
+    setError('');
+    try {
+      await paymentService.purchaseCourse({
+        courseSlug: COURSE_SLUG,
+        studentName: user?.name,
+        studentEmail: user?.email,
+        onStatus: setStatusKey,
+      });
+      await refreshData();
+      navigate('/student/dashboard', { replace: true });
+    } catch (err) {
+      setError(err.message || 'Payment could not be completed. Please try again.');
+    } finally {
+      setIsPurchasing(false);
+      setStatusKey('');
+    }
+  };
+
+  const priceLabel = course ? `₹${(course.priceInPaise / 100).toLocaleString('en-IN')}` : '₹5,000';
+  const originalPriceLabel = course?.originalPriceInPaise ? `₹${(course.originalPriceInPaise / 100).toLocaleString('en-IN')}` : null;
+
+  return (
+    <div className="min-h-screen bg-[#EDEAE0] flex items-center justify-center p-4 py-12">
+      <div className="w-full max-w-2xl bg-[#FAF9F4] border-2 border-[#DFDACB] rounded-3xl p-6 sm:p-10 shadow-lg space-y-6">
+        <div className="text-center space-y-2">
+          <div className="w-14 h-14 rounded-full bg-[#AB5236]/10 text-[#AB5236] flex items-center justify-center mx-auto">
+            <ShieldCheck className="w-7 h-7" />
+          </div>
+          <h1 className="font-display font-extrabold text-2xl text-[#22355E]">
+            One step left, {user?.name?.split(' ')[0] || 'Student'}
+          </h1>
+          <p className="text-sm text-[#2B2B28]/75 max-w-md mx-auto">
+            Your Nalanda Nexus account is ready. Purchase the {course?.title || 'PRARAMBH — The Awakening'} course to
+            unlock your student dashboard, lessons, tasks, quizzes, and leaderboard.
+          </p>
+        </div>
+
+        {isLoading ? (
+          <div className="p-8 text-center text-xs text-[#2B2B28]/60">Loading course details…</div>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="p-3.5 rounded-xl bg-white border border-[#DFDACB] flex items-center gap-2.5">
+                <Calendar className="w-4 h-4 text-[#AB5236] shrink-0" />
+                <span className="text-xs font-semibold text-[#22355E]">{course?.duration || '3 Months'}</span>
+              </div>
+              <div className="p-3.5 rounded-xl bg-white border border-[#DFDACB] flex items-center gap-2.5">
+                <BookOpen className="w-4 h-4 text-[#22355E] shrink-0" />
+                <span className="text-xs font-semibold text-[#22355E]">{course?.totalLessons ?? 13} lessons</span>
+              </div>
+              <div className="p-3.5 rounded-xl bg-white border border-[#DFDACB] flex items-center gap-2.5">
+                <Award className="w-4 h-4 text-[#C99A2E] shrink-0" />
+                <span className="text-xs font-semibold text-[#22355E]">Certificate on completion</span>
+              </div>
+            </div>
+
+            <div className="p-5 rounded-2xl bg-white border border-[#DFDACB] flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div>
+                <div className="flex items-baseline gap-2">
+                  <span className="font-data font-black text-3xl text-[#AB5236]">{priceLabel}</span>
+                  {originalPriceLabel && (
+                    <span className="font-data text-sm text-[#2B2B28]/50 line-through">{originalPriceLabel}</span>
+                  )}
+                </div>
+                <p className="text-[11px] text-[#2B2B28]/60 mt-1 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-[#C99A2E]" />
+                  Secure checkout powered by Razorpay
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handlePurchase}
+                disabled={isPurchasing}
+                className="w-full sm:w-auto px-8 py-3.5 bg-[#AB5236] hover:bg-[#92422a] disabled:opacity-60 text-white font-heading font-bold text-sm rounded-full shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 min-h-[48px]"
+              >
+                {isPurchasing ? (
+                  <>
+                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    <span>{STATUS_LABEL[statusKey] || 'Processing…'}</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Purchase & Unlock Dashboard</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {error && (
+              <p className="text-xs font-semibold text-[#AB5236] bg-[#AB5236]/10 border border-[#AB5236]/30 rounded-lg px-3 py-2.5 text-center">
+                {error}
+              </p>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}

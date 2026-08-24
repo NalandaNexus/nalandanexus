@@ -1,0 +1,26 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "admin-frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "C:/Users/adars/Downloads/Nalanda/admin/frontend"],
+      "port": 5175,
+      "autoPort": false
+    },
+    {
+      "name": "student-frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "C:/Users/adars/Downloads/Nalanda/student/frontend"],
+      "port": 3000,
+      "autoPort": false
+    },
+    {
+      "name": "teacher-frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "C:/Users/adars/Downloads/Nalanda/teacher/frontend"],
+      "port": 5174,
+      "autoPort": false
+    }
+  ]
+}
