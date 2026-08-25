@@ -7,6 +7,18 @@ function required(name, fallback) {
   return value;
 }
 
+// A trailing slash here (easy to introduce when pasting a URL straight from
+// a browser address bar into Render's dashboard) breaks CORS outright: the
+// browser's real Origin header never has a trailing slash, but the exact-match
+// check below (env.clientUrls.includes(origin)) would then never match, so
+// every cross-origin request - including the login preflight - gets silently
+// rejected by the browser. Confirmed as the actual root cause of the same bug
+// on admin/backend and teacher/backend; stripped here too so deploy-time URL
+// formatting can't take down auth.
+function stripTrailingSlash(url) {
+  return url.replace(/\/+$/, '');
+}
+
 export const env = {
   nodeEnv: process.env.NODE_ENV || 'development',
   isProd: process.env.NODE_ENV === 'production',
@@ -16,10 +28,10 @@ export const env = {
   // not Vite's own default of 5173 - this project pins a custom port.
   // Accepts a comma-separated list (e.g. "https://app.example.com,https://staging.example.com")
   // so a staging + production frontend can share one backend deployment.
-  clientUrl: process.env.CLIENT_URL || 'http://localhost:3000',
+  clientUrl: stripTrailingSlash(process.env.CLIENT_URL || 'http://localhost:3000'),
   clientUrls: (process.env.CLIENT_URL || 'http://localhost:3000')
     .split(',')
-    .map((u) => u.trim())
+    .map((u) => stripTrailingSlash(u.trim()))
     .filter(Boolean),
 
   mongoUri: required('MONGODB_URI', 'mongodb://127.0.0.1:27017/nalanda_nexus'),

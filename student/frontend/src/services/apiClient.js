@@ -1,15 +1,19 @@
 /**
  * Centralized API client for the Nalanda Nexus backend.
  *
- * - Single base URL (VITE_API_URL), single place to attach auth headers,
- *   normalize errors, and transparently refresh an expired access token.
+ * - Single base URL (VITE_API_URL, or VITE_STUDENT_API_URL to match the
+ *   admin/teacher portals' naming convention - both are accepted so a
+ *   deploy-time env var name mismatch can't silently fall back to
+ *   localhost), single place to attach auth headers, normalize errors,
+ *   and transparently refresh an expired access token.
  * - Access token is kept in memory (module-level) + mirrored into
  *   sessionStorage only so it survives a hard page reload without relying
  *   on a JS-readable long-lived secret in localStorage. The *real* session
  *   persistence is the httpOnly refresh-token cookie the backend sets -
  *   this in-memory token is just a short-lived convenience copy.
  */
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
+const API_BASE_URL =
+  import.meta.env.VITE_STUDENT_API_URL || import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
 
 let accessToken = null;
 try {

@@ -7,7 +7,9 @@ import { getAccessToken } from './apiClient';
  * joined server-side to a private `user:<id>` room - never a global stream
  * of other students' activity (master doc section 13/44).
  */
-const SOCKET_URL = (import.meta.env.VITE_API_URL || 'http://localhost:5001/api').replace(/\/api\/?$/, '');
+const SOCKET_URL = (
+  import.meta.env.VITE_STUDENT_API_URL || import.meta.env.VITE_API_URL || 'http://localhost:5001/api'
+).replace(/\/api\/?$/, '');
 
 let socket = null;
 
