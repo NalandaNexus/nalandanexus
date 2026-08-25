@@ -4,6 +4,9 @@
   "description": "Nalanda Master Administration API Service",
   "main": "src/server.js",
   "type": "module",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
@@ -34,7 +37,6 @@
     "mongoose": "^8.9.5",
     "morgan": "^1.10.0",
     "multer": "^2.2.0",
-    "nodemailer": "^6.9.16",
     "socket.io": "^4.8.1",
     "zod": "^3.24.1"
   },

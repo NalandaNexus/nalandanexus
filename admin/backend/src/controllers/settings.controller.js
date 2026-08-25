@@ -7,12 +7,8 @@ export const get = catchAsync(async (req, res) => {
   const settings = await settingsService.getSettings();
   // Derived from real env state, not a persisted preference — lets the
   // frontend show an honest email-delivery status instead of a hardcoded
-  // "dev mode" label written before real SMTP integration existed.
-  const smtpStatus = !env.smtp.host
-    ? 'NOT_CONFIGURED'
-    : env.smtp.pass
-      ? 'CONFIGURED'
-      : 'INCOMPLETE';
+  // "dev mode" label written before real email integration existed.
+  const smtpStatus = env.email.sendgridApiKey ? 'CONFIGURED' : 'NOT_CONFIGURED';
   return sendSuccess(res, { data: { ...settings.toObject(), smtpStatus } });
 });
 
