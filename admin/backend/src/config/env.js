@@ -6,10 +6,21 @@ function required(name, fallback = undefined) {
   return process.env[name] ?? fallback;
 }
 
+// A trailing slash here (easy to introduce when pasting a URL straight from
+// a browser address bar into Render's dashboard) breaks CORS outright: the
+// `cors` package echoes this string back verbatim as Access-Control-Allow-Origin,
+// and browsers require that header to match the request's Origin byte-for-byte
+// (which never has a trailing slash) - so every cross-origin request, including
+// the login preflight, gets silently rejected by the browser. Stripped here so
+// deploy-time URL formatting can't take down auth.
+function stripTrailingSlash(url) {
+  return url.replace(/\/+$/, '');
+}
+
 export const env = {
   nodeEnv: process.env.NODE_ENV || 'development',
   port: parseInt(process.env.PORT, 10) || 5003,
-  clientUrl: process.env.CLIENT_URL || 'http://localhost:5175',
+  clientUrl: stripTrailingSlash(process.env.CLIENT_URL || 'http://localhost:5175'),
   serverUrl: process.env.SERVER_URL || 'http://localhost:5003',
 
   mongodbUri: required('MONGODB_URI', 'mongodb://127.0.0.1:27017/nalanda_admin'),

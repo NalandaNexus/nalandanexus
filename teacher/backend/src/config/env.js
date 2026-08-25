@@ -7,10 +7,21 @@ function required(name, fallback = undefined) {
   return value;
 }
 
+// A trailing slash here (easy to introduce when pasting a URL straight from
+// a browser address bar into Render's dashboard) breaks CORS outright: the
+// `cors` package echoes this string back verbatim as Access-Control-Allow-Origin,
+// and browsers require that header to match the request's Origin byte-for-byte
+// (which never has a trailing slash) - so every cross-origin request, including
+// the login preflight, gets silently rejected by the browser. Stripped here so
+// deploy-time URL formatting can't take down auth.
+function stripTrailingSlash(url) {
+  return url.replace(/\/+$/, '');
+}
+
 export const env = {
   nodeEnv: process.env.NODE_ENV || 'development',
   port: parseInt(process.env.PORT, 10) || 5002,
-  clientUrl: process.env.CLIENT_URL || 'http://localhost:5174',
+  clientUrl: stripTrailingSlash(process.env.CLIENT_URL || 'http://localhost:5174'),
   // This backend's own publicly-reachable base URL, used only to build
   // absolute /uploads/... links when bridging a resource/attachment to the
   // student portal (a different origin, so a relative path wouldn't resolve).
