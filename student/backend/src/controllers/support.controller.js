@@ -12,9 +12,9 @@ export const listMyTickets = asyncHandler(async (req, res) => {
 /**
  * Persists the ticket first (the database write is the source of truth),
  * then emails the support team - best-effort and genuinely non-blocking
- * (sendEmailDetached), so an unreachable SMTP host delays the student's
- * confirmation by exactly nothing. email.service.js#sendEmail logs to
- * console instead of sending when SMTP is unconfigured.
+ * (sendEmailDetached), so a slow or unreachable mail provider delays the
+ * student's confirmation by exactly nothing. email.service.js#sendEmail
+ * logs to console instead of sending when no API key is configured.
  */
 export const createTicket = asyncHandler(async (req, res) => {
   const ticket = await SupportTicket.create({

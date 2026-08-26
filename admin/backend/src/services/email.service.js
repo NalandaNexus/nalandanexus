@@ -1,49 +1,73 @@
-import nodemailer from 'nodemailer';
 import { env } from '../config/env.js';
 
-let transporter = null;
+const SENDGRID_ENDPOINT = 'https://api.sendgrid.com/v3/mail/send';
 
-function getTransporter() {
-  if (!env.smtp.host) return null;
-  if (!transporter) {
-    transporter = nodemailer.createTransport({
-      host: env.smtp.host,
-      port: env.smtp.port,
-      secure: env.smtp.port === 465,
-      auth: env.smtp.user ? { user: env.smtp.user, pass: env.smtp.pass } : undefined,
-      // Nodemailer defaults to 2 minutes to connect and 10 on the socket.
-      // Teacher creation awaits this send inline (it records whether the
-      // credentials actually reached the teacher), so on a host that drops
-      // outbound SMTP - the norm on managed PaaS tiers - creating a teacher
-      // becomes a two-minute hang that the admin UI times out on, even
-      // though the teacher record itself saved fine. Fail fast and let the
-      // caller fall back to showing the credentials in-app.
-      connectionTimeout: 8000,
-      greetingTimeout: 8000,
-      socketTimeout: 12000,
-    });
-  }
-  return transporter;
+/** Splits "Name <email@x.com>" into its parts; falls back to treating the whole string as the address. */
+function parseFrom(from) {
+  const match = from.match(/^(.*)<(.+)>$/);
+  if (match) return { name: match[1].trim().replace(/^"|"$/g, ''), email: match[2].trim() };
+  return { email: from.trim() };
 }
 
 /**
- * Sends an email if SMTP is configured; otherwise logs it (dev/demo mode).
- * Never throws - a failed notification email should not break the calling
- * request. Returns a real, honest delivery status either way (never
- * `{delivered: true}` unless nodemailer actually accepted the send) so
- * callers like teacher.service.js#createTeacher can surface a genuine
- * warning instead of pretending credentials were received.
+ * Sends an email via SendGrid's HTTPS API if configured; otherwise logs it
+ * (dev/demo mode). Never throws - a failed notification email should not
+ * break the calling request. Returns a real, honest delivery status either
+ * way (never `{delivered: true}` unless SendGrid actually accepted the
+ * send) so callers like teacher.service.js#createTeacher can surface a
+ * genuine warning instead of pretending credentials were received.
+ *
+ * Uses SendGrid's plain HTTPS API (not SMTP) because Render blocks outbound
+ * SMTP ports (25/465/587) on free-tier web services - confirmed live via a
+ * "Connection timeout" on every SMTP send attempt regardless of credentials.
+ * HTTPS (443) is never blocked, and Node's built-in fetch avoids adding a
+ * new dependency for this. *
+ * The send is bounded by an explicit AbortController timeout because Node's
+ * fetch has none of its own: an unreachable or slow SendGrid would otherwise
+ * hold the HTTP request open indefinitely. Registration and teacher creation
+ * both await this inline (their response text depends on whether delivery
+ * actually happened), so an unbounded send there is a hang the user sees.
  */
 export async function send({ to, subject, text, html }) {
-  const t = getTransporter();
-  if (!t) {
+  if (!env.email.sendgridApiKey) {
     // eslint-disable-next-line no-console
     console.log(`[email:stub] To: ${to} | Subject: ${subject}\n${text}`);
     return { delivered: false, stubbed: true };
   }
 
+  const content = [{ type: 'text/plain', value: text || ' ' }];
+  if (html) content.push({ type: 'text/html', value: html });
+
   try {
-    await t.sendMail({ from: env.smtp.from, to, subject, text, html });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    let res;
+    try {
+      res = await fetch(SENDGRID_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${env.email.sendgridApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          personalizations: [{ to: [{ email: to }] }],
+          from: parseFrom(env.email.from),
+          subject,
+          content,
+        }),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      // eslint-disable-next-line no-console
+      console.error('[email] SendGrid rejected the send:', res.status, body);
+      return { delivered: false, error: true };
+    }
+
     return { delivered: true };
   } catch (err) {
     // eslint-disable-next-line no-console

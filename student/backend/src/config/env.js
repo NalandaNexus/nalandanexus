@@ -62,11 +62,11 @@ export const env = {
     mockMode: process.env.PAYMENTS_MOCK_MODE === 'true' || process.env.NODE_ENV === 'test',
   },
 
-  smtp: {
-    host: process.env.SMTP_HOST || '',
-    port: Number(process.env.SMTP_PORT) || 587,
-    user: process.env.SMTP_USER || '',
-    pass: process.env.SMTP_PASS || '',
+  // Sent via SendGrid's HTTPS API (not SMTP) - Render blocks outbound SMTP
+  // ports (25/465/587) on free-tier web services, so raw SMTP can never work
+  // there regardless of credentials; HTTPS (443) is never blocked.
+  email: {
+    sendgridApiKey: process.env.SENDGRID_API_KEY || '',
     from: process.env.SMTP_FROM || 'Nalanda Nexus <no-reply@nalandanexus.edu>',
   },
 
