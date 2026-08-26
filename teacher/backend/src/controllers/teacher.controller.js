@@ -24,7 +24,11 @@ export const uploadAvatar = catchAsync(async (req, res, next) => {
   if (!req.file) {
     return next(ApiError.badRequest('An image file is required.', 'FILE_REQUIRED'));
   }
-  const url = publicUrlFor('avatars', path.basename(req.file.path));
+  // req.file.filename is the stored identifier: a Cloudinary delivery URL
+  // in production, a generated disk filename locally. publicUrlFor handles
+  // both. (It used to read basename(req.file.path), which only exists on
+  // the disk path and yields the wrong thing for a URL.)
+  const url = publicUrlFor('avatars', req.file.filename);
   const profile = await teacherService.updateAvatar(req.teacher._id, url);
   sendSuccess(res, { message: 'Avatar updated.', data: profile });
 });

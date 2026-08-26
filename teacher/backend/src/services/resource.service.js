@@ -7,6 +7,8 @@ import { assertClassOwnership } from './class.service.js';
 import { logAudit } from './audit.service.js';
 import { UPLOADS_ROOT } from '../middleware/upload.js';
 import { pushResourceToStudents, retractResourceFromStudents } from './studentBridge.service.js';
+import { publicUrlFor } from '../middleware/upload.js';
+import { destroyCloudinaryAsset } from '../middleware/cloudinaryStorage.js';
 
 function shape(r) {
   return {
@@ -50,7 +52,7 @@ export async function createResource(teacherId, { title, subject, classId }, fil
   const resource = await Resource.create({
     title,
     type: inferType(file.mimetype),
-    fileUrl: `/uploads/resources/${file.filename}`,
+    fileUrl: publicUrlFor('resources', file.filename),
     fileName: file.originalname,
     fileSize: file.size,
     subject: subject || null,
@@ -89,7 +91,11 @@ export async function deleteResource(teacherId, resourceId, ip) {
   // static /uploads/... URL even after the record — and the UI's "delete" —
   // says it's gone. Best-effort: a missing file (already cleaned up, moved,
   // etc.) must not turn a successful delete into a 500.
-  if (resource.fileUrl) {
+  if (resource.fileUrl && /^https?:\/\//i.test(resource.fileUrl)) {
+    // Stored in Cloudinary rather than on this disk - deleting the local
+    // path would silently no-op and orphan the remote asset forever.
+    await destroyCloudinaryAsset(resource.fileUrl);
+  } else if (resource.fileUrl) {
     const filePath = path.join(UPLOADS_ROOT, resource.fileUrl.replace(/^\/uploads\//, ''));
     try {
       await fs.unlink(filePath);

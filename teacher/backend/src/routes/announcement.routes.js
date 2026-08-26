@@ -9,6 +9,7 @@ import {
   listAnnouncementsValidator,
 } from '../validators/announcement.validators.js';
 import { uploaderFor, verifyFileSignature } from '../middleware/upload.js';
+import { uploadToCloudinary } from '../middleware/cloudinaryStorage.js';
 
 const router = Router();
 router.use(authenticate, requireRole('teacher'));
@@ -20,8 +21,8 @@ router.get('/', listAnnouncementsValidator, validate, announcementController.lis
 // ObjectId param route and rejected as an invalid identifier.
 router.get('/admin', announcementController.listAdminAnnouncements);
 router.get('/:id', objectIdParam('id'), validate, announcementController.getAnnouncement);
-router.post('/', announcementUpload.single('attachment'), verifyFileSignature, createAnnouncementValidator, validate, announcementController.createAnnouncement);
-router.patch('/:id', objectIdParam('id'), announcementUpload.single('attachment'), verifyFileSignature, updateAnnouncementValidator, validate, announcementController.updateAnnouncement);
+router.post('/', announcementUpload.single('attachment'), verifyFileSignature, uploadToCloudinary('announcements'), createAnnouncementValidator, validate, announcementController.createAnnouncement);
+router.patch('/:id', objectIdParam('id'), announcementUpload.single('attachment'), verifyFileSignature, uploadToCloudinary('announcements'), updateAnnouncementValidator, validate, announcementController.updateAnnouncement);
 router.post('/:id/publish', objectIdParam('id'), validate, announcementController.publishAnnouncement);
 router.post('/:id/archive', objectIdParam('id'), validate, announcementController.archiveAnnouncement);
 router.delete('/:id', objectIdParam('id'), validate, announcementController.deleteAnnouncement);

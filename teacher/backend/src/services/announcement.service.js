@@ -12,6 +12,8 @@ import { UPLOADS_ROOT } from '../middleware/upload.js';
 import { pushAnnouncementToStudents, retractAnnouncementFromStudents } from './studentBridge.service.js';
 import { pushAnnouncementActivity, retractAnnouncementActivity } from './adminBridge.service.js';
 import { AdminAnnouncement } from '../models/AdminAnnouncement.js';
+import { publicUrlFor } from '../middleware/upload.js';
+import { destroyCloudinaryAsset } from '../middleware/cloudinaryStorage.js';
 
 const WRITABLE_FIELDS = [
   'title',
@@ -150,7 +152,7 @@ export async function createAnnouncement(teacherId, body, file, ip) {
   if (doc.status === 'published') doc.publishedAt = new Date();
 
   if (file) {
-    doc.attachmentUrl = `/uploads/announcements/${file.filename}`;
+    doc.attachmentUrl = publicUrlFor('announcements', file.filename);
     doc.attachmentName = file.originalname;
   }
 
@@ -220,7 +222,7 @@ export async function updateAnnouncement(teacherId, id, body, file, ip) {
 
   if (file) {
     if (announcement.attachmentUrl) await removeUploadedFile(announcement.attachmentUrl);
-    announcement.attachmentUrl = `/uploads/announcements/${file.filename}`;
+    announcement.attachmentUrl = publicUrlFor('announcements', file.filename);
     announcement.attachmentName = file.originalname;
   }
 
@@ -293,6 +295,15 @@ export async function deleteAnnouncement(teacherId, id, ip) {
 }
 
 async function removeUploadedFile(fileUrl) {
+  // An absolute URL means the attachment lives in Cloudinary, not on this
+  // disk. Without this branch the path.join below produced a nonsense local
+  // path, the unlink failed as ENOENT, and the remote asset was silently
+  // orphaned - storage that nothing would ever reclaim.
+  if (/^https?:\/\//i.test(fileUrl)) {
+    await destroyCloudinaryAsset(fileUrl);
+    return;
+  }
+
   const filePath = path.join(UPLOADS_ROOT, fileUrl.replace(/^\/uploads\//, ''));
   try {
     await fs.unlink(filePath);

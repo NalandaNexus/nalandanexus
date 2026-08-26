@@ -3,6 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { isCloudinaryConfigured } from './cloudinaryStorage.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const UPLOADS_ROOT = path.resolve(__dirname, '../../uploads');
@@ -28,13 +29,18 @@ const EXT_BY_MIME = {
   'image/gif': '.gif',
 };
 
-const avatarStorage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, path.join(UPLOADS_ROOT, 'avatars')),
-  filename: (req, file, cb) => {
-    const ext = EXT_BY_MIME[file.mimetype] || '.bin';
-    cb(null, `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${ext}`);
-  },
-});
+// Local disk is only a development fallback. In production the filesystem
+// is ephemeral (see cloudinaryStorage.js), so the file is held in memory
+// just long enough to verify its magic bytes and hand it to Cloudinary.
+const avatarStorage = isCloudinaryConfigured
+  ? multer.memoryStorage()
+  : multer.diskStorage({
+    destination: (req, file, cb) => cb(null, path.join(UPLOADS_ROOT, 'avatars')),
+    filename: (req, file, cb) => {
+      const ext = EXT_BY_MIME[file.mimetype] || '.bin';
+      cb(null, `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${ext}`);
+    },
+  });
 
 function avatarFileFilter(req, file, cb) {
   if (!ALLOWED_AVATAR_MIME.includes(file.mimetype)) {
@@ -94,23 +100,36 @@ export function verifyImageSignature(req, res, next) {
 
   let handle;
   try {
-    const header = Buffer.alloc(12);
-    handle = fs.openSync(req.file.path, 'r');
-    fs.readSync(handle, header, 0, 12, 0);
-    fs.closeSync(handle);
-    handle = null;
+    // Memory storage (the Cloudinary path) gives us the bytes directly;
+    // disk storage means reading the header back off the file just written.
+    let header;
+    if (req.file.buffer) {
+      header = req.file.buffer.subarray(0, 12);
+    } else {
+      header = Buffer.alloc(12);
+      handle = fs.openSync(req.file.path, 'r');
+      fs.readSync(handle, header, 0, 12, 0);
+      fs.closeSync(handle);
+      handle = null;
+    }
 
     if (matchesSignature(header, req.file.mimetype)) return next();
   } catch (err) {
     if (handle !== null && handle !== undefined) {
       try { fs.closeSync(handle); } catch { /* already closed */ }
     }
-    try { fs.unlinkSync(req.file.path); } catch { /* nothing written */ }
+    if (req.file.path) {
+      try { fs.unlinkSync(req.file.path); } catch { /* nothing written */ }
+    }
     return next(err);
   }
 
   // Content didn't match the declared type - don't keep the file around.
-  try { fs.unlinkSync(req.file.path); } catch { /* already gone */ }
+  // Nothing has been sent to Cloudinary yet, so on that path there is
+  // nothing to undo; only a disk write needs cleaning up.
+  if (req.file.path) {
+    try { fs.unlinkSync(req.file.path); } catch { /* already gone */ }
+  }
   const error = new multer.MulterError(
     'LIMIT_UNEXPECTED_FILE',
     'That file is not a valid image. Please upload a PNG, JPEG, WebP, or GIF.'
@@ -118,9 +137,14 @@ export function verifyImageSignature(req, res, next) {
   return next(error);
 }
 
-/** Public URL path for a stored avatar, served statically by app.js. */
-export function avatarPublicUrl(filename) {
-  return `/uploads/avatars/${filename}`;
+/**
+ * Public URL for a stored avatar. A Cloudinary upload already carries an
+ * absolute delivery URL, so it passes straight through; a local disk upload
+ * gets the /uploads path app.js serves statically.
+ */
+export function avatarPublicUrl(filenameOrUrl) {
+  if (/^https?:\/\//i.test(filenameOrUrl)) return filenameOrUrl;
+  return `/uploads/avatars/${filenameOrUrl}`;
 }
 
 export default avatarUpload;
