@@ -4,6 +4,7 @@ import { ArrowLeft, User, Check, Save, Camera } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useStudent } from '../../context/StudentContext';
 import { studentApiService } from '../../services/studentApiService';
+import { resolveAssetUrl } from '../../services/apiClient';
 
 export default function SettingsPage() {
   const { user } = useAuth();
@@ -81,7 +82,7 @@ export default function SettingsPage() {
           <div className="flex items-center gap-4">
             <div className="relative shrink-0">
               {student?.avatar ? (
-                <img src={student.avatar} alt="" className="w-16 h-16 rounded-full object-cover border border-[#DFDACB]" />
+                <img src={resolveAssetUrl(student.avatar)} alt="" className="w-16 h-16 rounded-full object-cover border border-[#DFDACB]" />
               ) : (
                 <div className="w-16 h-16 rounded-full bg-[#22355E] text-white flex items-center justify-center font-bold text-lg">
                   {(name || 'S').slice(0, 1).toUpperCase()}

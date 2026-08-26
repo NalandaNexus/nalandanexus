@@ -120,13 +120,6 @@ export async function validateCredentials(email, password) {
   if (!user) {
     throw AppError.unauthorized('Invalid email or password', 'INVALID_CREDENTIALS');
   }
-  if (!user.isActive) {
-    throw AppError.unauthorized('This account has been deactivated. Contact support.', 'ACCOUNT_INACTIVE');
-  }
-  if (!user.isVerified) {
-    throw AppError.forbidden('Please verify your email before logging in. Check your inbox for the verification link.', 'EMAIL_NOT_VERIFIED');
-  }
-
   // Google-only accounts (no password ever set) must not be brute-forceable
   // via this endpoint - fail with the same generic message.
   if (!user.passwordHash) {
@@ -136,6 +129,21 @@ export async function validateCredentials(email, password) {
   const isMatch = await comparePassword(password, user.passwordHash);
   if (!isMatch) {
     throw AppError.unauthorized('Invalid email or password', 'INVALID_CREDENTIALS');
+  }
+
+  // Account-state checks run only AFTER the password is proven correct.
+  // Checking them earlier leaked account existence: submitting any wrong
+  // password to a registered-but-unverified address returned 403
+  // EMAIL_NOT_VERIFIED while an unregistered address returned 401
+  // INVALID_CREDENTIALS, so an attacker could enumerate which emails have
+  // accounts without knowing a single password (confirmed live). Now only
+  // someone who already knows the correct password can distinguish these,
+  // which is exactly who needs the actionable message.
+  if (!user.isActive) {
+    throw AppError.unauthorized('This account has been deactivated. Contact support.', 'ACCOUNT_INACTIVE');
+  }
+  if (!user.isVerified) {
+    throw AppError.forbidden('Please verify your email before logging in. Check your inbox for the verification link.', 'EMAIL_NOT_VERIFIED');
   }
 
   return user;
@@ -265,10 +273,16 @@ function parseExpiryMs(expr) {
   return value * multipliers[unit];
 }
 
+// SameSite comes from config (env.cookieSameSite) rather than being hardcoded
+// to 'strict': the frontend and backend are deployed on different registrable
+// domains, so 'strict' meant the browser never sent the refresh cookie back
+// and session persistence was dead in production. See config/env.js.
+// SameSite=None is only honoured on Secure cookies, so force Secure whenever
+// 'none' is in effect (it is already true in production anyway).
 export const cookieOptions = {
   httpOnly: true,
-  secure: env.isProd,
-  sameSite: env.isProd ? 'strict' : 'lax',
+  secure: env.isProd || env.cookieSameSite === 'none',
+  sameSite: env.cookieSameSite,
   path: '/',
 };
 

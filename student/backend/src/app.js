@@ -43,7 +43,13 @@ export function createApp() {
         if (!origin || env.clientUrls.includes(origin)) {
           return callback(null, true);
         }
-        return callback(new Error('Not allowed by CORS'));
+        // Tagged so the global error handler can answer 403 instead of a
+        // misleading 500 - a disallowed origin is a rejected request, not a
+        // server fault, and a 500 here also makes real outages harder to spot
+        // in logs/monitoring.
+        const err = new Error('Not allowed by CORS');
+        err.isCorsError = true;
+        return callback(err);
       },
       credentials: true,
     })

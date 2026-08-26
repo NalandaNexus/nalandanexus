@@ -7,6 +7,7 @@ import NotificationPopover from './NotificationPopover';
 import CalendarPopover from './CalendarPopover';
 import { useAuth } from '../../context/AuthContext';
 import { useStudent } from '../../context/StudentContext';
+import { resolveAssetUrl } from '../../services/apiClient';
 
 export default function ReturningHeader() {
   const navigate = useNavigate();
@@ -63,7 +64,7 @@ export default function ReturningHeader() {
           <div className="relative w-10 h-10 rounded-full bg-[#22355E] text-[#EDEAE0] flex items-center justify-center font-heading font-bold text-sm shadow-sm ring-2 ring-[#DFDACB] shrink-0">
             {student?.avatar ? (
               <img
-                src={student.avatar}
+                src={resolveAssetUrl(student.avatar)}
                 alt={studentName}
                 className="w-full h-full rounded-full object-cover"
               />

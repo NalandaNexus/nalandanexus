@@ -15,6 +15,24 @@
 const API_BASE_URL =
   import.meta.env.VITE_STUDENT_API_URL || import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
 
+/**
+ * Origin that serves backend-hosted files (avatars under /uploads/...).
+ * The API returns those as ROOT-RELATIVE paths ("/uploads/avatars/x.png").
+ * Rendering them directly resolves against the frontend origin, which on a
+ * split-domain deployment (frontend on Vercel, backend on Render) 404s every
+ * uploaded avatar - confirmed live. Strip the trailing "/api" to get the
+ * backend origin and prefix such paths with it.
+ */
+const ASSET_BASE_URL = API_BASE_URL.replace(/\/api\/?$/, '');
+
+/** Absolute URL for a backend-served asset path; passes through absolute URLs, data: URIs and empty values. */
+export function resolveAssetUrl(pathOrUrl) {
+  if (!pathOrUrl) return pathOrUrl;
+  if (/^(https?:)?\/\//i.test(pathOrUrl) || pathOrUrl.startsWith('data:')) return pathOrUrl;
+  if (pathOrUrl.startsWith('/uploads/')) return `${ASSET_BASE_URL}${pathOrUrl}`;
+  return pathOrUrl;
+}
+
 let accessToken = null;
 try {
   accessToken = sessionStorage.getItem('nalanda_access_token') || null;

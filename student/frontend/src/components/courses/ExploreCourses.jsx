@@ -44,9 +44,15 @@ export default function ExploreCourses() {
     setSelectedCategory(catId);
   };
 
+  // The default "all" tab shows the admin-curated Course.isPopular set, but
+  // falls back to the full published catalog when nothing is flagged popular.
+  // Without this the homepage's primary course grid renders completely empty
+  // whenever no course has isPopular set - which is exactly the state the
+  // production database is in (confirmed live: /public/courses?popular=true
+  // returns []), so every visitor saw an empty "Explore Learning" section.
   const filteredCourses =
     selectedCategory === 'all'
-      ? popularCourses
+      ? (popularCourses.length > 0 ? popularCourses : courses)
       : courses.filter((c) => c.category === selectedCategory);
 
   return (

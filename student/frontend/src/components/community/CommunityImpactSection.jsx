@@ -4,6 +4,7 @@ import { Play, Star, Quote } from 'lucide-react';
 import { playTone } from '../../utils/sound';
 import PrarambhModal from '../hero/PrarambhModal';
 import { statsService } from '../../services/statsService';
+import { resolveAssetUrl } from '../../services/apiClient';
 
 function formatCount(n) {
   if (n >= 1000) return `${(n / 1000).toFixed(n % 1000 === 0 ? 0 : 1)}k+`;
@@ -115,7 +116,7 @@ export default function CommunityImpactSection() {
                   <div className="mt-4 pt-3 border-t border-slate-200 dark:border-white/10 flex items-center gap-3">
                     {stories[activeStoryIdx].avatar ? (
                       <img
-                        src={stories[activeStoryIdx].avatar}
+                        src={resolveAssetUrl(stories[activeStoryIdx].avatar)}
                         alt={stories[activeStoryIdx].author}
                         className="w-8 h-8 rounded-full object-cover border border-purple-400/50"
                       />

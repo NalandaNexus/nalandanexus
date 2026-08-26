@@ -24,6 +24,15 @@ export function globalErrorHandler(err, req, res, next) {
     });
   }
 
+  // Rejected CORS origin - a client error, not a server fault.
+  if (err.isCorsError) {
+    return sendError(res, {
+      status: 403,
+      code: 'ORIGIN_NOT_ALLOWED',
+      message: 'This origin is not allowed to access the API.',
+    });
+  }
+
   // Mongoose duplicate key
   if (err.code === 11000) {
     const field = Object.keys(err.keyPattern || {})[0] || 'field';

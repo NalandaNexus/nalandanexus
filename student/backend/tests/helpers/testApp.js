@@ -33,9 +33,33 @@ export async function bootTestApp() {
   };
 }
 
+/**
+ * Registers a student and returns an authenticated session.
+ *
+ * Registration deliberately does NOT issue a session any more - the account
+ * stays unverified until the emailed link is opened (see
+ * auth.controller.register / validateCredentials' EMAIL_NOT_VERIFIED check),
+ * so reading res.body.data.accessToken here yielded `undefined` and every
+ * integration test then sent "Bearer undefined" and got 401. Complete the
+ * real verification step instead of weakening the check: with no mail
+ * transport configured under NODE_ENV=test the API returns the working link
+ * as `verificationUrlFallback`, and verifying logs the student straight in.
+ */
 export async function registerAndLogin(request, { name, email, password = 'TestPass123!' }) {
   const res = await request.post('/api/auth/register').send({ name, email, password });
-  return { accessToken: res.body.data.accessToken, user: res.body.data.user };
+
+  const fallbackUrl = res.body?.data?.verificationUrlFallback;
+  if (!fallbackUrl) {
+    throw new Error(
+      `registerAndLogin: no verificationUrlFallback for ${email} (status ${res.status}). ` +
+        'Registration must expose it when the mail transport is unconfigured.'
+    );
+  }
+
+  const token = new URL(fallbackUrl).searchParams.get('token');
+  const verified = await request.post('/api/auth/verify-email').send({ token });
+
+  return { accessToken: verified.body.data.accessToken, user: verified.body.data.user };
 }
 
 export function bearer(token) {

@@ -43,6 +43,20 @@ export const env = {
     refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
   },
 
+  // Cookie SameSite policy for the auth cookies. This deployment serves the
+  // frontend and backend from DIFFERENT registrable domains
+  // (nalandanexus.vercel.app vs nalandanexus.onrender.com), which makes every
+  // frontend->backend call cross-site. Under SameSite=Strict (the previous
+  // production value) the browser never attaches the refresh cookie to those
+  // calls at all, so POST /api/auth/refresh always failed with
+  // NO_REFRESH_TOKEN - confirmed live - silently logging students out when
+  // the 15-minute access token expired and on every tab close. 'none'
+  // (which requires Secure, already set in production) is the only value
+  // that works for a split-domain deployment. Override with COOKIE_SAMESITE
+  // if you later move both halves under one registrable domain, where
+  // 'lax'/'strict' would be preferable.
+  cookieSameSite: (process.env.COOKIE_SAMESITE || (process.env.NODE_ENV === 'production' ? 'none' : 'lax')).toLowerCase(),
+
   passwordReset: {
     expiresMinutes: Number(process.env.PASSWORD_RESET_TOKEN_EXPIRES_MIN) || 30,
   },
