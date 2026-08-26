@@ -528,16 +528,28 @@ export const deliverTeacherMessage = asyncHandler(async (req, res) => {
 export const upsertBridgedCourse = asyncHandler(async (req, res) => {
   const { sourceId, slug, title, description, features, priceInPaise, image } = req.body;
 
+  // Only overwrite a field when admin actually supplied a value for it.
+  //
+  // Admin authors commerce metadata; this backend owns the teaching content.
+  // Coercing absent fields to '' / [] meant that re-approving a course whose
+  // admin record happened to carry no cover image or feature list would blank
+  // that course's real bannerImage and skills on the storefront - a
+  // governance action silently destroying content it does not own. Price is
+  // the deliberate exception: 0 is a meaningful value (a free course), so it
+  // is written whenever it is present at all.
+  const optional = {};
+  if (description) optional.description = description;
+  if (Array.isArray(features) && features.length) optional.skills = features;
+  if (image) optional.bannerImage = image;
+  if (priceInPaise !== undefined && priceInPaise !== null) optional.priceInPaise = priceInPaise;
+
   const course = await Course.findOneAndUpdate(
     { source: 'admin-portal', sourceId },
     {
       $set: {
         slug,
         title,
-        description: description || '',
-        skills: features || [],
-        priceInPaise: priceInPaise || 0,
-        bannerImage: image || '',
+        ...optional,
         isPurchasable: true,
         isPublished: true,
         source: 'admin-portal',
