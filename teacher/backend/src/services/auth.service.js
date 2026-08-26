@@ -84,15 +84,26 @@ export async function changePassword({ userId, currentPassword, newPassword, ip,
  * here so an admin-invite flow can call it directly later without
  * duplicating the account-creation logic.
  */
-export async function createTeacherAccount({ name, email, password, phone = null, title, department, subject, tier = 'free', mustChangePassword = false }) {
+export async function createTeacherAccount({ teacherId: suppliedTeacherId, name, email, password, phone = null, title, department, subject, tier = 'free', mustChangePassword = false }) {
   const existing = await User.findOne({ email: email.toLowerCase().trim() });
   if (existing) throw ApiError.conflict('An account with this email already exists.', 'EMAIL_TAKEN');
 
   const passwordHash = await User.hashPassword(password);
   const user = await User.create({ name, email, phone, passwordHash, role: 'teacher', mustChangePassword });
 
-  const count = await Teacher.countDocuments();
-  const teacherId = formatSequentialId('TCH', count + 1);
+  // Prefer an ID issued by the caller (admin/backend, the governance system
+  // of record) over deriving one here. Two services counting their own
+  // documents independently produced two different IDs for the same person.
+  let teacherId = suppliedTeacherId?.trim().toUpperCase() || null;
+  if (teacherId && (await Teacher.exists({ teacherId }))) {
+    // Already taken locally - fall through to a generated one rather than
+    // failing the whole provisioning call on a unique-index violation.
+    teacherId = null;
+  }
+  if (!teacherId) {
+    const count = await Teacher.countDocuments();
+    teacherId = formatSequentialId('TCH', count + 1);
+  }
 
   const teacher = await Teacher.create({
     user: user._id,

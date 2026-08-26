@@ -4,7 +4,7 @@ import { authenticate, requireRole } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { objectIdParam } from '../validators/common.js';
 import { createResourceValidator } from '../validators/resource.validators.js';
-import { uploaderFor } from '../middleware/upload.js';
+import { uploaderFor, verifyFileSignature } from '../middleware/upload.js';
 
 const router = Router();
 router.use(authenticate, requireRole('teacher'));
@@ -12,7 +12,7 @@ router.use(authenticate, requireRole('teacher'));
 const resourceUpload = uploaderFor('resources');
 
 router.get('/', resourceController.listResources);
-router.post('/', resourceUpload.single('file'), createResourceValidator, validate, resourceController.createResource);
+router.post('/', resourceUpload.single('file'), verifyFileSignature, createResourceValidator, validate, resourceController.createResource);
 router.post('/:id/download', objectIdParam('id'), validate, resourceController.downloadResource);
 router.delete('/:id', objectIdParam('id'), validate, resourceController.deleteResource);
 

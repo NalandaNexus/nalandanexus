@@ -40,12 +40,18 @@ async function call(path, options) {
 }
 
 /** Creates the real teacher/backend login. Returns a real status — never throws, never silently succeeds. */
-export async function provisionTeacherAccount({ name, email, phone, tempPassword, title, department, subject }) {
+export async function provisionTeacherAccount({ teacherId, name, email, phone, tempPassword, title, department, subject }) {
   if (!isConfigured()) return { provisioned: false, reason: 'NOT_CONFIGURED' };
   try {
     await call('/api/internal/teachers', {
       method: 'POST',
-      body: JSON.stringify({ name, email, phone, tempPassword, title, department, subject }),
+      // teacherId is carried across deliberately. Both services used to
+      // derive their own "TCH-####" from their own countDocuments(), so the
+      // same person ended up with two different staff IDs - confirmed live,
+      // TCH-0010 in admin and TCH-0004 in the teacher portal - which made
+      // the human-facing identifier useless for matching someone between
+      // portals. Admin is the governance system of record, so its ID wins.
+      body: JSON.stringify({ teacherId, name, email, phone, tempPassword, title, department, subject }),
     });
     return { provisioned: true };
   } catch (err) {
@@ -123,6 +129,18 @@ export async function pushAnnouncementToTeachers({ sourceId, title, content, pri
  * announcement, a teacher who should be locked out but isn't is a real
  * access-control gap, not a cosmetic delivery miss.
  */
+/** Retracts a deleted admin announcement from the teacher portal. Best-effort - never throws. */
+export async function removeAnnouncementFromTeachers(sourceId) {
+  if (!isConfigured()) return { delivered: false, reason: 'NOT_CONFIGURED' };
+  try {
+    await call(`/api/internal/admin-announcements/${sourceId}`, { method: 'DELETE' });
+    return { delivered: true };
+  } catch (err) {
+    console.error('[teacherBridge] Failed to retract announcement from teacher portal:', err.message);
+    return { delivered: false, reason: 'REQUEST_FAILED', error: err.message };
+  }
+}
+
 export async function setTeacherAccountStatus({ email, status }) {
   if (!isConfigured()) return { updated: false, reason: 'NOT_CONFIGURED' };
   try {
@@ -155,4 +173,5 @@ export default {
   pushCourseAssignment,
   removeCourseAssignment,
   pushAnnouncementToTeachers,
+  removeAnnouncementFromTeachers,
 };

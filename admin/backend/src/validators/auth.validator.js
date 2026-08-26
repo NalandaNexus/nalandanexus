@@ -4,6 +4,10 @@ export const loginSchema = {
   body: z.object({
     email: z.string().trim().email('A valid email is required'),
     password: z.string().min(1, 'Password is required'),
+    // Only controls how long the session cookie lives (see
+    // utils/sessionCookie.js). Not strict() here, so an older client that
+    // omits it keeps working.
+    rememberMe: z.boolean().optional(),
   }),
 };
 

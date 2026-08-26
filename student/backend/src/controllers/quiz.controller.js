@@ -145,8 +145,14 @@ export const submitQuiz = asyncHandler(async (req, res) => {
   let profile = null;
   if (pointsAwarded > 0) {
     profile = await awardXp(req.user._id, { amount: pointsAwarded, source: 'quiz', refId: quiz.quizId, courseId: quiz.courseId });
-    profile.stats.quizzesCompleted += 1;
+    // Order matters: recalculateAverages treats stats.quizzesCompleted as the
+    // number of quizzes counted BEFORE this one (it divides by n + 1).
+    // Incrementing first made n include the attempt being recorded, which
+    // halved a student's very first score - a single 25% quiz stored as 13% -
+    // and skewed every average after it. Same off-by-one that was already
+    // fixed on the task-grading path (internal.controller.js).
     await recalculateAverages(profile, { quizScore: scorePercentage });
+    profile.stats.quizzesCompleted += 1;
     await profile.save();
   }
 

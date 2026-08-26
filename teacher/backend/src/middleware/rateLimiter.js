@@ -1,5 +1,6 @@
 import rateLimit from 'express-rate-limit';
 import { env } from '../config/env.js';
+import { buildRateLimitStore, warnIfRateLimitsAreLocal } from './rateLimitStore.js';
 
 function rateLimitedJson(req, res) {
   res.status(429).json({
@@ -9,12 +10,17 @@ function rateLimitedJson(req, res) {
   });
 }
 
+warnIfRateLimitsAreLocal();
+
 /** General ceiling applied to the whole API to blunt abusive traffic. */
 export const generalLimiter = rateLimit({
   windowMs: env.rateLimitWindowMs,
   max: env.rateLimitMax,
   standardHeaders: true,
   legacyHeaders: false,
+  // Shared across instances when REDIS_URL is set; falls back to
+  // express-rate-limit's per-process default otherwise. See rateLimitStore.js.
+  store: buildRateLimitStore('general'),
   handler: rateLimitedJson,
 });
 
@@ -28,6 +34,7 @@ export const authLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skipSuccessfulRequests: true,
+  store: buildRateLimitStore('auth'),
   handler: rateLimitedJson,
 });
 

@@ -62,6 +62,16 @@ function normalizeError(err) {
     return ApiError.badRequest('Malformed JSON in request body.', 'INVALID_JSON');
   }
 
+  // Body over express.json's size cap - a client mistake (413), not a 500.
+  if (err?.type === 'entity.too.large') {
+    const tooLarge = ApiError.badRequest(
+      'That request is too large. Please reduce the amount of data and try again.',
+      'PAYLOAD_TOO_LARGE'
+    );
+    tooLarge.statusCode = 413;
+    return tooLarge;
+  }
+
   // Multer upload errors
   if (err?.name === 'MulterError') {
     return ApiError.badRequest(err.message, `UPLOAD_${err.code}`);

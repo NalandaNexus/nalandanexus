@@ -93,6 +93,77 @@ export function uploaderFor(kind) {
   });
 }
 
+/**
+ * Leading bytes a real file of each accepted type must start with. Verified
+ * against the bytes actually written to disk, because the fileFilter above
+ * can only ever see the client-declared Content-Type - as forgeable as the
+ * filename. Confirmed live on the sibling student/backend middleware: an
+ * HTML file sent as "image/png" passed the MIME filter and was stored with
+ * a .png extension. WebP is a RIFF container: "RIFF" at 0, "WEBP" at 8.
+ */
+const MAGIC_BYTES = {
+  'image/png': [[0, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]]],
+  'image/jpeg': [[0, [0xff, 0xd8, 0xff]]],
+  'image/gif': [[0, [0x47, 0x49, 0x46, 0x38]]],
+  'image/webp': [
+    [0, [0x52, 0x49, 0x46, 0x46]],
+    [8, [0x57, 0x45, 0x42, 0x50]],
+  ],
+  'application/pdf': [[0, [0x25, 0x50, 0x44, 0x46]]],
+  // .docx/.pptx are ZIP containers; .doc/.ppt are legacy OLE compound files.
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': [[0, [0x50, 0x4b, 0x03, 0x04]]],
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': [[0, [0x50, 0x4b, 0x03, 0x04]]],
+  'application/msword': [[0, [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]]],
+  'application/vnd.ms-powerpoint': [[0, [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]]],
+  // ISO-BMFF: a 4-byte box size, then the 'ftyp' box type at offset 4.
+  'video/mp4': [[4, [0x66, 0x74, 0x79, 0x70]]],
+};
+
+function matchesSignature(buffer, mimetype) {
+  const signatures = MAGIC_BYTES[mimetype];
+  if (!signatures) return false;
+  return signatures.every(([offset, bytes]) => bytes.every((byte, i) => buffer[offset + i] === byte));
+}
+
+/**
+ * Post-multer guard: the file is already on disk by the time multer has run
+ * (fileFilter only sees headers), so check the real content here and delete
+ * anything that misrepresented itself.
+ */
+export function verifyFileSignature(req, res, next) {
+  if (!req.file) return next();
+  // Only types we have a signature for can be verified. Anything else was
+  // already gated by the MIME allowlist and passes through unchanged -
+  // failing closed here would reject perfectly valid uploads of formats
+  // this table simply doesn't model.
+  if (!MAGIC_BYTES[req.file.mimetype]) return next();
+
+  let handle = null;
+  try {
+    const header = Buffer.alloc(12);
+    handle = fs.openSync(req.file.path, 'r');
+    fs.readSync(handle, header, 0, 12, 0);
+    fs.closeSync(handle);
+    handle = null;
+
+    if (matchesSignature(header, req.file.mimetype)) return next();
+  } catch (err) {
+    if (handle !== null) {
+      try { fs.closeSync(handle); } catch { /* already closed */ }
+    }
+    try { fs.unlinkSync(req.file.path); } catch { /* nothing written */ }
+    return next(err);
+  }
+
+  try { fs.unlinkSync(req.file.path); } catch { /* already gone */ }
+  return next(
+    new multer.MulterError(
+      'LIMIT_UNEXPECTED_FILE',
+      'That file contents did not match its declared type and was rejected.'
+    )
+  );
+}
+
 /** Public URL path for a stored file, served statically by app.js. */
 export function publicUrlFor(kind, filename) {
   return `/uploads/${kind}/${filename}`;

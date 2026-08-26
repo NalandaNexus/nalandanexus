@@ -84,6 +84,7 @@ export async function createTeacher(data, actor, req) {
   const warnings = [];
 
   const provisionResult = await provisionTeacherAccount({
+    teacherId: teacher.teacherId,
     name: teacher.name,
     email: teacher.email,
     phone: teacher.phone,

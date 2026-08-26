@@ -61,8 +61,12 @@ export const getTeacherForCourse = catchAsync(async (req, res) => {
  * forced-reset account, matching the master doc's mandatory first-login flow.
  */
 export const provisionTeacher = catchAsync(async (req, res) => {
-  const { name, email, phone, tempPassword, title, department, subject } = req.body;
+  const { teacherId, name, email, phone, tempPassword, title, department, subject } = req.body;
   const { user, teacher } = await createTeacherAccount({
+    // Admin issues the staff ID; this service only generates one when no
+    // caller supplied it, so the same person no longer ends up with a
+    // different TCH-#### in each database.
+    teacherId,
     name,
     email,
     password: tempPassword,

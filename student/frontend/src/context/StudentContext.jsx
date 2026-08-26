@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useAuth } from './AuthContext';
 import { studentApiService } from '../services/studentApiService';
+import { resolveApiAssetUrl } from '../services/apiClient';
 import { connectSocket, disconnectSocket } from '../services/socket';
 import { timeAgo } from '../utils/timeAgo';
 // The "journey stages" visual (Orientation -> Mindset -> Skills -> Projects
@@ -29,7 +30,9 @@ function mapToStudentViewModel(user, profile, course) {
     id: user._id || user.id,
     name: user.name,
     email: user.email,
-    avatar: user.avatar || null,
+    // Uploaded avatars come back as a backend-relative /uploads path, which
+    // would resolve against the frontend's own origin in production.
+    avatar: resolveApiAssetUrl(user.avatar) || null,
     course: course
       ? {
           id: course.id,

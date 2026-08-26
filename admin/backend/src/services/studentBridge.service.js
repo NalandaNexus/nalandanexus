@@ -65,4 +65,40 @@ export async function pushAnnouncementToStudents(announcement, authorName) {
   }
 }
 
-export default { pushAnnouncementToStudents };
+/**
+ * Mirrors an edit through to the student portal. The receiving endpoint
+ * matches on sourceId (this announcement's own _id), which is what the
+ * original push sent, so an announcement edited here changes wherever it
+ * was delivered rather than leaving a stale copy on the landing page.
+ */
+export async function updateAnnouncementForStudents(announcement) {
+  if (!isConfigured()) return { delivered: false, reason: 'NOT_CONFIGURED' };
+  try {
+    await call(`/api/internal/announcements/${String(announcement._id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        title: announcement.title,
+        content: announcement.content,
+        type: announcement.priority === 'HIGH' ? 'urgent' : 'general',
+      }),
+    });
+    return { delivered: true };
+  } catch (err) {
+    console.error('[studentBridge] Failed to update announcement on student portal:', err.message);
+    return { delivered: false, reason: 'REQUEST_FAILED', error: err.message };
+  }
+}
+
+/** Retracts a deleted announcement from the student portal. Best-effort - never throws. */
+export async function removeAnnouncementFromStudents(sourceId) {
+  if (!isConfigured()) return { delivered: false, reason: 'NOT_CONFIGURED' };
+  try {
+    await call(`/api/internal/announcements/${sourceId}`, { method: 'DELETE' });
+    return { delivered: true };
+  } catch (err) {
+    console.error('[studentBridge] Failed to retract announcement from student portal:', err.message);
+    return { delivered: false, reason: 'REQUEST_FAILED', error: err.message };
+  }
+}
+
+export default { pushAnnouncementToStudents, updateAnnouncementForStudents, removeAnnouncementFromStudents };

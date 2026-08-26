@@ -12,4 +12,15 @@ export const createAnnouncementSchema = {
   }),
 };
 
-export default { listAnnouncementsQuery, createAnnouncementSchema };
+export const updateAnnouncementSchema = {
+  body: z
+    .object({
+      title: z.string().trim().min(3).max(200).optional(),
+      content: z.string().trim().min(3).optional(),
+      priority: z.enum(['LOW', 'MEDIUM', 'HIGH']).optional(),
+      audience: z.enum(['ALL', 'TEACHERS', 'STUDENTS']).optional(),
+    })
+    .strict(),
+};
+
+export default { listAnnouncementsQuery, createAnnouncementSchema, updateAnnouncementSchema };

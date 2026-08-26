@@ -10,6 +10,9 @@ export const deliverMessageValidator = [
 ];
 
 export const provisionTeacherValidator = [
+  // Optional so any caller that doesn't supply one still works - this
+  // backend falls back to generating its own (see auth.service.js).
+  body('teacherId').optional({ nullable: true }).trim().isLength({ max: 40 }),
   body('name').trim().notEmpty().isLength({ max: 120 }),
   body('email').trim().isEmail().normalizeEmail(),
   body('phone').optional({ nullable: true }).trim().isLength({ max: 20 }),

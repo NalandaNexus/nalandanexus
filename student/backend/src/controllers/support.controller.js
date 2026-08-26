@@ -1,7 +1,7 @@
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { sendSuccess } from '../utils/apiResponse.js';
 import { SupportTicket } from '../models/SupportTicket.js';
-import { sendEmail, supportTicketEmail } from '../services/email.service.js';
+import { sendEmailDetached, supportTicketEmail } from '../services/email.service.js';
 import { env } from '../config/env.js';
 
 export const listMyTickets = asyncHandler(async (req, res) => {
@@ -11,9 +11,10 @@ export const listMyTickets = asyncHandler(async (req, res) => {
 
 /**
  * Persists the ticket first (the database write is the source of truth),
- * then emails the support team - best-effort, never blocks or fails the
- * request if SMTP is unreachable/unconfigured (email.service.js#sendEmail
- * already logs to console instead of sending when unconfigured).
+ * then emails the support team - best-effort and genuinely non-blocking
+ * (sendEmailDetached), so an unreachable SMTP host delays the student's
+ * confirmation by exactly nothing. email.service.js#sendEmail logs to
+ * console instead of sending when SMTP is unconfigured.
  */
 export const createTicket = asyncHandler(async (req, res) => {
   const ticket = await SupportTicket.create({
@@ -30,7 +31,7 @@ export const createTicket = asyncHandler(async (req, res) => {
       subject: ticket.subject,
       message: ticket.message,
     });
-    await sendEmail({ to: env.support.notifyEmail, subject, html, text });
+    sendEmailDetached({ to: env.support.notifyEmail, subject, html, text });
   }
 
   return sendSuccess(res, {

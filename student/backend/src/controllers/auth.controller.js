@@ -20,21 +20,25 @@ import {
   verifyGoogleIdToken,
   findOrCreateGoogleUser,
 } from '../services/auth.service.js';
-import { sendEmail, passwordResetEmail, emailVerificationEmail } from '../services/email.service.js';
+import { sendEmail, sendEmailDetached, passwordResetEmail, emailVerificationEmail } from '../services/email.service.js';
 import { env } from '../config/env.js';
 
 function requestMeta(req) {
   return { userAgent: req.headers['user-agent'] || '', ip: req.ip };
 }
 
-function setAuthCookies(res, accessToken, refreshToken) {
-  res.cookie('accessToken', accessToken, accessCookieOptions());
-  res.cookie('refreshToken', refreshToken, refreshCookieOptions());
+function setAuthCookies(req, res, accessToken, refreshToken) {
+  res.cookie('accessToken', accessToken, accessCookieOptions(req));
+  res.cookie('refreshToken', refreshToken, refreshCookieOptions(req));
 }
 
-function clearAuthCookies(res) {
-  res.clearCookie('accessToken', { path: '/' });
-  res.clearCookie('refreshToken', { path: '/api/auth' });
+function clearAuthCookies(req, res) {
+  // A clear only takes effect when its attributes match the cookie that was
+  // set - dropping sameSite/secure here would leave a cross-site session
+  // cookie alive after logout.
+  const { maxAge: _ignored, ...base } = accessCookieOptions(req);
+  res.clearCookie('accessToken', { ...base, path: '/' });
+  res.clearCookie('refreshToken', { ...base, path: '/api/auth' });
 }
 
 export const register = asyncHandler(async (req, res) => {
@@ -84,7 +88,7 @@ export const verifyEmail = asyncHandler(async (req, res) => {
   // student back to a login form immediately after they just proved who
   // they are.
   const { accessToken, refreshToken } = await issueTokenPair(user, requestMeta(req));
-  setAuthCookies(res, accessToken, refreshToken);
+  setAuthCookies(req, res, accessToken, refreshToken);
 
   return sendSuccess(res, {
     message: 'Email verified! You are now logged in.',
@@ -102,7 +106,7 @@ export const resendVerification = asyncHandler(async (req, res) => {
     const rawToken = await createEmailVerificationToken(user._id);
     const verifyUrl = `${env.clientUrl}/verify-email?token=${rawToken}`;
     const { subject, html, text } = emailVerificationEmail(verifyUrl);
-    await sendEmail({ to: user.email, subject, html, text });
+    sendEmailDetached({ to: user.email, subject, html, text });
   }
 
   return sendSuccess(res, {
@@ -115,7 +119,7 @@ export const login = asyncHandler(async (req, res) => {
   const user = await validateCredentials(email, password);
 
   const { accessToken, refreshToken } = await issueTokenPair(user, requestMeta(req));
-  setAuthCookies(res, accessToken, refreshToken);
+  setAuthCookies(req, res, accessToken, refreshToken);
 
   user.lastLoginAt = new Date();
   await user.save();
@@ -132,7 +136,7 @@ export const googleAuth = asyncHandler(async (req, res) => {
   const { user, isNewUser } = await findOrCreateGoogleUser(identity);
 
   const { accessToken, refreshToken } = await issueTokenPair(user, requestMeta(req));
-  setAuthCookies(res, accessToken, refreshToken);
+  setAuthCookies(req, res, accessToken, refreshToken);
 
   user.lastLoginAt = new Date();
   await user.save();
@@ -158,7 +162,7 @@ export const refresh = asyncHandler(async (req, res) => {
   }
 
   const { user, accessToken, refreshToken } = await rotateRefreshToken(rawRefreshToken, requestMeta(req));
-  setAuthCookies(res, accessToken, refreshToken);
+  setAuthCookies(req, res, accessToken, refreshToken);
 
   return sendSuccess(res, {
     message: 'Session refreshed.',
@@ -169,7 +173,7 @@ export const refresh = asyncHandler(async (req, res) => {
 export const logout = asyncHandler(async (req, res) => {
   const rawRefreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
   await revokeRefreshToken(rawRefreshToken);
-  clearAuthCookies(res);
+  clearAuthCookies(req, res);
   return sendSuccess(res, { message: 'Logged out successfully.' });
 });
 
@@ -183,7 +187,7 @@ export const forgotPassword = asyncHandler(async (req, res) => {
     const rawToken = await createPasswordResetToken(user._id);
     const resetUrl = `${env.clientUrl}/reset-password?token=${rawToken}`;
     const { subject, html, text } = passwordResetEmail(resetUrl);
-    await sendEmail({ to: user.email, subject, html, text });
+    sendEmailDetached({ to: user.email, subject, html, text });
   }
 
   return sendSuccess(res, {

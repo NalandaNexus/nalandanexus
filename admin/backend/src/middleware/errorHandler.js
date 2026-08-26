@@ -15,7 +15,24 @@ export function errorHandler(err, req, res, next) {
   let error = err;
 
   if (!(error instanceof ApiError)) {
-    if (error.name === 'CastError') {
+    // body-parser rejections. These are ordinary client mistakes, but with
+    // no branch here they fell through to the catch-all below and came back
+    // as a 500 - reporting the caller's malformed request as a server fault
+    // and burying real faults in the error log. teacher/backend already
+    // normalizes entity.parse.failed; this brings admin in line.
+    if (error.type === 'entity.too.large') {
+      error = ApiError.badRequest(
+        'That request is too large. Please reduce the amount of data and try again.',
+        'PAYLOAD_TOO_LARGE'
+      );
+      error.statusCode = 413;
+    } else if (error.type === 'entity.parse.failed' || (error instanceof SyntaxError && 'body' in error)) {
+      error = ApiError.badRequest('Malformed JSON in request body.', 'INVALID_JSON');
+    } else if (error.message === 'Not allowed by CORS') {
+      // cors() surfaces an allowlist miss as a plain Error; that is a 403,
+      // not a server failure.
+      error = ApiError.forbidden('This origin is not permitted to call the API.', 'CORS_ORIGIN_NOT_ALLOWED');
+    } else if (error.name === 'CastError') {
       error = ApiError.badRequest(`Invalid identifier: ${error.value}`, 'INVALID_ID');
     } else if (error.name === 'ValidationError') {
       const details = Object.values(error.errors || {}).map((e) => ({ path: e.path, message: e.message }));

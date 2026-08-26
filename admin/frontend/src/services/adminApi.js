@@ -12,20 +12,27 @@ export const SOCKET_URL = import.meta.env.VITE_ADMIN_SOCKET_URL || 'http://local
 export const TEACHER_PORTAL_URL = import.meta.env.VITE_TEACHER_PORTAL_URL || 'http://localhost:5174';
 export const STUDENT_PORTAL_URL = import.meta.env.VITE_STUDENT_PORTAL_URL || 'http://localhost:3000';
 
-const TOKEN_KEY = 'nalanda_admin_token';
+/**
+ * The session token is NOT held here.
+ *
+ * It used to live in localStorage, where any script on the page could read
+ * it - the weakest token storage of the three portals, protecting the most
+ * privileged one. The backend now issues it as an httpOnly cookie that
+ * JavaScript cannot touch, so every request below simply sends credentials
+ * and the browser attaches the session itself.
+ *
+ * One consequence worth knowing: "am I logged in?" can no longer be
+ * answered by reading storage. It is answered by calling /auth/me, which is
+ * the more honest question anyway - a cached token told you a token existed,
+ * never that the account was still active.
+ */
 
-export function getToken() {
-  return localStorage.getItem(TOKEN_KEY);
-}
-
-export function setToken(token) {
-  if (token) localStorage.setItem(TOKEN_KEY, token);
-  else localStorage.removeItem(TOKEN_KEY);
-}
-
-function authHeaders() {
-  const token = getToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
+// Legacy cleanup: drop any token a previous build of this app persisted, so
+// a returning admin isn't left with a readable JWT sitting in localStorage.
+try {
+  localStorage.removeItem('nalanda_admin_token');
+} catch {
+  // storage unavailable (private mode) - nothing to clean up
 }
 
 /** Course create/update carries an optional image file, so it goes as multipart, not JSON. */
@@ -58,11 +65,13 @@ async function request(path, { method = 'GET', body, query, isFormData = false }
 
   const res = await fetch(url.toString(), {
     method,
+    // Sends the httpOnly session cookie. The API's CORS config already
+    // allows credentials and is pinned to this exact origin.
+    credentials: 'include',
     headers: {
       // multipart/form-data needs its own auto-generated boundary — the
       // browser sets Content-Type itself when the body is a FormData.
       ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
-      ...authHeaders(),
     },
     body: body !== undefined ? (isFormData ? body : JSON.stringify(body)) : undefined,
   });
@@ -94,18 +103,18 @@ async function request(path, { method = 'GET', body, query, isFormData = false }
 
 export const adminApi = {
   // ── Auth ──────────────────────────────────────────────────────────────
-  async login({ email, password }) {
-    const json = await request('/auth/login', { method: 'POST', body: { email, password } });
-    if (json.data?.token) setToken(json.data.token);
+  async login({ email, password, rememberMe }) {
+    // The session arrives as an httpOnly cookie the browser stores itself;
+    // rememberMe only tells the backend how long to make it live. The token
+    // is still present in the response body for non-browser clients, and is
+    // deliberately ignored here.
+    const json = await request('/auth/login', { method: 'POST', body: { email, password, rememberMe } });
     return json.data;
   },
 
   async logout() {
-    try {
-      await request('/auth/logout', { method: 'POST' });
-    } finally {
-      setToken(null);
-    }
+    // The backend clears the cookie; there is nothing to clear client-side.
+    await request('/auth/logout', { method: 'POST' });
   },
 
   async getMe() {
@@ -114,8 +123,9 @@ export const adminApi = {
   },
 
   async changePassword({ currentPassword, newPassword }) {
+    // Changing the password bumps tokenVersion and invalidates the old
+    // session; the backend re-issues the cookie on this same response.
     const json = await request('/auth/change-password', { method: 'POST', body: { currentPassword, newPassword } });
-    if (json.data?.token) setToken(json.data.token);
     return json.data;
   },
 
@@ -142,7 +152,9 @@ export const adminApi = {
 
       onStatusChange?.('CONNECTING');
       try {
-        eventSource = new EventSource(`${API_BASE}/live-telemetry`);
+        // withCredentials sends the httpOnly session cookie - the stream is
+        // authenticated now, and connects as anonymous without it.
+        eventSource = new EventSource(`${API_BASE}/live-telemetry`, { withCredentials: true });
 
         eventSource.addEventListener('telemetry', (event) => {
           try {

@@ -555,7 +555,15 @@ export const upsertBridgedCourse = asyncHandler(async (req, res) => {
 export const unpublishBridgedCourse = asyncHandler(async (req, res) => {
   const course = await Course.findOneAndUpdate(
     { source: 'admin-portal', sourceId: req.params.sourceId },
-    { isPurchasable: false },
+    // Both flags, not just isPurchasable. The public catalog (list, detail,
+    // search, stats) filters exclusively on isPublished, so clearing only
+    // the purchase flag left an archived course still browsable on the
+    // storefront - visible, described, priced, and merely un-buyable. An
+    // admin who archives a course means "take it down", so retract it from
+    // the catalog too. Existing enrollments are unaffected: enrolled
+    // students read their course through Enrollment, not this filter, which
+    // is why this stays an unpublish and never a delete.
+    { isPurchasable: false, isPublished: false },
     { new: true }
   );
   if (!course) {

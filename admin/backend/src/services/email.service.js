@@ -11,6 +11,16 @@ function getTransporter() {
       port: env.smtp.port,
       secure: env.smtp.port === 465,
       auth: env.smtp.user ? { user: env.smtp.user, pass: env.smtp.pass } : undefined,
+      // Nodemailer defaults to 2 minutes to connect and 10 on the socket.
+      // Teacher creation awaits this send inline (it records whether the
+      // credentials actually reached the teacher), so on a host that drops
+      // outbound SMTP - the norm on managed PaaS tiers - creating a teacher
+      // becomes a two-minute hang that the admin UI times out on, even
+      // though the teacher record itself saved fine. Fail fast and let the
+      // caller fall back to showing the credentials in-app.
+      connectionTimeout: 8000,
+      greetingTimeout: 8000,
+      socketTimeout: 12000,
     });
   }
   return transporter;

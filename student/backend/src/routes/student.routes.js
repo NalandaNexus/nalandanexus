@@ -11,7 +11,7 @@ import * as announcementController from '../controllers/announcement.controller.
 import { authenticate } from '../middleware/authenticate.js';
 import { requireRole } from '../middleware/authorize.js';
 import { validate } from '../middleware/validate.js';
-import { avatarUpload } from '../middleware/upload.js';
+import { avatarUpload, verifyImageSignature } from '../middleware/upload.js';
 import { updateProfileSchema } from '../validators/profile.validators.js';
 import { upsertNoteSchema } from '../validators/note.validators.js';
 import { sendMessageSchema } from '../validators/message.validators.js';
@@ -24,7 +24,7 @@ router.use(authenticate, requireRole('student'));
 
 router.get('/profile', studentController.getProfile);
 router.patch('/profile', validate(updateProfileSchema), studentController.updateProfile);
-router.post('/profile/avatar', avatarUpload.single('avatar'), studentController.uploadAvatar);
+router.post('/profile/avatar', avatarUpload.single('avatar'), verifyImageSignature, studentController.uploadAvatar);
 router.post('/onboarding/complete', studentController.completeOnboarding);
 router.get('/dashboard', studentController.getDashboard);
 

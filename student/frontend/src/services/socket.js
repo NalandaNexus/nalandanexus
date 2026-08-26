@@ -1,5 +1,5 @@
 import { io } from 'socket.io-client';
-import { getAccessToken } from './apiClient';
+import { getAccessToken, API_BASE_URL } from './apiClient';
 
 /**
  * Thin singleton wrapper around the backend's authenticated Socket.IO server
@@ -7,9 +7,9 @@ import { getAccessToken } from './apiClient';
  * joined server-side to a private `user:<id>` room - never a global stream
  * of other students' activity (master doc section 13/44).
  */
-const SOCKET_URL = (
-  import.meta.env.VITE_STUDENT_API_URL || import.meta.env.VITE_API_URL || 'http://localhost:5001/api'
-).replace(/\/api\/?$/, '');
+// Socket.IO attaches at the server root, not under /api - strip the mount
+// point off the (already normalized) REST base URL.
+const SOCKET_URL = API_BASE_URL.replace(/\/api$/, '');
 
 let socket = null;
 

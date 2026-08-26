@@ -114,28 +114,40 @@ export async function findOrCreateGoogleUser({ googleId, email, name, avatar }) 
   return { user, isNewUser: true };
 }
 
+// A real bcrypt hash of a value nobody can supply, compared against when no
+// account (or no password) matches. Without it, a miss returns in ~1ms while
+// a hit costs a full bcrypt round - a timing oracle that leaks exactly which
+// emails are registered, defeating the constant-shape error below.
+const DUMMY_PASSWORD_HASH = '$2a$12$C6UzMDM.H6dfI/f/IKcEe.4pFjBpZzxMBMyRZLdYQ0/wKQ0Vw1Y0e';
+
 export async function validateCredentials(email, password) {
   const user = await User.findOne({ email }).select('+passwordHash');
+
   // Constant-shape response: don't reveal whether the email exists.
-  if (!user) {
+  //
+  // Account-state errors (deactivated / unverified) are deliberately raised
+  // only AFTER the password checks out. Raising them first turns login into
+  // an enumeration oracle: anyone could probe an email with a junk password
+  // and learn from the error code whether it is registered, and in what
+  // state. Checking the password first means only the account's real owner
+  // ever sees those messages - they stay just as helpful, without answering
+  // questions for an attacker who doesn't have the credential.
+  const isMatch = await comparePassword(
+    password,
+    // Google-only accounts (no password ever set) must not be brute-forceable
+    // via this endpoint either - they take the dummy-hash path too.
+    user?.passwordHash || DUMMY_PASSWORD_HASH
+  );
+
+  if (!user || !user.passwordHash || !isMatch) {
     throw AppError.unauthorized('Invalid email or password', 'INVALID_CREDENTIALS');
   }
+
   if (!user.isActive) {
     throw AppError.unauthorized('This account has been deactivated. Contact support.', 'ACCOUNT_INACTIVE');
   }
   if (!user.isVerified) {
     throw AppError.forbidden('Please verify your email before logging in. Check your inbox for the verification link.', 'EMAIL_NOT_VERIFIED');
-  }
-
-  // Google-only accounts (no password ever set) must not be brute-forceable
-  // via this endpoint - fail with the same generic message.
-  if (!user.passwordHash) {
-    throw AppError.unauthorized('Invalid email or password', 'INVALID_CREDENTIALS');
-  }
-
-  const isMatch = await comparePassword(password, user.passwordHash);
-  if (!isMatch) {
-    throw AppError.unauthorized('Invalid email or password', 'INVALID_CREDENTIALS');
   }
 
   return user;
@@ -265,17 +277,51 @@ function parseExpiryMs(expr) {
   return value * multipliers[unit];
 }
 
-export const cookieOptions = {
-  httpOnly: true,
-  secure: env.isProd,
-  sameSite: env.isProd ? 'strict' : 'lax',
-  path: '/',
-};
-
-export function accessCookieOptions() {
-  return { ...cookieOptions, maxAge: parseExpiryMs(env.jwt.accessExpiresIn) };
+/**
+ * True when the browser considers this request cross-site - i.e. the page
+ * that initiated it lives on a different host than this API.
+ *
+ * This matters because the frontend and backend are deployed as two
+ * separate services on two unrelated domains (a Vercel static site talking
+ * to a Render web service). A `SameSite=Strict` cookie is simply never
+ * attached to a cross-site request, so the httpOnly refresh cookie - which
+ * is the *only* thing that persists a session past the 15-minute access
+ * token, a new tab, or a browser restart - would be set and then never sent
+ * back. Sessions would silently die and every reload would look like a
+ * logout.
+ *
+ * Compared by hostname rather than registrable domain deliberately: getting
+ * this wrong in the "cross-site" direction still works (SameSite=None is
+ * always sent, and credentialed CORS is already pinned to an exact origin
+ * allowlist), whereas getting it wrong in the "same-site" direction breaks
+ * auth outright. Bias to the safe side.
+ */
+function isCrossSiteRequest(req) {
+  const origin = req?.headers?.origin;
+  if (!origin) return false; // same-origin or non-browser client
+  try {
+    return new URL(origin).hostname !== req.hostname;
+  } catch {
+    return false;
+  }
 }
 
-export function refreshCookieOptions() {
-  return { ...cookieOptions, maxAge: parseExpiryMs(env.jwt.refreshExpiresIn), path: '/api/auth' };
+export function cookieOptionsFor(req) {
+  const crossSite = isCrossSiteRequest(req);
+  return {
+    httpOnly: true,
+    // SameSite=None is only honoured on a Secure cookie, so a cross-site
+    // deployment forces HTTPS-only cookies regardless of NODE_ENV.
+    secure: env.isProd || crossSite,
+    sameSite: crossSite ? 'none' : env.isProd ? 'strict' : 'lax',
+    path: '/',
+  };
+}
+
+export function accessCookieOptions(req) {
+  return { ...cookieOptionsFor(req), maxAge: parseExpiryMs(env.jwt.accessExpiresIn) };
+}
+
+export function refreshCookieOptions(req) {
+  return { ...cookieOptionsFor(req), maxAge: parseExpiryMs(env.jwt.refreshExpiresIn), path: '/api/auth' };
 }

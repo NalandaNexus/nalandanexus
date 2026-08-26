@@ -5,8 +5,13 @@ import { withIds } from '../utils/serialize.js';
 import { recordAuditLog } from './auditLog.service.js';
 import { notifyAllAdmins } from './notification.service.js';
 import { emitEvent } from '../sockets/index.js';
-import { pushAnnouncementToStudents } from './studentBridge.service.js';
-import { pushAnnouncementToTeachers } from './teacherBridge.service.js';
+import {
+  pushAnnouncementToStudents,
+  updateAnnouncementForStudents,
+  removeAnnouncementFromStudents,
+} from './studentBridge.service.js';
+import { pushAnnouncementToTeachers, removeAnnouncementFromTeachers } from './teacherBridge.service.js';
+import { ApiError } from '../utils/ApiError.js';
 
 export async function listAnnouncements(query) {
   const { page, limit, skip } = parsePagination(query);
@@ -57,6 +62,70 @@ export async function createAnnouncement(data, actor, req) {
 }
 
 /**
+ * Edits an existing announcement and mirrors the change to wherever it was
+ * already delivered. Without this, an announcement was write-once: a typo,
+ * a wrong link or a test post published to the public student landing page
+ * could never be corrected or taken down through the product.
+ */
+export async function updateAnnouncement(id, data, actor, req) {
+  const announcement = await Announcement.findOne({ _id: id, deletedAt: null });
+  if (!announcement) throw ApiError.notFound('Announcement not found', 'ANNOUNCEMENT_NOT_FOUND');
+
+  const previousAudience = announcement.audience;
+  Object.assign(announcement, data);
+  await announcement.save();
+
+  await recordAuditLog({ actor, action: 'announcement.updated', entityType: 'Announcement', entityId: announcement._id, req });
+  emitEvent.announcementCreated(announcement);
+
+  // Student side: an edit that keeps students in the audience is an update;
+  // one that removes them is effectively a retraction over there.
+  if (announcement.audience !== 'TEACHERS') {
+    await updateAnnouncementForStudents(announcement);
+  } else if (previousAudience !== 'TEACHERS') {
+    await removeAnnouncementFromStudents(String(announcement._id));
+  }
+
+  // Teacher side upserts on sourceId, so re-pushing is the update path.
+  if (announcement.audience !== 'STUDENTS') {
+    await pushAnnouncementToTeachers({
+      sourceId: String(announcement._id),
+      title: announcement.title,
+      content: announcement.content,
+      priority: announcement.priority,
+      authorName: actor?.name,
+      publishedAt: announcement.publishedAt,
+    });
+  } else if (previousAudience !== 'STUDENTS') {
+    await removeAnnouncementFromTeachers(String(announcement._id));
+  }
+
+  return announcement;
+}
+
+/**
+ * Soft-deletes an announcement and retracts it from both portals. Soft
+ * rather than hard so the audit trail still resolves the entity it refers
+ * to; listAnnouncements already filters on deletedAt.
+ */
+export async function deleteAnnouncement(id, actor, req) {
+  const announcement = await Announcement.findOne({ _id: id, deletedAt: null });
+  if (!announcement) throw ApiError.notFound('Announcement not found', 'ANNOUNCEMENT_NOT_FOUND');
+
+  announcement.deletedAt = new Date();
+  await announcement.save();
+
+  await recordAuditLog({ actor, action: 'announcement.deleted', entityType: 'Announcement', entityId: announcement._id, req });
+
+  // Retract everywhere it was delivered, regardless of current audience -
+  // the audience may have changed since it was first published.
+  await removeAnnouncementFromStudents(String(announcement._id));
+  await removeAnnouncementFromTeachers(String(announcement._id));
+
+  return announcement;
+}
+
+/**
  * Receives a real, published announcement from teacher/backend (see
  * teacher/backend/src/services/adminBridge.service.js#pushAnnouncementActivity).
  * Idempotent on sourceId. Fans a real Notification out to every active
@@ -94,4 +163,12 @@ export async function retractTeacherAnnouncement(sourceId) {
   return removed;
 }
 
-export default { listAnnouncements, createAnnouncement, ingestTeacherAnnouncement, listTeacherAnnouncements, retractTeacherAnnouncement };
+export default {
+  listAnnouncements,
+  createAnnouncement,
+  updateAnnouncement,
+  deleteAnnouncement,
+  ingestTeacherAnnouncement,
+  listTeacherAnnouncements,
+  retractTeacherAnnouncement,
+};

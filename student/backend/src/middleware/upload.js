@@ -50,6 +50,74 @@ export const avatarUpload = multer({
   limits: { fileSize: MAX_AVATAR_MB * 1024 * 1024, files: 1 },
 });
 
+/**
+ * Leading bytes every real file of a given type must start with. Checked
+ * against the bytes actually written to disk, because `file.mimetype` above
+ * is nothing more than the Content-Type the client typed into the request -
+ * as attacker-controlled as the filename. Confirmed live: an HTML file sent
+ * as "image/png" passed the MIME filter and was stored with a .png
+ * extension. Serving it back as image/png with nosniff stopped it doing any
+ * harm, but the content should never have been accepted in the first place.
+ *
+ * WebP is RIFF-container: "RIFF" at 0, "WEBP" at 8.
+ */
+const MAGIC_BYTES = {
+  'image/png': [[0, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]]],
+  'image/jpeg': [[0, [0xff, 0xd8, 0xff]]],
+  'image/gif': [[0, [0x47, 0x49, 0x46, 0x38]]],
+  'image/webp': [
+    [0, [0x52, 0x49, 0x46, 0x46]],
+    [8, [0x57, 0x45, 0x42, 0x50]],
+  ],
+};
+
+function matchesSignature(buffer, mimetype) {
+  const signatures = MAGIC_BYTES[mimetype];
+  if (!signatures) return false;
+  return signatures.every(([offset, bytes]) =>
+    bytes.every((byte, i) => buffer[offset + i] === byte)
+  );
+}
+
+/**
+ * Post-multer guard: the file is already on disk by the time multer's
+ * fileFilter has run (it only ever sees headers), so verify the real
+ * content here and delete anything that lied about what it was.
+ */
+export function verifyImageSignature(req, res, next) {
+  if (!req.file) return next();
+  // Only types we have a signature for can be verified. Anything else was
+  // already gated by the MIME allowlist and passes through unchanged -
+  // failing closed here would reject perfectly valid uploads of formats
+  // this table simply doesn't model.
+  if (!MAGIC_BYTES[req.file.mimetype]) return next();
+
+  let handle;
+  try {
+    const header = Buffer.alloc(12);
+    handle = fs.openSync(req.file.path, 'r');
+    fs.readSync(handle, header, 0, 12, 0);
+    fs.closeSync(handle);
+    handle = null;
+
+    if (matchesSignature(header, req.file.mimetype)) return next();
+  } catch (err) {
+    if (handle !== null && handle !== undefined) {
+      try { fs.closeSync(handle); } catch { /* already closed */ }
+    }
+    try { fs.unlinkSync(req.file.path); } catch { /* nothing written */ }
+    return next(err);
+  }
+
+  // Content didn't match the declared type - don't keep the file around.
+  try { fs.unlinkSync(req.file.path); } catch { /* already gone */ }
+  const error = new multer.MulterError(
+    'LIMIT_UNEXPECTED_FILE',
+    'That file is not a valid image. Please upload a PNG, JPEG, WebP, or GIF.'
+  );
+  return next(error);
+}
+
 /** Public URL path for a stored avatar, served statically by app.js. */
 export function avatarPublicUrl(filename) {
   return `/uploads/avatars/${filename}`;

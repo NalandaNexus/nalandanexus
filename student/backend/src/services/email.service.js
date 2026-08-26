@@ -12,6 +12,17 @@ function getTransporter() {
       port: env.smtp.port,
       secure: env.smtp.port === 465,
       auth: env.smtp.user ? { user: env.smtp.user, pass: env.smtp.pass } : undefined,
+      // Nodemailer's defaults are 2 min to connect and 10 min on the socket.
+      // Several request paths (registration, forgot-password, support
+      // tickets) await sendEmail inline because their response text depends
+      // on whether delivery actually happened - with the defaults, a host
+      // that silently drops outbound SMTP (common on managed PaaS tiers)
+      // turns those into two-minute hangs that every real client times out
+      // on. Fail fast instead: the callers all degrade gracefully when
+      // delivered is false.
+      connectionTimeout: 8000,
+      greetingTimeout: 8000,
+      socketTimeout: 12000,
     });
   }
   return transporter;
@@ -37,6 +48,26 @@ export async function sendEmail({ to, subject, html, text }) {
     logger.error('[Email] Failed to send email', err.message);
     return { delivered: false, error: true };
   }
+}
+
+/**
+ * Fire-and-forget variant for notifications whose delivery result the
+ * caller does not use.
+ *
+ * Awaiting sendEmail inline makes the HTTP response wait on the whole SMTP
+ * conversation. That is wrong twice over: it stalls the user behind a
+ * best-effort notification, and on the enumeration-safe endpoints it leaks
+ * whether an account exists purely through response time. Detach those.
+ * Only await sendEmail when the response body genuinely depends on whether
+ * delivery succeeded (registration's verificationUrlFallback).
+ */
+export function sendEmailDetached(payload) {
+  Promise.resolve()
+    .then(() => sendEmail(payload))
+    .catch(() => {
+      // sendEmail already logs and never rejects; this is belt-and-braces so
+      // a detached failure can never surface as an unhandled rejection.
+    });
 }
 
 export function supportTicketEmail({ ticketId, studentName, studentEmail, subject, message }) {

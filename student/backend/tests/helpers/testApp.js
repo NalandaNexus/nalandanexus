@@ -4,6 +4,13 @@ process.env.NODE_ENV = 'test';
 process.env.JWT_ACCESS_SECRET = 'test_access_secret';
 process.env.JWT_REFRESH_SECRET = 'test_refresh_secret';
 process.env.CLIENT_URL = 'http://localhost:3000';
+// config/env.js calls dotenv.config(), and dotenv fills in any variable this
+// file has not already claimed - so without this the suite silently picks up
+// the developer's real SMTP credentials and every registration in every test
+// makes a live connection attempt to Gmail. Pinning it empty keeps the tests
+// hermetic (and fast: it was costing ~45s a run), and puts sendEmail on its
+// stub path so registration always returns verificationUrlFallback.
+process.env.SMTP_HOST = '';
 
 /**
  * Boots a real Express app against a throwaway in-memory MongoDB instance
@@ -35,7 +42,27 @@ export async function bootTestApp() {
 
 export async function registerAndLogin(request, { name, email, password = 'TestPass123!' }) {
   const res = await request.post('/api/auth/register').send({ name, email, password });
-  return { accessToken: res.body.data.accessToken, user: res.body.data.user };
+  if (res.status !== 201) {
+    throw new Error(`registerAndLogin: register failed (${res.status}) ${JSON.stringify(res.body)}`);
+  }
+
+  // Registration deliberately issues no session any more - the account exists
+  // but login is refused until the student proves ownership of the address
+  // (auth.controller.js register / validateCredentials EMAIL_NOT_VERIFIED).
+  // Walk the real verification endpoint rather than flipping isVerified
+  // behind the app's back, so these tests keep exercising the actual flow.
+  const fallbackUrl = res.body.data?.verificationUrlFallback;
+  if (!fallbackUrl) {
+    throw new Error('registerAndLogin: no verificationUrlFallback - is SMTP stubbed for tests?');
+  }
+  const token = new URL(fallbackUrl).searchParams.get('token');
+
+  const verified = await request.post('/api/auth/verify-email').send({ token });
+  if (verified.status !== 200) {
+    throw new Error(`registerAndLogin: verify-email failed (${verified.status}) ${JSON.stringify(verified.body)}`);
+  }
+
+  return { accessToken: verified.body.data.accessToken, user: verified.body.data.user };
 }
 
 export function bearer(token) {
