@@ -25,12 +25,20 @@ export default function StatsSection() {
 
   if (!stats) return null;
 
+  // Learner Satisfaction is withheld until enough genuine reviews exist - the
+  // API sends null rather than a number in that case, and the tile is dropped
+  // entirely instead of rendering "0%" or a placeholder figure. The grid is
+  // sized from what actually renders so the remaining tiles stay balanced.
+  const visibleStats = STAT_META.filter(
+    (meta) => !(meta.isPercent && (stats[meta.key] === null || stats[meta.key] === undefined))
+  );
+
   return (
     <section className="relative z-20 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-4 sm:-mt-6 mb-12">
       {/* Glassmorphism Stat Strip matching template image */}
       <div className="rounded-2xl sm:rounded-3xl bg-white/95 dark:bg-[#0D1424]/85 backdrop-blur-xl border border-slate-200/90 dark:border-white/15 p-4 sm:p-6 shadow-xl shadow-slate-200/60 dark:shadow-2xl">
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 sm:gap-6 divide-y sm:divide-y-0 sm:divide-x divide-slate-200 dark:divide-white/10">
-          {STAT_META.map((meta, idx) => {
+        <div className={`grid grid-cols-2 sm:grid-cols-3 ${visibleStats.length >= 5 ? 'lg:grid-cols-5' : 'lg:grid-cols-4'} gap-4 sm:gap-6 divide-y sm:divide-y-0 sm:divide-x divide-slate-200 dark:divide-white/10`}>
+          {visibleStats.map((meta, idx) => {
             const rawValue = stats[meta.key] ?? 0;
             const value = meta.isPercent ? `${rawValue}%` : formatCount(rawValue);
             const suffix = meta.suffixKey && stats[meta.suffixKey] ? ` · ${formatCount(stats[meta.suffixKey])} ${meta.suffixLabel}` : '';

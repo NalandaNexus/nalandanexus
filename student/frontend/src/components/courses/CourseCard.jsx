@@ -67,14 +67,24 @@ export default function CourseCard({ course, index = 0 }) {
           {course.tagline || course.description}
         </p>
 
-        {/* Rating & Review Count */}
-        <div className="flex items-center gap-1.5 mt-2.5 text-xs">
-          <div className="flex items-center gap-1 text-amber-500 font-semibold">
-            <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-            <span>{course.rating}</span>
+        {/* Rating & Review Count - shown only when real reviews exist.
+            A course nobody has reviewed yet displays nothing here, rather
+            than "0" stars or an invented figure. */}
+        {course.hasRating ? (
+          <div className="flex items-center gap-1.5 mt-2.5 text-xs">
+            <div className="flex items-center gap-1 text-amber-500 font-semibold">
+              <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" aria-hidden="true" />
+              <span>{course.rating}</span>
+            </div>
+            <span className="text-slate-500 dark:text-slate-400 text-[11px]">
+              ({course.reviewsCountLabel} {course.reviewsCount === 1 ? 'review' : 'reviews'})
+            </span>
           </div>
-          <span className="text-slate-500 dark:text-slate-400 text-[11px]">({course.reviewsCount})</span>
-        </div>
+        ) : (
+          <div className="mt-2.5 text-[11px] text-slate-400 dark:text-slate-500 font-medium">
+            No reviews yet
+          </div>
+        )}
       </div>
 
       {/* Footer: Difficulty, Price & Link */}

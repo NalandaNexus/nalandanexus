@@ -5,6 +5,14 @@ process.env.JWT_ACCESS_SECRET = 'test_access_secret';
 process.env.JWT_REFRESH_SECRET = 'test_refresh_secret';
 process.env.CLIENT_URL = 'http://localhost:3000';
 
+// The auth limiter keys on IP, and every request in a test file comes from the
+// same one - so a suite that registers more than AUTH_RATE_LIMIT_MAX students
+// starts collecting 429s that have nothing to do with what it is asserting.
+// Raised here only; production values are untouched, and no test asserts on
+// rate limiting (that behaviour is verified against the live deployment).
+process.env.AUTH_RATE_LIMIT_MAX = '100000';
+process.env.RATE_LIMIT_MAX = '100000';
+
 /**
  * Boots a real Express app against a throwaway in-memory MongoDB instance
  * (an ephemeral, auto-assigned port per call, so test files running in

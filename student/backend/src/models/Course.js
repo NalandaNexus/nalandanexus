@@ -36,7 +36,13 @@ const courseSchema = new Schema(
     // Which of the 3 pillars (Communicate/Compute/Create) this course belongs
     // to - drives the public Learn page's pillar filter.
     pillar: { type: String, enum: ['communicate', 'compute', 'create'], default: 'compute' },
-    rating: { type: Number, default: 4.8, min: 0, max: 5 },
+    // DERIVED FIELDS - never set these by hand. They are recomputed from the
+    // course's Review documents by services/review.service.js on every review
+    // create/update/delete. A new course starts at 0/0, meaning "no rating
+    // yet", and the UI shows nothing rather than a number. The previous
+    // default of 4.8 gave every course a five-star reputation the moment it
+    // was created, with no reviews behind it.
+    rating: { type: Number, default: 0, min: 0, max: 5 },
     reviewsCount: { type: Number, default: 0, min: 0 },
     grades: [{ type: String }], // e.g. ["3","4",...,"12"] - class/grade applicability
     difficulty: { type: String, default: 'Beginner Friendly' },

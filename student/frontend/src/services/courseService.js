@@ -26,8 +26,13 @@ function toDisplayCourse(c) {
     description: c.description,
     category: c.category,
     pillar: c.pillar,
+    // Raw count kept alongside the display string so the UI can decide
+    // whether there is anything to show at all. A course with no reviews must
+    // render no stars rather than "0" next to an empty rating.
     rating: c.rating,
-    reviewsCount: formatReviewsCount(c.reviewsCount),
+    reviewsCount: c.reviewsCount || 0,
+    reviewsCountLabel: formatReviewsCount(c.reviewsCount),
+    hasRating: Boolean(c.reviewsCount > 0),
     difficulty: c.difficulty,
     duration: c.duration,
     image: c.bannerImage,
@@ -45,6 +50,33 @@ function toDisplayCourse(c) {
 }
 
 export const courseService = {
+  /** Publicly readable list of a course's real reviews. */
+  async listCourseReviews(slug, { page = 1, pageSize = 10 } = {}) {
+    const res = await apiClient.get(`/public/courses/${slug}/reviews?page=${page}&pageSize=${pageSize}`);
+    return { reviews: res.data, meta: res.meta };
+  },
+
+  /** The signed-in student's own review for a course, or null. Enrolled students only. */
+  async getMyReview(slug) {
+    const res = await apiClient.get(`/student/courses/${slug}/review`);
+    return res.data;
+  },
+
+  async createReview(slug, { rating, comment }) {
+    const res = await apiClient.post(`/student/courses/${slug}/review`, { rating, comment });
+    return res.data;
+  },
+
+  async updateReview(slug, { rating, comment }) {
+    const res = await apiClient.patch(`/student/courses/${slug}/review`, { rating, comment });
+    return res.data;
+  },
+
+  async deleteReview(slug) {
+    const res = await apiClient.delete(`/student/courses/${slug}/review`);
+    return res.data;
+  },
+
   async listPublicCourses() {
     const res = await apiClient.get('/public/courses');
     return res.data.map(toDisplayCourse);

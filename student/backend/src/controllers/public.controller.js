@@ -9,6 +9,7 @@ import { Resource } from '../models/Resource.js';
 import { User } from '../models/User.js';
 import { TaskSubmission } from '../models/TaskSubmission.js';
 import { Post } from '../models/Post.js';
+import { getPlatformSatisfaction } from '../services/review.service.js';
 
 /**
  * The only posts an anonymous visitor may ever see - explicitly approved for
@@ -209,20 +210,20 @@ export const listPublicResources = asyncHandler(async (req, res) => {
  * "Projects" or "Countries" just to match a marketing label.
  */
 export const listPublicStats = asyncHandler(async (req, res) => {
-  const [activeLearners, courses, mentors, tasksCompleted, ratingAgg, communityPosts] = await Promise.all([
+  const [activeLearners, courses, mentors, tasksCompleted, satisfaction, communityPosts] = await Promise.all([
     User.countDocuments({ role: 'student', isActive: true }),
     Course.find({ isPublished: true }).select('modules instructor.name').lean(),
     Course.distinct('instructor.name', { isPublished: true, 'instructor.name': { $nin: [null, ''] } }),
     TaskSubmission.countDocuments({ isCompleted: true }),
-    Course.aggregate([
-      { $match: { isPublished: true, rating: { $gt: 0 } } },
-      { $group: { _id: null, avgRating: { $avg: '$rating' } } },
-    ]),
+    // Averaged over real Review documents, not over Course.rating. Those
+    // course fields used to be seeded marketing numbers (4.7-5.0 across every
+    // course), which meant this "Learner Satisfaction" figure was derived
+    // entirely from data no student had ever entered.
+    getPlatformSatisfaction(),
     countDisplayablePublicPosts(),
   ]);
 
   const totalModules = courses.reduce((sum, c) => sum + (c.modules?.length || 0), 0);
-  const avgRating = ratingAgg[0]?.avgRating || 0;
 
   return sendSuccess(res, {
     data: {
@@ -231,7 +232,11 @@ export const listPublicStats = asyncHandler(async (req, res) => {
       totalModules,
       expertMentors: mentors.length,
       tasksCompleted,
-      avgRatingPercent: Math.round((avgRating / 5) * 100),
+      // null until there are enough genuine reviews to say anything honest -
+      // the Landing Page hides the tile rather than publishing a percentage
+      // computed from one or two votes. Never a fallback constant.
+      avgRatingPercent: satisfaction.percent,
+      satisfactionReviewsCount: satisfaction.reviewsCount,
       communityPosts,
     },
   });

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import CourseReviews from '../components/courses/CourseReviews';
 import {
   Calendar,
   Video,
@@ -360,6 +361,10 @@ export default function CourseDetail() {
         </div>
 
       </div>
+
+      {/* Real student reviews - the rating shown here is computed from actual
+          Review documents, never a seeded marketing figure. */}
+      <CourseReviews slug={course.slug} isEnrolled={isEnrolled} />
     </div>
   );
 }
