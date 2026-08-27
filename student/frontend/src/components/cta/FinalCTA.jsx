@@ -118,12 +118,16 @@ export default function FinalCTA() {
             ) : (
               <form onSubmit={handleSubmit} className="w-full">
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 p-1.5 rounded-2xl sm:rounded-full bg-[#0D1424]/80 border border-white/20 backdrop-blur-xl shadow-inner">
+                  {/* A placeholder is not an accessible name: it disappears on
+                      focus and is not reliably announced, so this field was
+                      reaching screen readers as an unlabelled edit box. */}
                   <input
                     type="email"
                     value={email}
                     onChange={handleInputChange}
                     placeholder="Enter your email"
-                    className="w-full px-4 py-2.5 bg-transparent text-white placeholder-slate-400 text-xs sm:text-sm outline-none rounded-full"
+                    aria-label="Email address"
+                    className="w-full px-4 py-2.5 min-h-[44px] bg-transparent text-white placeholder-slate-400 text-xs sm:text-sm outline-none rounded-full"
                   />
                   <button
                     type="submit"

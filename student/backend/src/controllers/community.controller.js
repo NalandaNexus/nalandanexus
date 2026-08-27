@@ -54,6 +54,27 @@ export const createPost = asyncHandler(async (req, res) => {
   return sendSuccess(res, { status: 201, message: 'Post shared.', data: shaped });
 });
 
+/**
+ * Deletes a post. Scoped to the author: the query filters on userId, so one
+ * student can never delete another's post (an unowned id is indistinguishable
+ * from a missing one). Previously no delete route existed anywhere in the API,
+ * which meant neither an author nor an administrator could retract something
+ * once it was posted.
+ */
+export const deletePost = asyncHandler(async (req, res) => {
+  const post = await Post.findOneAndDelete({ _id: req.params.id, userId: req.user._id });
+  if (!post) throw AppError.notFound('Post not found', 'POST_NOT_FOUND');
+
+  try {
+    const { emitCommunityPostDeleted } = await import('../sockets/index.js');
+    emitCommunityPostDeleted({ id: String(post._id) });
+  } catch {
+    // socket layer optional
+  }
+
+  return sendSuccess(res, { message: 'Post deleted.', data: { id: String(post._id) } });
+});
+
 export const toggleLike = asyncHandler(async (req, res) => {
   const post = await Post.findById(req.params.id);
   if (!post) throw AppError.notFound('Post not found', 'POST_NOT_FOUND');

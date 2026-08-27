@@ -136,6 +136,11 @@ export const studentApiService = {
     return res.data;
   },
 
+  async deleteCommunityPost(postId) {
+    await apiClient.delete(`/student/community/posts/${postId}`);
+    return postId;
+  },
+
   async toggleCommunityPostLike(postId) {
     const res = await apiClient.post(`/student/community/posts/${postId}/like`);
     return res.data;

@@ -60,9 +60,9 @@ export default function CourseCard({ course, index = 0 }) {
         </div>
 
         {/* Course Title & Description */}
-        <h4 className="font-heading font-bold text-sm sm:text-base text-slate-900 dark:text-white tracking-tight group-hover:text-amber-500 dark:group-hover:text-amber-400 transition-colors line-clamp-1">
+        <h3 className="font-heading font-bold text-sm sm:text-base text-slate-900 dark:text-white tracking-tight group-hover:text-amber-500 dark:group-hover:text-amber-400 transition-colors line-clamp-1">
           {course.title}
-        </h4>
+        </h3>
         <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-1 line-clamp-2 leading-relaxed font-medium">
           {course.tagline || course.description}
         </p>

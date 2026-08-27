@@ -46,3 +46,11 @@ export const updateLiveClassSchema = z.object({
     isPublished: z.boolean().optional(),
   }),
 });
+
+export const setPostApprovalSchema = z.object({
+  body: z
+    .object({
+      isApprovedForPublic: z.boolean(),
+    })
+    .strict(),
+});

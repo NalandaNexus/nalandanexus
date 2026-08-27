@@ -101,7 +101,7 @@ export default function AnnouncementsSection() {
                   </span>
                   <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">{timeAgo(a.publishAt)}</span>
                 </div>
-                <h4 className="text-sm font-bold text-slate-900 dark:text-white leading-snug">{a.title}</h4>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white leading-snug">{a.title}</h3>
                 <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 leading-relaxed line-clamp-2">{a.content}</p>
               </div>
             ))}

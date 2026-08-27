@@ -20,6 +20,7 @@ const Resources = lazy(() => import('./pages/Resources'));
 const About = lazy(() => import('./pages/About'));
 const AuthPage = lazy(() => import('./pages/AuthPage'));
 const VerifyEmailPage = lazy(() => import('./pages/VerifyEmailPage'));
+const NotFound = lazy(() => import('./pages/NotFound'));
 
 // Student Workspace Pages & Layout
 const StudentLayout = lazy(() => import('./components/student/StudentLayout'));
@@ -174,8 +175,10 @@ export default function App() {
                   <Route path="help" element={<HelpSupportPage />} />
                 </Route>
 
-                {/* Fallback to Home */}
-                <Route path="*" element={<Navigate to="/" replace />} />
+                {/* A real 404 rather than a silent redirect to Home - a bad
+                    URL should say so, and crawlers should not see every dead
+                    link answer 200 with the homepage. */}
+                <Route path="*" element={<NotFound />} />
               </Routes>
             </Suspense>
           </LayoutWrapper>

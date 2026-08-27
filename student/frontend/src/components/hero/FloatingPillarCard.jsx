@@ -91,10 +91,17 @@ export default function FloatingPillarCard({
             <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </div>
           <div>
-            <h4 className="text-[11px] sm:text-xs font-heading font-extrabold text-slate-900 dark:text-white tracking-wider uppercase flex items-center gap-1">
+            {/* Deliberately not a heading. These three hero chips are a
+                decorative preview of the pillars, and the same three titles
+                appear again below as the real <h3>s of the Pillars section.
+                As <h4>s they sat between the page <h1> and the first <h2>,
+                so a screen reader navigating by heading level jumped H1 → H4
+                and got a document outline that skipped two levels (WCAG
+                1.3.1) while announcing the same content twice. */}
+            <p className="text-[11px] sm:text-xs font-heading font-extrabold text-slate-900 dark:text-white tracking-wider uppercase flex items-center gap-1">
               {config.title}
-              <Sparkles className="w-2 h-2 opacity-0 group-hover:opacity-100 transition-opacity text-slate-400" />
-            </h4>
+              <Sparkles className="w-2 h-2 opacity-0 group-hover:opacity-100 transition-opacity text-slate-400" aria-hidden="true" />
+            </p>
             <p className="text-[9.5px] sm:text-[10.5px] text-slate-600 dark:text-slate-300 leading-tight mt-0.5 line-clamp-2">
               {config.subtitle}
             </p>

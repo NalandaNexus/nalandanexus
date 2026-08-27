@@ -14,6 +14,20 @@ import { footerColumns } from '../../data/navigation';
 import { companyContacts } from '../../data/network';
 import { playTone } from '../../utils/sound';
 
+
+/**
+ * Social profiles are opt-in via env vars. An unset var means the icon is not
+ * rendered at all, rather than linking to a generic platform homepage.
+ */
+const socialLinks = [
+  { key: 'linkedin',  env: import.meta.env.VITE_SOCIAL_LINKEDIN,  label: 'LinkedIn',    Icon: Linkedin,  hoverBorder: 'hover:border-cyan-500/50' },
+  { key: 'instagram', env: import.meta.env.VITE_SOCIAL_INSTAGRAM, label: 'Instagram',   Icon: Instagram, hoverBorder: 'hover:border-purple-500/50' },
+  { key: 'youtube',   env: import.meta.env.VITE_SOCIAL_YOUTUBE,   label: 'YouTube',     Icon: Youtube,   hoverBorder: 'hover:border-rose-500/50' },
+  { key: 'x',         env: import.meta.env.VITE_SOCIAL_X,         label: 'X (Twitter)', Icon: Twitter,   hoverBorder: 'hover:border-cyan-500/50' },
+]
+  .filter((s) => typeof s.env === 'string' && s.env.trim().length > 0)
+  .map((s) => ({ ...s, href: s.env.trim() }));
+
 export default function Footer() {
   const scrollToTop = () => {
     playTone(600, 'sine', 0.05, 0.03);
@@ -52,74 +66,57 @@ export default function Footer() {
             <div className="space-y-1.5 mb-6 text-xs text-slate-700 dark:text-slate-300 font-medium">
               <a
                 href={`mailto:${companyContacts.email}`}
-                className="flex items-center gap-2 hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors"
+                className="flex items-center gap-2 min-h-[44px] hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors"
               >
                 <Mail className="w-3.5 h-3.5 text-cyan-600 dark:text-cyan-400" />
                 <span>{companyContacts.email}</span>
               </a>
               <a
                 href="tel:+918630996363"
-                className="flex items-center gap-2 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
+                className="flex items-center gap-2 min-h-[44px] hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
               >
                 <Phone className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
                 <span>{companyContacts.primaryPhone} / {companyContacts.secondaryPhone}</span>
               </a>
             </div>
 
-            {/* Social Icons */}
-            <div className="flex items-center gap-2.5">
-              <a
-                href="https://linkedin.com"
-                target="_blank"
-                rel="noreferrer"
-                className="w-8 h-8 rounded-lg bg-white dark:bg-white/5 border border-slate-300 dark:border-white/10 flex items-center justify-center text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-white/10 hover:border-cyan-500/50 shadow-sm transition-all"
-                aria-label="LinkedIn"
-              >
-                <Linkedin className="w-4 h-4" />
-              </a>
-              <a
-                href="https://instagram.com"
-                target="_blank"
-                rel="noreferrer"
-                className="w-8 h-8 rounded-lg bg-white dark:bg-white/5 border border-slate-300 dark:border-white/10 flex items-center justify-center text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-white/10 hover:border-purple-500/50 shadow-sm transition-all"
-                aria-label="Instagram"
-              >
-                <Instagram className="w-4 h-4" />
-              </a>
-              <a
-                href="https://youtube.com"
-                target="_blank"
-                rel="noreferrer"
-                className="w-8 h-8 rounded-lg bg-white dark:bg-white/5 border border-slate-300 dark:border-white/10 flex items-center justify-center text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-white/10 hover:border-rose-500/50 shadow-sm transition-all"
-                aria-label="YouTube"
-              >
-                <Youtube className="w-4 h-4" />
-              </a>
-              <a
-                href="https://x.com"
-                target="_blank"
-                rel="noreferrer"
-                className="w-8 h-8 rounded-lg bg-white dark:bg-white/5 border border-slate-300 dark:border-white/10 flex items-center justify-center text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-white/10 hover:border-cyan-500/50 shadow-sm transition-all"
-                aria-label="X (Twitter)"
-              >
-                <Twitter className="w-4 h-4" />
-              </a>
-            </div>
+            {/* Social Icons - each rendered only when a real profile URL is
+                configured. These previously pointed at bare linkedin.com /
+                instagram.com / youtube.com / x.com homepages, which is worse
+                than showing nothing: the icons look like working links and
+                send visitors away from the site to no Nalanda presence at
+                all. Set the VITE_SOCIAL_* vars to publish them. */}
+            {socialLinks.length > 0 && (
+              <div className="flex items-center gap-2.5">
+                {socialLinks.map(({ key, href, label, Icon, hoverBorder }) => (
+                  <a
+                    key={key}
+                    href={href}
+                    target="_blank"
+                    rel="noreferrer"
+                    className={`w-11 h-11 rounded-lg bg-white dark:bg-white/5 border border-slate-300 dark:border-white/10 flex items-center justify-center text-slate-700 dark:text-slate-300 hover:text-slate-950 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-white/10 ${hoverBorder} shadow-sm transition-all`}
+                    aria-label={label}
+                  >
+                    <Icon className="w-4 h-4" aria-hidden="true" />
+                  </a>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* 4 Link Columns: Platform, Resources, Community, Company */}
           <div className="md:col-span-8 grid grid-cols-2 sm:grid-cols-4 gap-6 sm:gap-4">
             {footerColumns.map((col) => (
               <div key={col.title}>
-                <h4 className="font-heading font-semibold text-sm text-slate-900 dark:text-white mb-3 tracking-wide">
+                <h3 className="font-heading font-semibold text-sm text-slate-900 dark:text-white mb-3 tracking-wide">
                   {col.title}
-                </h4>
-                <ul className="space-y-2 text-xs">
+                </h3>
+                <ul className="text-xs">
                   {col.links.map((link) => (
                     <li key={link.label}>
                       <Link
                         to={link.path}
-                        className="text-slate-600 dark:text-slate-400 hover:text-cyan-600 dark:hover:text-cyan-300 transition-colors"
+                        className="inline-flex items-center min-h-[44px] text-slate-600 dark:text-slate-400 hover:text-cyan-600 dark:hover:text-cyan-300 transition-colors"
                       >
                         {link.label}
                       </Link>

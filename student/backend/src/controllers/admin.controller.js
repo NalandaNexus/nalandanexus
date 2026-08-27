@@ -3,6 +3,7 @@ import { sendSuccess } from '../utils/apiResponse.js';
 import { AppError } from '../utils/AppError.js';
 import { Announcement } from '../models/Announcement.js';
 import { LiveClass } from '../models/LiveClass.js';
+import { Post } from '../models/Post.js';
 import { createAnnouncement as createAnnouncementService } from '../services/announcement.service.js';
 
 // --- Announcements (admin/teacher) ---------------------------------------
@@ -55,4 +56,65 @@ export const deleteLiveClass = asyncHandler(async (req, res) => {
   const liveClass = await LiveClass.findByIdAndDelete(req.params.id);
   if (!liveClass) throw AppError.notFound('Live class not found', 'LIVE_CLASS_NOT_FOUND');
   return sendSuccess(res, { message: 'Live class deleted.' });
+});
+
+// --- Community moderation (admin/teacher) ---------------------------------
+
+/**
+ * Posts students write are visible in the in-app community feed immediately,
+ * but reach the anonymous Landing Page only once approved here. Before this
+ * existed, anyone who could register could publish arbitrary text onto the
+ * public homepage, and there was no route anywhere in the API to take it back
+ * down again.
+ */
+export const listCommunityPosts = asyncHandler(async (req, res) => {
+  const filter = {};
+  if (req.query.approved === 'true') filter.isApprovedForPublic = true;
+  if (req.query.approved === 'false') filter.isApprovedForPublic = false;
+
+  const posts = await Post.find(filter)
+    .sort({ createdAt: -1 })
+    .limit(200)
+    .populate('userId', 'name email')
+    .lean();
+
+  return sendSuccess(res, {
+    data: posts.map((p) => ({
+      id: String(p._id),
+      body: p.body,
+      isApprovedForPublic: Boolean(p.isApprovedForPublic),
+      // Null when the author's account has since been deleted; such a post can
+      // never render on the public feed, so surface it as reviewable here.
+      author: p.userId ? { id: String(p.userId._id), name: p.userId.name, email: p.userId.email } : null,
+      createdAt: p.createdAt,
+    })),
+  });
+});
+
+export const setCommunityPostApproval = asyncHandler(async (req, res) => {
+  const post = await Post.findByIdAndUpdate(
+    req.params.id,
+    { isApprovedForPublic: Boolean(req.body.isApprovedForPublic) },
+    { new: true }
+  );
+  if (!post) throw AppError.notFound('Post not found', 'POST_NOT_FOUND');
+  return sendSuccess(res, {
+    message: post.isApprovedForPublic ? 'Post approved for the public page.' : 'Post removed from the public page.',
+    data: { id: String(post._id), isApprovedForPublic: post.isApprovedForPublic },
+  });
+});
+
+/** Unlike the student route, this deletes any post regardless of author. */
+export const deleteCommunityPost = asyncHandler(async (req, res) => {
+  const post = await Post.findByIdAndDelete(req.params.id);
+  if (!post) throw AppError.notFound('Post not found', 'POST_NOT_FOUND');
+
+  try {
+    const { emitCommunityPostDeleted } = await import('../sockets/index.js');
+    emitCommunityPostDeleted({ id: String(post._id) });
+  } catch {
+    // socket layer optional
+  }
+
+  return sendSuccess(res, { message: 'Post deleted.', data: { id: String(post._id) } });
 });

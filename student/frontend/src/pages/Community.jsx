@@ -8,6 +8,7 @@ import {
   Heart,
   Send,
   LogIn,
+  Trash2,
 } from 'lucide-react';
 import { playTone } from '../utils/sound';
 import { useAuth } from '../context/AuthContext';
@@ -125,6 +126,23 @@ export default function Community() {
     }
   };
 
+  /**
+   * Retracting your own post. The API scopes the delete to the authenticated
+   * author, so this button is only rendered on your own posts and the server
+   * enforces the same rule regardless of what the client sends.
+   */
+  const handleDeletePost = async (postId) => {
+    if (!window.confirm('Delete this post? This cannot be undone.')) return;
+    const previous = posts;
+    setPosts((prev) => prev.filter((p) => p.id !== postId));
+    try {
+      await studentApiService.deleteCommunityPost(postId);
+    } catch {
+      setPosts(previous);
+      setPostsError('Could not delete that post. Please try again.');
+    }
+  };
+
   return (
     <div className="min-h-screen pt-28 pb-24 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       {/* Header */}
@@ -238,6 +256,17 @@ export default function Community() {
                         <Heart className={`w-4 h-4 ${post.likedByMe ? 'fill-rose-500' : ''}`} />
                         <span>{post.likesCount} Likes</span>
                       </button>
+
+                      {post.author.id === user?._id && (
+                        <button
+                          onClick={() => handleDeletePost(post.id)}
+                          className="flex items-center gap-1.5 min-h-[44px] hover:text-rose-600 transition-colors"
+                          aria-label="Delete your post"
+                        >
+                          <Trash2 className="w-4 h-4" aria-hidden="true" />
+                          <span>Delete</span>
+                        </button>
+                      )}
                     </div>
                   </motion.div>
                 ))}

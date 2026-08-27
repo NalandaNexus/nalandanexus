@@ -1,5 +1,6 @@
 import { env } from '../config/env.js';
 import { logger } from '../utils/logger.js';
+import { escapeHtml } from '../utils/sanitize.js';
 
 const SENDGRID_ENDPOINT = 'https://api.sendgrid.com/v3/mail/send';
 
@@ -60,13 +61,19 @@ export async function sendEmail({ to, subject, html, text }) {
 }
 
 export function supportTicketEmail({ ticketId, studentName, studentEmail, subject, message }) {
+  // Every interpolated value here is student-controlled and lands in an HTML
+  // body we build ourselves, so it is escaped at the sink. Input is also
+  // stripped of markup on write (utils/sanitize.js) - this is the second,
+  // independent layer, because an email client is exactly the kind of
+  // consumer that does NOT escape for us the way React does.
+  const e = escapeHtml;
   return {
     subject: `[Support #${ticketId}] ${subject}`,
     text: `New support request from ${studentName} <${studentEmail}>\n\nSubject: ${subject}\n\n${message}\n\nTicket ID: ${ticketId}`,
-    html: `<p><strong>New support request</strong> from ${studentName} (${studentEmail})</p>
-      <p><strong>Subject:</strong> ${subject}</p>
-      <p>${message.replace(/\n/g, '<br/>')}</p>
-      <p style="color:#888">Ticket ID: ${ticketId}</p>`,
+    html: `<p><strong>New support request</strong> from ${e(studentName)} (${e(studentEmail)})</p>
+      <p><strong>Subject:</strong> ${e(subject)}</p>
+      <p>${e(message).replace(/\n/g, '<br/>')}</p>
+      <p style="color:#888">Ticket ID: ${e(String(ticketId))}</p>`,
   };
 }
 

@@ -1,8 +1,17 @@
 import { z } from 'zod';
+import { stripHtml } from '../utils/sanitize.js';
+
+// Strips markup BEFORE the length checks run, so a payload like
+// "<script></script>" cannot satisfy a min-length rule by being long before
+// sanitisation and empty after it.
+const cleanText = (max, min = 0, msg) => {
+  const base = z.string().trim().max(max).transform(stripHtml);
+  return min > 0 ? base.pipe(z.string().min(min, msg)) : base;
+};
 
 export const createTicketSchema = z.object({
   body: z.object({
-    subject: z.string().trim().min(3, 'Subject is required').max(200),
-    message: z.string().trim().min(10, 'Please provide more detail (min 10 characters)').max(4000),
+    subject: cleanText(200, 3, 'Subject is required'),
+    message: cleanText(4000, 10, 'Please provide more detail (min 10 characters)'),
   }),
 });

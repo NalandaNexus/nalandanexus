@@ -10,6 +10,33 @@ import { User } from '../models/User.js';
 import { TaskSubmission } from '../models/TaskSubmission.js';
 import { Post } from '../models/Post.js';
 
+/**
+ * The only posts an anonymous visitor may ever see - explicitly approved for
+ * public display. Without this, any account that could register could publish
+ * arbitrary text straight onto the institution's homepage.
+ */
+const PUBLIC_POST_FILTER = { isApprovedForPublic: true };
+
+/**
+ * Counts exactly the posts the public feed would actually render.
+ *
+ * The feed drops posts whose author no longer exists (populate yields null -
+ * there is no cascade cleanup when a user is deleted), so a plain
+ * countDocuments over the same filter over-reports: that mismatch is why the
+ * Landing Page showed "2 Community Posts" directly above an empty section.
+ * The $lookup applies the same author-exists rule the feed applies, so the
+ * number and the content can no longer disagree.
+ */
+async function countDisplayablePublicPosts() {
+  const [row] = await Post.aggregate([
+    { $match: PUBLIC_POST_FILTER },
+    { $lookup: { from: 'users', localField: 'userId', foreignField: '_id', as: 'author' } },
+    { $match: { 'author.0': { $exists: true } } },
+    { $count: 'n' },
+  ]);
+  return row?.n || 0;
+}
+
 function toPublicCourse(course, enrolledCourseIds) {
   const obj = course.toObject ? course.toObject({ virtuals: true }) : course;
   return {
@@ -191,7 +218,7 @@ export const listPublicStats = asyncHandler(async (req, res) => {
       { $match: { isPublished: true, rating: { $gt: 0 } } },
       { $group: { _id: null, avgRating: { $avg: '$rating' } } },
     ]),
-    Post.countDocuments({}),
+    countDisplayablePublicPosts(),
   ]);
 
   const totalModules = courses.reduce((sum, c) => sum + (c.modules?.length || 0), 0);
@@ -219,7 +246,7 @@ export const listPublicStats = asyncHandler(async (req, res) => {
  */
 export const listPublicHighlights = asyncHandler(async (req, res) => {
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 5, 1), 10);
-  const posts = await Post.find({})
+  const posts = await Post.find(PUBLIC_POST_FILTER)
     .sort({ createdAt: -1 })
     .limit(limit)
     .populate('userId', 'name avatar')

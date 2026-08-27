@@ -45,6 +45,7 @@ router.post('/messages', validate(sendMessageSchema), messageController.sendMess
 router.get('/community/posts', validate(listPostsSchema), communityController.listPosts);
 router.post('/community/posts', validate(createPostSchema), communityController.createPost);
 router.post('/community/posts/:id/like', communityController.toggleLike);
+router.delete('/community/posts/:id', communityController.deletePost);
 
 router.get('/live-classes', liveClassController.listLiveClasses);
 

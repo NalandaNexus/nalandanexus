@@ -90,7 +90,7 @@ export default function ExploreCourses() {
               <button
                 key={cat.id}
                 onClick={() => handleFilterClick(cat.id)}
-                className={`px-3.5 sm:px-4 py-1.5 rounded-full text-xs font-semibold border transition-all ${
+                className={`px-3.5 sm:px-4 py-1.5 min-h-[44px] inline-flex items-center rounded-full text-xs font-semibold border transition-all ${
                   isSelected
                     ? 'bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-600/30'
                     : 'bg-slate-100 dark:bg-[#0D1424]/60 border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-white/10'
@@ -105,7 +105,7 @@ export default function ExploreCourses() {
           <div className="relative">
             <button
               onClick={() => setIsMoreOpen(!isMoreOpen)}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-semibold border flex items-center gap-1.5 transition-all ${
+              className={`px-3.5 py-1.5 min-h-[44px] rounded-full text-xs font-semibold border flex items-center gap-1.5 transition-all ${
                 selectedCategory === 'communication'
                   ? 'bg-blue-600 border-blue-600 text-white'
                   : 'bg-slate-100 dark:bg-[#0D1424]/60 border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
@@ -146,7 +146,7 @@ export default function ExploreCourses() {
         <div className="flex items-center gap-4 self-end md:self-auto">
           <Link
             to="/learn"
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors"
+            className="inline-flex items-center gap-1.5 min-h-[44px] text-xs font-semibold text-slate-700 dark:text-slate-300 hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors"
           >
             <span>View All Courses</span>
             <ArrowRight className="w-3.5 h-3.5" />

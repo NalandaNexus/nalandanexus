@@ -109,6 +109,9 @@ export function emitCommunityPostCreated(post) {
 export function emitCommunityPostUpdated(post) {
   io?.emit('community.post_updated', post);
 }
+export function emitCommunityPostDeleted(post) {
+  io?.emit('community.post_deleted', post);
+}
 
 /** Broadcasts to the public/anonymous namespace - see initSocket for scope. */
 export function emitToPublic(event, payload) {

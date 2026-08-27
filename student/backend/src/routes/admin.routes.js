@@ -8,6 +8,7 @@ import {
   updateAnnouncementSchema,
   createLiveClassSchema,
   updateLiveClassSchema,
+  setPostApprovalSchema,
 } from '../validators/admin.validators.js';
 
 const router = Router();
@@ -22,6 +23,15 @@ router.get('/announcements', adminController.listAllAnnouncements);
 router.post('/announcements', validate(createAnnouncementSchema), adminController.createAnnouncement);
 router.patch('/announcements/:id', validate(updateAnnouncementSchema), adminController.updateAnnouncement);
 router.delete('/announcements/:id', adminController.deleteAnnouncement);
+
+// Community moderation - gates what reaches the anonymous Landing Page feed.
+router.get('/community/posts', adminController.listCommunityPosts);
+router.patch(
+  '/community/posts/:id/approval',
+  validate(setPostApprovalSchema),
+  adminController.setCommunityPostApproval
+);
+router.delete('/community/posts/:id', adminController.deleteCommunityPost);
 
 router.get('/live-classes', adminController.listAllLiveClasses);
 router.post('/live-classes', validate(createLiveClassSchema), adminController.createLiveClass);

@@ -64,7 +64,7 @@ export default function PillarCard({ pillar, index = 0 }) {
           <div className="mt-4 pt-2">
             <Link
               to={pillar.link}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-slate-900 text-white dark:bg-white/10 dark:text-white hover:bg-slate-800 dark:hover:bg-white/20 border border-slate-700 dark:border-white/15 text-xs font-semibold tracking-wide transition-all shadow-sm group-hover:scale-105"
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 min-h-[44px] rounded-full bg-slate-900 text-white dark:bg-white/10 dark:text-white hover:bg-slate-800 dark:hover:bg-white/20 border border-slate-700 dark:border-white/15 text-xs font-semibold tracking-wide transition-all shadow-sm group-hover:scale-105"
             >
               <span>Explore</span>
               <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />

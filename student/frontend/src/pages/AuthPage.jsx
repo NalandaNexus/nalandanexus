@@ -71,7 +71,11 @@ export default function AuthPage({ initialMode = 'login' }) {
   // Toast System
   const addToast = useCallback((message, type = 'info') => {
     const id = Date.now() + Math.random();
-    setToasts((prev) => [...prev, { id, message, type }]);
+    // A success toast clears any errors still on screen from earlier attempts.
+    // Without this, fixing a validation problem left the old complaint stacked
+    // directly above "Account created…", so the screen contradicted itself at
+    // the exact moment the user needed a clear answer.
+    setToasts((prev) => (type === 'success' ? [] : prev).concat({ id, message, type }));
 
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
