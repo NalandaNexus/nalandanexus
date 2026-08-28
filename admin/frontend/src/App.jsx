@@ -19,6 +19,7 @@ import PaymentsPage from './pages/PaymentsPage';
 import ReportsPage from './pages/ReportsPage';
 import SystemLogsPage from './pages/SystemLogsPage';
 import AdminSettingsPage from './pages/AdminSettingsPage';
+import { Analytics } from "@vercel/analytics/react"
 
 export default function App() {
   return (

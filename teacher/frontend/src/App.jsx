@@ -21,6 +21,7 @@ import AnnouncementsPage from './pages/AnnouncementsPage';
 import ReportsPage from './pages/ReportsPage';
 import LiveSchedulePage from './pages/LiveSchedulePage';
 import SettingsPage from './pages/SettingsPage';
+import { Analytics } from "@vercel/analytics/react"
 
 export default function App() {
   return (

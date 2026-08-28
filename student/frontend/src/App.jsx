@@ -3,7 +3,7 @@ import { BrowserRouter, Routes, Route, useLocation, Navigate } from 'react-route
 import Navbar from './components/navbar/Navbar';
 import Footer from './components/footer/Footer';
 import ScrollToTop from './components/common/ScrollToTop';
-
+import { Analytics } from "@vercel/analytics/react"
 // Context Providers
 import { AuthProvider } from './context/AuthContext';
 import { StudentProvider } from './context/StudentContext';

@@ -19,20 +19,33 @@ function stripTrailingSlash(url) {
   return url.replace(/\/+$/, '');
 }
 
+// Parsed once: CLIENT_URL is a comma-separated list of allowed browser
+// origins. Trailing slashes are stripped because a real Origin header never
+// carries one, so "https://x.com/" would match nothing.
+const CLIENT_URLS = (process.env.CLIENT_URL || 'http://localhost:3000')
+  .split(',')
+  .map((u) => stripTrailingSlash(u.trim()))
+  .filter(Boolean);
+
 export const env = {
   nodeEnv: process.env.NODE_ENV || 'development',
   isProd: process.env.NODE_ENV === 'production',
   isTest: process.env.NODE_ENV === 'test',
   port: Number(process.env.PORT) || 5001,
-  // Matches frontend/vite.config.js's configured dev server port (3000),
-  // not Vite's own default of 5173 - this project pins a custom port.
-  // Accepts a comma-separated list (e.g. "https://app.example.com,https://staging.example.com")
-  // so a staging + production frontend can share one backend deployment.
-  clientUrl: stripTrailingSlash(process.env.CLIENT_URL || 'http://localhost:3000'),
-  clientUrls: (process.env.CLIENT_URL || 'http://localhost:3000')
-    .split(',')
-    .map((u) => stripTrailingSlash(u.trim()))
-    .filter(Boolean),
+  // Every allowed browser origin (the CORS allow-list). Comma-separated, so
+  // one backend can serve www + the apex + a staging frontend. In dev this
+  // defaults to port 3000, which is what frontend/vite.config.js pins - not
+  // Vite's own default of 5173.
+  clientUrls: CLIENT_URLS,
+  // The canonical one, used to build links in outgoing email.
+  //
+  // This used to be the raw CLIENT_URL string, which was fine while that held
+  // a single URL - but the moment it becomes a comma-separated allow-list
+  // (which it must, once the site is served from both www and the apex), the
+  // whole string ended up inside every verification and password-reset link:
+  //   https://a.com,https://b.com/verify-email?token=...
+  // i.e. a dead link in every email the platform sends. Take the first entry.
+  clientUrl: CLIENT_URLS[0],
 
   mongoUri: required('MONGODB_URI', 'mongodb://127.0.0.1:27017/nalanda_nexus'),
 

@@ -23,6 +23,14 @@ async function main() {
 
   httpServer.listen(env.port, () => {
     logger.info(`Nalanda Student Backend running on http://localhost:${env.port} (${env.nodeEnv})`);
+
+    // Log the CORS allow-list at boot. A frontend origin missing from
+    // CLIENT_URL takes the whole site down - every API call fails the
+    // preflight - while the site itself still loads and looks fine, so the
+    // cause is easy to miss. Moving to a custom domain is exactly when this
+    // bites: www and the apex are separate origins and BOTH need listing.
+    logger.info(`[CORS] Allowed browser origins: ${env.clientUrls.join(', ')}`);
+    logger.info(`[Email] Links in outgoing email point to: ${env.clientUrl}`);
   });
 
   const shutdown = async (signal) => {
