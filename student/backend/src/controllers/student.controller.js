@@ -1,7 +1,7 @@
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { sendSuccess } from '../utils/apiResponse.js';
 import { AppError } from '../utils/AppError.js';
-import { avatarPublicUrl } from '../middleware/upload.js';
+import { storeAvatar } from '../services/fileStorage.service.js';
 import { StudentProfile } from '../models/StudentProfile.js';
 import { Enrollment } from '../models/Enrollment.js';
 import { Course } from '../models/Course.js';
@@ -41,7 +41,13 @@ export const updateProfile = asyncHandler(async (req, res) => {
 /** POST /api/student/profile/avatar (multipart) — file type/size validated by middleware/upload.js before this ever runs. */
 export const uploadAvatar = asyncHandler(async (req, res) => {
   if (!req.file) throw AppError.badRequest('An image file is required.', 'FILE_REQUIRED');
-  req.user.avatar = avatarPublicUrl(req.file.filename);
+  // Persisted to MongoDB rather than the container's local disk, which Render
+  // wipes on every redeploy - see services/fileStorage.service.js.
+  req.user.avatar = await storeAvatar({
+    ownerId: req.user._id,
+    buffer: req.file.buffer,
+    mimetype: req.file.mimetype,
+  });
   await req.user.save();
   return sendSuccess(res, { message: 'Profile photo updated.', data: { user: req.user.toJSON() } });
 });

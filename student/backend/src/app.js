@@ -9,9 +9,9 @@ import { env } from './config/env.js';
 import { generalLimiter } from './middleware/rateLimiters.js';
 import { notFoundHandler, globalErrorHandler } from './middleware/errorHandler.js';
 import { asyncHandler } from './utils/asyncHandler.js';
-import { sendSuccess } from './utils/apiResponse.js';
+import { sendSuccess, sendError } from './utils/apiResponse.js';
 import { isDbConnected } from './config/db.js';
-import { UPLOADS_ROOT } from './middleware/upload.js';
+import { getStoredFile } from './services/fileStorage.service.js';
 
 import authRoutes from './routes/auth.routes.js';
 import publicRoutes from './routes/public.routes.js';
@@ -82,8 +82,27 @@ export function createApp() {
 
   app.use('/api', generalLimiter);
 
-  // Static file serving for local-disk uploads (avatars) — see middleware/upload.js.
-  app.use('/uploads', express.static(UPLOADS_ROOT));
+  // Uploads are served from MongoDB, not the local filesystem - Render's disk
+  // is ephemeral and used to lose every avatar on each redeploy. The stored
+  // contentType comes from the validated mimetype at upload time, and nosniff
+  // stops a browser from re-interpreting the bytes as anything else, so a file
+  // whose *content* is HTML still cannot execute.
+  app.get(
+    '/uploads/avatars/:key',
+    asyncHandler(async (req, res) => {
+      const file = await getStoredFile(req.params.key);
+      if (!file) {
+        return sendError(res, { status: 404, code: 'FILE_NOT_FOUND', message: 'File not found.' });
+      }
+      // setHeader, not res.set: Express's setter appends "; charset=utf-8" to
+      // the content type, which is meaningless on binary image data.
+      res.setHeader('Content-Type', file.contentType);
+      res.setHeader('Content-Length', String(file.data.length));
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      return res.end(file.data);
+    })
+  );
 
   app.get(
     '/api/health',

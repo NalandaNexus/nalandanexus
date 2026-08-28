@@ -1,0 +1,48 @@
+name: Keep student backend warm
+
+# Render's free web services sleep after ~15 minutes of inactivity, and the
+# next visitor pays a ~23 second cold start while the container boots and
+# reconnects to Atlas - long enough that a first-time visitor assumes the site
+# is broken and leaves. Pinging the health endpoint on a schedule keeps the
+# instance awake through the hours real students are likely to arrive, without
+# paying for an always-on instance.
+#
+# Note the schedule is UTC. The window below covers roughly 06:00-01:00 IST,
+# and deliberately stops overnight: pinging around the clock burns Render's
+# monthly free instance hours for nobody's benefit.
+
+on:
+  schedule:
+    # Every 10 minutes between 00:30 and 19:30 UTC (06:00-01:00 IST).
+    - cron: '*/10 0-19 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping /api/health
+        run: |
+          # --max-time is generous on purpose: if the service IS asleep this
+          # request is the one paying the cold start, which is the whole point.
+          code=$(curl -sS -o /tmp/health.json -w '%{http_code}' --max-time 120 \
+            https://nalandanexus.onrender.com/api/health) || true
+
+          echo "HTTP $code"
+          cat /tmp/health.json || true
+          echo
+
+          if [ "$code" != "200" ]; then
+            echo "::warning::Health check returned $code"
+            exit 0   # a transient failure must not spam the Actions log with red runs
+          fi
+
+          # A 200 with a disconnected database still means the portal is broken
+          # for every student, so surface that distinctly.
+          if ! grep -q '"database":"connected"' /tmp/health.json; then
+            echo "::error::Backend is up but its database is NOT connected"
+            exit 1
+          fi
+
+          echo "Backend healthy and warm."

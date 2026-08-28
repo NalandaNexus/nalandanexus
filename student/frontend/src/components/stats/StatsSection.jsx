@@ -29,9 +29,11 @@ export default function StatsSection() {
   // API sends null rather than a number in that case, and the tile is dropped
   // entirely instead of rendering "0%" or a placeholder figure. The grid is
   // sized from what actually renders so the remaining tiles stay balanced.
-  const visibleStats = STAT_META.filter(
-    (meta) => !(meta.isPercent && (stats[meta.key] === null || stats[meta.key] === undefined))
-  );
+  // 0 is treated as "nothing to report" alongside null/undefined: a satisfaction
+  // score of 0% is never a real measurement, and an older backend that has not
+  // yet been redeployed still sends 0 rather than null when no reviews exist.
+  // Guarding on both keeps the tile from ever publishing a meaningless figure.
+  const visibleStats = STAT_META.filter((meta) => !(meta.isPercent && !stats[meta.key]));
 
   return (
     <section className="relative z-20 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-4 sm:-mt-6 mb-12">
