@@ -21,6 +21,7 @@ import {
   X,
   Sparkles,
   ChevronDown,
+  ShieldOff,
 } from 'lucide-react';
 import { useTeacherAuth } from '../context/TeacherAuthContext';
 import ProBadge from './common/ProBadge';
@@ -50,7 +51,7 @@ export default function TeacherLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const { user, logout } = useTeacherAuth();
+  const { user, logout, logoutAllDevices } = useTeacherAuth();
   const navigate = useNavigate();
 
   const {
@@ -100,6 +101,18 @@ export default function TeacherLayout() {
 
   const handleLogout = () => {
     logout();
+    navigate('/login');
+  };
+
+  /**
+   * Revokes every session for this account, not just this browser's cookie.
+   * Offered separately because it affects a teacher's other devices too, so
+   * it should be a deliberate choice rather than what the ordinary Logout
+   * button silently does.
+   */
+  const handleLogoutAllDevices = async () => {
+    if (!window.confirm('Sign out of every device? Any other browser or phone signed in to this account will be signed out too.')) return;
+    await logoutAllDevices();
     navigate('/login');
   };
 
@@ -216,13 +229,26 @@ export default function TeacherLayout() {
               </div>
             </div>
 
-            <button
-              onClick={handleLogout}
-              className="p-1.5 rounded-lg text-[#EDEAE0]/60 hover:text-[#C1352B] hover:bg-[#16233F] transition-colors"
-              title="Sign Out"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={handleLogout}
+                className="p-1.5 rounded-lg text-[#EDEAE0]/60 hover:text-[#C1352B] hover:bg-[#16233F] transition-colors"
+                title="Sign out of this device"
+                aria-label="Sign out of this device"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+              {/* Revokes every token issued to this account, which plain sign-out
+                  does not - see TeacherAuthContext.logoutAllDevices. */}
+              <button
+                onClick={handleLogoutAllDevices}
+                className="p-1.5 rounded-lg text-[#EDEAE0]/60 hover:text-[#C1352B] hover:bg-[#16233F] transition-colors"
+                title="Sign out of all devices"
+                aria-label="Sign out of all devices"
+              >
+                <ShieldOff className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         </div>
       </aside>

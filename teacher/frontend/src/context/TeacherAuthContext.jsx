@@ -73,6 +73,28 @@ export function TeacherAuthProvider({ children }) {
     setUser(null);
   }, []);
 
+  /**
+   * Signs out AND revokes every token already issued to this account.
+   *
+   * Plain logout only clears the cookie - the JWT itself stays valid until it
+   * expires, which with "Remember me" (on by default) is 30 days. That is
+   * fine for stepping away from your own machine, but it leaves a teacher no
+   * way to cut off a session they think is compromised, or one left open on a
+   * shared or lab computer. The backend has always supported this
+   * (auth.service invalidateAllSessions bumps tokenVersion, which
+   * middleware/auth.js checks on every request) and the API client already
+   * wrapped it - it simply was not reachable from anywhere in the UI.
+   */
+  const logoutAllDevices = useCallback(async () => {
+    try {
+      await teacherApiService.logoutAllSessions();
+    } catch {
+      // Best-effort - clear local state regardless.
+    }
+    socketService.disconnect();
+    setUser(null);
+  }, []);
+
   /** Completes the mandatory first-login reset (or a voluntary password change). */
   const changePassword = useCallback(async (currentPassword, newPassword) => {
     await teacherApiService.changePassword(currentPassword, newPassword);
@@ -99,6 +121,7 @@ export function TeacherAuthProvider({ children }) {
     error,
     login,
     logout,
+    logoutAllDevices,
     changePassword,
     refreshUser,
     setUser,
