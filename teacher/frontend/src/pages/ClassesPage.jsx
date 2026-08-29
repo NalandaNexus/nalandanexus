@@ -1,8 +1,58 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Users, ArrowUpRight, Search, Plus, X, RefreshCw } from 'lucide-react';
+import { Users, ArrowUpRight, Search, Plus, X, RefreshCw, Link2, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { teacherApiService, ApiClientError } from '../services/teacherApiService';
 import { socketService } from '../services/socketService';
+import CourseMappingDialog from '../components/classes/CourseMappingDialog';
+
+/**
+ * How each backend linkState reads on the card.
+ *
+ * Every one of these was previously collapsed into either "Verified enrollment
+ * enabled" or "No linked course", which told a teacher that a batch nobody has
+ * bought was working exactly like one serving real students. Mapping success,
+ * finding enrollments, and linking them are separate facts and each gets its
+ * own words.
+ */
+const LINK_STATES = {
+  UNLINKED: {
+    label: 'Course mapping required',
+    tone: 'bg-[#C99A2E]/15 text-[#8F6A15] border-[#C99A2E]/30',
+    detail: 'Enrollment cannot be checked until this batch points at a course.',
+  },
+  LINK_BROKEN: {
+    label: 'Linked course missing',
+    tone: 'bg-[#C1352B]/15 text-[#C1352B] border-[#C1352B]/30',
+    detail: 'The linked course is no longer published. Pick a current one to restore sync.',
+  },
+  LINKED_NO_ENROLLMENT: {
+    label: 'Mapped — no enrollments yet',
+    tone: 'bg-[#EDEAE0] text-[#6E6A64] border-[#DFDACB]',
+    detail: 'The course link works. Nobody has an active enrollment in it yet.',
+  },
+  LINKED_VERIFIED: {
+    label: 'Verified enrollment',
+    tone: 'bg-[#5C7A5E]/15 text-[#5C7A5E] border-[#5C7A5E]/30',
+    detail: null,
+  },
+};
+
+/** Turns a real sync response into a sentence, without ever implying students were found when none were. */
+function describeSync(result) {
+  if (!result) return null;
+  if (result.outcome === 'NOT_LINKED') {
+    return { tone: 'warn', text: 'This batch is not linked to a course yet, so nothing could be checked.' };
+  }
+  if (result.outcome === 'NO_ENROLLMENTS') {
+    return { tone: 'warn', text: 'Course link is working — no active enrollments found for it yet.' };
+  }
+  const parts = [];
+  if (result.created) parts.push(`${result.created} added`);
+  if (result.linked) parts.push(`${result.linked} verified`);
+  if (result.unlinked) parts.push(`${result.unlinked} no longer enrolled`);
+  const detail = parts.length ? ` (${parts.join(', ')})` : ' (already up to date)';
+  return { tone: 'ok', text: `${result.totalEnrolled} enrolled student(s) found${detail}.` };
+}
 
 export default function ClassesPage() {
   const navigate = useNavigate();
@@ -14,12 +64,18 @@ export default function ClassesPage() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [courseOptions, setCourseOptions] = useState([]);
+  const [catalogAvailable, setCatalogAvailable] = useState(true);
   const [form, setForm] = useState({ name: '', studentCourseSlug: '', room: '', schedule: '', capacity: '' });
   const [formError, setFormError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [syncingId, setSyncingId] = useState(null);
   const [syncError, setSyncError] = useState('');
-  const [linkingId, setLinkingId] = useState(null);
+  const [syncResults, setSyncResults] = useState({});
+
+  // The batch whose mapping is being edited, plus that dialog's own save state.
+  const [mappingBatch, setMappingBatch] = useState(null);
+  const [isMapping, setIsMapping] = useState(false);
+  const [mappingError, setMappingError] = useState('');
 
   const fetchClasses = useCallback(async () => {
     try {
@@ -38,7 +94,13 @@ export default function ClassesPage() {
   }, [fetchClasses]);
 
   useEffect(() => {
-    teacherApiService.getStudentCourseOptions().then(setCourseOptions).catch(() => {});
+    teacherApiService
+      .getStudentCourseOptions()
+      .then(({ courses, catalogAvailable: available }) => {
+        setCourseOptions(courses);
+        setCatalogAvailable(available);
+      })
+      .catch(() => setCatalogAvailable(false));
   }, []);
 
   useEffect(() => {
@@ -79,27 +141,32 @@ export default function ClassesPage() {
   };
 
   /**
-   * Links a legacy batch to a student course.
+   * Saves a batch's course mapping.
    *
-   * Batches seeded before the course-link feature existed carry no
-   * studentCourseSlug, and syncEnrollmentForClass returns NOT_LINKED before it
-   * ever calls the student portal - so their roster can never be verified and
-   * their student count is stuck at 0 forever. The API has always supported
-   * setting it (PATCH /classes/:id, and teacherApiService.updateClass wrapped
-   * it), but nothing in the UI ever called it, leaving a teacher no way to
-   * repair a legacy batch from inside the product.
+   * Batches created before the course-link feature carry no studentCourseSlug,
+   * and syncEnrollmentForClass returns NOT_LINKED before it ever calls the
+   * student portal — so their roster can never be verified and their student
+   * count is stuck at 0 forever. The API has always supported setting it
+   * (PATCH /classes/:id, wrapped by teacherApiService.updateClass), but nothing
+   * in the UI ever called it, leaving a teacher no way to repair such a batch
+   * from inside the product. Only studentCourseSlug is sent; the backend
+   * validates it against the live catalogue and rejects anything else.
    */
-  const handleLinkCourse = async (classId, slug) => {
-    if (!slug) return;
-    setLinkingId(classId);
-    setSyncError('');
+  const handleSaveMapping = async (slug) => {
+    if (!slug || !mappingBatch) return;
+    setIsMapping(true);
+    setMappingError('');
     try {
-      await teacherApiService.updateClass(classId, { studentCourseSlug: slug });
+      await teacherApiService.updateClass(mappingBatch.id, { studentCourseSlug: slug });
+      setMappingBatch(null);
+      // The mapping saving and enrollment being found are separate outcomes, so
+      // a stale sync result from before the change must not be left on screen.
+      setSyncResults((prev) => ({ ...prev, [mappingBatch.id]: null }));
       await fetchClasses();
     } catch (err) {
-      setSyncError(err instanceof ApiClientError ? err.message : 'Failed to link this batch to a course.');
+      setMappingError(err instanceof ApiClientError ? err.message : 'Could not save the course mapping.');
     } finally {
-      setLinkingId(null);
+      setIsMapping(false);
     }
   };
 
@@ -107,10 +174,12 @@ export default function ClassesPage() {
     setSyncingId(classId);
     setSyncError('');
     try {
-      await teacherApiService.syncClassEnrollment(classId);
-      fetchClasses();
+      const result = await teacherApiService.syncClassEnrollment(classId);
+      setSyncResults((prev) => ({ ...prev, [classId]: result }));
+      await fetchClasses();
     } catch (err) {
-      setSyncError(err instanceof ApiClientError ? err.message : 'Sync failed — the roster was left as-is.');
+      setSyncResults((prev) => ({ ...prev, [classId]: null }));
+      setSyncError(err instanceof ApiClientError ? err.message : 'Sync failed — the roster was left exactly as it was.');
     } finally {
       setSyncingId(null);
     }
@@ -189,6 +258,9 @@ export default function ClassesPage() {
           {filtered.map((cls) => {
             const isAction = cls.riskLevel === 'act_now';
             const isWatch = cls.riskLevel === 'watch';
+            const state = LINK_STATES[cls.linkState] || LINK_STATES.UNLINKED;
+            const needsMapping = cls.linkState === 'UNLINKED' || cls.linkState === 'LINK_BROKEN';
+            const syncSummary = describeSync(syncResults[cls.id]);
 
             return (
               <div
@@ -214,35 +286,55 @@ export default function ClassesPage() {
                   </div>
 
                   <h3 className="text-base font-bold text-[#22355E] group-hover:text-[#AB5236] transition-colors mt-3">{cls.name}</h3>
-                  {cls.studentCourseSlug ? (
-                    <span className="inline-block mt-1 text-[10px] font-bold text-[#5C7A5E]">Verified enrollment enabled</span>
-                  ) : (
-                    <div className="mt-1">
-                      <span className="block text-[10px] text-[#9B9690]">
-                        No linked course — enrollment cannot be verified
-                      </span>
-                      {/* Without this a legacy batch is permanently stuck: sync
-                          short-circuits on the missing slug, so its roster can
-                          never be verified and its student count stays 0. */}
-                      <label className="sr-only" htmlFor={`link-course-${cls.id}`}>
-                        Link {cls.name} to a course
-                      </label>
-                      <select
-                        id={`link-course-${cls.id}`}
-                        defaultValue=""
-                        disabled={linkingId === cls.id}
-                        onChange={(e) => handleLinkCourse(cls.id, e.target.value)}
-                        className="mt-1 w-full text-[11px] px-2 py-1.5 rounded-lg bg-[#F7F5EE] border border-[#DFDACB] text-[#22355E] disabled:opacity-50"
+
+                  {/* Without a course link a batch is permanently stuck: sync
+                      short-circuits on the missing slug, so its roster can never
+                      be verified and its student count stays 0. */}
+                  <div className="mt-2 space-y-1.5">
+                    <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded border ${state.tone}`}>
+                      {cls.linkState === 'LINKED_VERIFIED' ? (
+                        <CheckCircle2 className="w-3 h-3" />
+                      ) : cls.linkState === 'UNLINKED' || cls.linkState === 'LINK_BROKEN' ? (
+                        <AlertTriangle className="w-3 h-3" />
+                      ) : null}
+                      {state.label}
+                    </span>
+                    {state.detail && <p className="text-[10px] text-[#9B9690] leading-snug">{state.detail}</p>}
+
+                    {needsMapping ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMappingError('');
+                          setMappingBatch(cls);
+                        }}
+                        className="w-full flex items-center justify-center gap-1.5 text-[11px] font-bold px-2 py-1.5 rounded-lg bg-[#22355E] hover:bg-[#16233F] text-white transition-colors"
                       >
-                        <option value="">
-                          {linkingId === cls.id ? 'Linking…' : 'Link to a course…'}
-                        </option>
-                        {courseOptions.map((o) => (
-                          <option key={o.slug} value={o.slug}>{o.title}</option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
+                        <Link2 className="w-3 h-3" /> Set course mapping
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMappingError('');
+                          setMappingBatch(cls);
+                        }}
+                        className="text-[10px] font-semibold text-[#6E6A64] hover:text-[#22355E] underline underline-offset-2"
+                      >
+                        Change course
+                      </button>
+                    )}
+
+                    {syncSummary && (
+                      <p
+                        className={`text-[10px] leading-snug ${
+                          syncSummary.tone === 'ok' ? 'text-[#5C7A5E]' : 'text-[#8F6A15]'
+                        }`}
+                      >
+                        {syncSummary.text}
+                      </p>
+                    )}
+                  </div>
 
                   <div className="grid grid-cols-3 gap-2 mt-4 pt-4 border-t border-[#DFDACB] text-center">
                     <div className="p-2 rounded-lg bg-[#F7F5EE] border border-[#DFDACB]">
@@ -289,6 +381,21 @@ export default function ClassesPage() {
         </div>
       )}
 
+      {mappingBatch && (
+        <CourseMappingDialog
+          batch={mappingBatch}
+          courses={courseOptions}
+          catalogAvailable={catalogAvailable}
+          isSaving={isMapping}
+          error={mappingError}
+          onCancel={() => {
+            setMappingBatch(null);
+            setMappingError('');
+          }}
+          onConfirm={handleSaveMapping}
+        />
+      )}
+
       {createOpen && (
         <div className="fixed inset-0 z-50 bg-[#22355E]/40 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white border border-[#DFDACB] rounded-2xl max-w-lg w-full p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto">
@@ -312,9 +419,11 @@ export default function ClassesPage() {
                       <option key={c.slug} value={c.slug}>{c.title}</option>
                     ))}
                   </select>
-                  {courseOptions.length === 0 && (
+                  {!catalogAvailable ? (
+                    <p className="text-[10px] text-[#8F6A15] mt-1">The course catalogue is unreachable right now, so a batch cannot be created — please try again in a moment.</p>
+                  ) : courseOptions.length === 0 ? (
                     <p className="text-[10px] text-[#9B9690] mt-1">No courses available yet — courses are published from the catalog before a class can be created for them.</p>
-                  )}
+                  ) : null}
                 </div>
                 <div className="col-span-2">
                   <label className="block text-xs font-semibold text-[#2B2B28] mb-1">Batch Name *</label>

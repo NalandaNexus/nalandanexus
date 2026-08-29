@@ -6,7 +6,7 @@ import { ApiError } from '../utils/ApiError.js';
 import { parsePagination, buildPaginationMeta } from '../utils/pagination.js';
 import { assertClassOwnership } from './class.service.js';
 import { logAudit } from './audit.service.js';
-import { fetchEnrolledStudents } from './studentBridge.service.js';
+import { fetchEnrollmentSnapshot } from './studentBridge.service.js';
 
 function shapeStudentSummary(s) {
   return {
@@ -166,10 +166,24 @@ async function buildScoreTimeline(studentId, classAverage) {
 export async function syncEnrollmentForClass(teacherId, classId) {
   const classDoc = await assertClassOwnership(teacherId, classId);
   if (!classDoc.studentCourseSlug) {
-    return { synced: false, reason: 'NOT_LINKED', created: 0, linked: 0, unlinked: 0 };
+    return { synced: false, outcome: 'NOT_LINKED', created: 0, linked: 0, unlinked: 0, totalEnrolled: 0 };
   }
 
-  const enrolled = await fetchEnrolledStudents(classDoc.studentCourseSlug);
+  const snapshot = await fetchEnrollmentSnapshot(classDoc.studentCourseSlug);
+
+  // A failed fetch used to be indistinguishable from "nobody is enrolled":
+  // both produced an empty list, and the unlink pass below then read that as
+  // every student having been refunded and cleared `linkedUserId` across the
+  // whole roster. One sync during a student-portal cold start would silently
+  // de-verify a real class. Refuse to reconcile against an answer we never got.
+  if (!snapshot.ok) {
+    throw ApiError.serviceUnavailable(
+      'Could not reach the student portal to confirm enrollments. The roster was left exactly as it was - please try again in a moment.',
+      'ENROLLMENT_SOURCE_UNAVAILABLE'
+    );
+  }
+
+  const enrolled = snapshot.students.filter((e) => e && typeof e.email === 'string' && e.email);
   const enrolledByEmail = new Map(enrolled.map((e) => [e.email.toLowerCase(), e]));
 
   let created = 0;
@@ -185,19 +199,27 @@ export async function syncEnrollmentForClass(teacherId, classId) {
         linked += 1;
       }
     } else {
-      await Student.create({
-        name: e.name,
-        email,
-        avatarUrl: e.avatar || null,
-        class: classId,
-        teacher: teacherId,
-        linkedUserId: e.userId,
-      });
-      created += 1;
+      // Upsert rather than create: sync is meant to be safely repeatable, and
+      // two syncs racing (a double-click, or a retry landing beside the first
+      // call) would otherwise both pass the findOne miss and insert the same
+      // student twice. The filter matches the read above exactly, so a
+      // concurrent insert is absorbed as an update instead of a duplicate.
+      const previous = await Student.findOneAndUpdate(
+        { class: classId, email },
+        {
+          $setOnInsert: { name: e.name, class: classId, teacher: teacherId },
+          $set: { avatarUrl: e.avatar || null, linkedUserId: e.userId },
+        },
+        { upsert: true, new: false, setDefaultsOnInsert: true }
+      );
+      if (previous) linked += 1;
+      else created += 1;
     }
   }
 
   // Clear verification on roster rows that no longer have an active enrollment.
+  // Safe to run now: `enrolled` is a real answer from the student portal, never
+  // a fallback empty list.
   const currentlyLinked = await Student.find({ class: classId, teacher: teacherId, linkedUserId: { $ne: null } }).select('_id email').lean();
   const toUnlink = currentlyLinked.filter((s) => !enrolledByEmail.has(s.email.toLowerCase())).map((s) => s._id);
   let unlinked = 0;
@@ -208,7 +230,12 @@ export async function syncEnrollmentForClass(teacherId, classId) {
 
   await logAudit({ actorId: teacherId, action: 'class.enrollment_synced', targetType: 'SchoolClass', targetId: classId, metadata: { created, linked, unlinked, totalEnrolled: enrolled.length } });
 
-  return { synced: true, created, linked, unlinked, totalEnrolled: enrolled.length };
+  // The mapping working and students being found are separate facts, and the
+  // caller has to be able to say which happened: a correctly-linked course
+  // nobody has enrolled in yet is a success, not a silent no-op reported as
+  // "enrollment synced".
+  const outcome = enrolled.length === 0 ? 'NO_ENROLLMENTS' : 'SYNCED';
+  return { synced: true, outcome, created, linked, unlinked, totalEnrolled: enrolled.length };
 }
 
 export async function createStudent(teacherId, payload, ip) {
@@ -230,16 +257,29 @@ export async function createStudent(teacherId, payload, ip) {
   return getStudentDetail(teacherId, student._id);
 }
 
+/**
+ * The only roster fields a teacher may edit directly.
+ *
+ * The same mass-assignment hole updateClass had: the raw request body was
+ * assigned onto the document, and the validator only constrains the fields it
+ * names - so an unvalidated `linkedUserId` in the payload would forge the very
+ * "verified enrollment" flag syncEnrollmentForClass exists to establish, making
+ * an arbitrary roster row look like a paying student, and `teacher` would move
+ * the row to another account.
+ */
+const UPDATABLE_STUDENT_FIELDS = ['name', 'phone', 'rollNumber', 'guardianName', 'guardianPhone', 'guardianEmail', 'status'];
+
 export async function updateStudent(teacherId, studentId, updates, ip) {
   const student = await assertStudentOwnership(teacherId, studentId);
   if (updates.classId) {
     await assertClassOwnership(teacherId, updates.classId);
     student.class = updates.classId;
-    delete updates.classId;
   }
-  Object.assign(student, updates);
+  for (const field of UPDATABLE_STUDENT_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(updates, field)) student[field] = updates[field];
+  }
   await student.save();
-  await logAudit({ actorId: teacherId, action: 'student.updated', targetType: 'Student', targetId: student._id, metadata: { updates }, ip });
+  await logAudit({ actorId: teacherId, action: 'student.updated', targetType: 'Student', targetId: student._id, metadata: { fields: Object.keys(updates) }, ip });
   return getStudentDetail(teacherId, studentId);
 }
 

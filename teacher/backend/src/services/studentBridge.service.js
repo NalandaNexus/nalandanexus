@@ -333,23 +333,43 @@ export async function retractQuizFromStudents(examId) {
  * backend directly. Best-effort: an empty list on failure just means the
  * picker shows no options, not a broken page.
  */
-export async function fetchStudentCourseOptions() {
-  if (!env.studentBridge.url) return [];
+export async function fetchStudentCourseCatalog() {
+  if (!env.studentBridge.url) return { ok: false, reason: 'NOT_CONFIGURED', courses: [] };
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
     try {
       const res = await fetch(`${env.studentBridge.url}/api/public/courses`, { signal: controller.signal });
-      if (!res.ok) return [];
+      if (!res.ok) return { ok: false, reason: 'UPSTREAM_ERROR', status: res.status, courses: [] };
       const body = await res.json();
-      return (body?.data || []).map((c) => ({ slug: c.slug, title: c.title }));
+      const courses = (body?.data || [])
+        .filter((c) => c && typeof c.slug === 'string' && c.slug)
+        .map((c) => ({
+          slug: c.slug,
+          title: c.title,
+          category: c.category || null,
+          instructor: c.instructor || null,
+          priceInPaise: typeof c.priceInPaise === 'number' ? c.priceInPaise : null,
+          // The student portal only lists published courses here, so every
+          // entry is linkable; isPurchasable additionally says whether new
+          // enrollments can still be bought, which the picker surfaces so a
+          // teacher can tell a closed course from an open one.
+          isPurchasable: Boolean(c.isPurchasable),
+        }));
+      return { ok: true, courses };
     } finally {
       clearTimeout(timeout);
     }
   } catch (err) {
     console.error('[studentBridge] Failed to fetch student course options:', err.message);
-    return [];
+    return { ok: false, reason: 'REQUEST_FAILED', error: err.message, courses: [] };
   }
+}
+
+/** Best-effort list form, for display-only callers (the picker, the course-title map) where an empty list just means "nothing to show". */
+export async function fetchStudentCourseOptions() {
+  const { courses } = await fetchStudentCourseCatalog();
+  return courses;
 }
 
 /**
@@ -362,15 +382,22 @@ export async function fetchStudentCourseOptions() {
  * an empty array (not an error) when unconfigured/unreachable/unlinked —
  * callers must treat that as "nothing to show", never fall back to fake data.
  */
-export async function fetchEnrolledStudents(studentCourseSlug) {
-  if (!isConfigured() || !studentCourseSlug) return [];
+export async function fetchEnrollmentSnapshot(studentCourseSlug) {
+  if (!isConfigured()) return { ok: false, reason: 'NOT_CONFIGURED', students: [] };
+  if (!studentCourseSlug) return { ok: false, reason: 'NOT_LINKED', students: [] };
   try {
     const result = await call(`/api/internal/courses/${encodeURIComponent(studentCourseSlug)}/enrolled-students`, { method: 'GET' });
-    return result?.data || [];
+    return { ok: true, students: result?.data || [] };
   } catch (err) {
     console.error('[studentBridge] Failed to fetch enrolled students:', err.message);
-    return [];
+    return { ok: false, reason: 'REQUEST_FAILED', error: err.message, students: [] };
   }
+}
+
+/** Best-effort list form. Callers that must not confuse "nobody is enrolled" with "we could not ask" use fetchEnrollmentSnapshot instead. */
+export async function fetchEnrolledStudents(studentCourseSlug) {
+  const { students } = await fetchEnrollmentSnapshot(studentCourseSlug);
+  return students;
 }
 
 export default {
@@ -386,7 +413,9 @@ export default {
   pushMessageToStudent,
   pushQuizToStudents,
   retractQuizFromStudents,
+  fetchStudentCourseCatalog,
   fetchStudentCourseOptions,
+  fetchEnrollmentSnapshot,
   fetchEnrolledStudents,
   pushGradeToStudent,
 };

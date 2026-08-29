@@ -3,7 +3,7 @@ import { SchoolClass } from '../models/SchoolClass.js';
 import { Student } from '../models/Student.js';
 import { ApiError } from '../utils/ApiError.js';
 import { logAudit } from './audit.service.js';
-import { fetchStudentCourseOptions } from './studentBridge.service.js';
+import { fetchStudentCourseCatalog } from './studentBridge.service.js';
 
 /**
  * Aggregates live student-count / average-score / attendance / engagement /
@@ -49,8 +49,31 @@ function emptyStats() {
   return { studentCount: 0, averageScore: 0, attendanceRate: 0, engagementRate: 0, riskLevel: 'good', atRiskCount: 0 };
 }
 
-function shapeClass(cls, statsMap, courseTitleBySlug) {
+/**
+ * The batch's real position in the course-link -> enrollment pipeline.
+ *
+ * The card previously showed only "Verified enrollment enabled" vs "No linked
+ * course", which collapsed three genuinely different situations into one
+ * reassuring label: a batch linked to a course nobody has bought yet, a batch
+ * whose linked course has since been unpublished, and a batch actually serving
+ * verified students all read identically. Callers must be able to distinguish
+ * "the mapping worked" from "students were found".
+ *
+ *   UNLINKED             - no studentCourseSlug; sync short-circuits, roster can never verify
+ *   LINK_BROKEN          - slug set, but no published course matches it any more
+ *   LINKED_NO_ENROLLMENT - mapping is good; nobody has an active enrollment yet
+ *   LINKED_VERIFIED      - mapping is good and real enrolled students are on the roster
+ */
+function deriveLinkState(cls, courseTitle, studentCount, catalogReachable) {
+  if (!cls.studentCourseSlug) return 'UNLINKED';
+  // Only accuse a link of being broken when the catalogue actually answered.
+  if (catalogReachable && !courseTitle) return 'LINK_BROKEN';
+  return studentCount > 0 ? 'LINKED_VERIFIED' : 'LINKED_NO_ENROLLMENT';
+}
+
+function shapeClass(cls, statsMap, catalog) {
   const stats = statsMap.get(String(cls._id)) || emptyStats();
+  const courseTitle = (cls.studentCourseSlug && catalog?.titleBySlug?.get(cls.studentCourseSlug)) || null;
   return {
     id: cls._id,
     code: cls.code,
@@ -68,7 +91,8 @@ function shapeClass(cls, statsMap, courseTitleBySlug) {
     // never stored/cached here — always reflects the course's current
     // title. Null only for a legacy class predating the "every batch has a
     // course" requirement, or if the linked course was since removed.
-    courseTitle: (cls.studentCourseSlug && courseTitleBySlug?.get(cls.studentCourseSlug)) || null,
+    courseTitle,
+    linkState: deriveLinkState(cls, courseTitle, stats.studentCount, Boolean(catalog?.ok)),
     studentCount: stats.studentCount,
     averageScore: stats.averageScore,
     attendanceRate: stats.attendanceRate,
@@ -79,9 +103,15 @@ function shapeClass(cls, statsMap, courseTitleBySlug) {
   };
 }
 
+/**
+ * Returns the live slug -> title map plus whether the catalogue could actually
+ * be reached. `ok` matters: a failed fetch and a genuinely empty catalogue both
+ * yield an empty map, and without the distinction every linked batch would be
+ * reported as LINK_BROKEN during a student-portal cold start.
+ */
 async function buildCourseTitleMap() {
-  const courses = await fetchStudentCourseOptions();
-  return new Map(courses.map((c) => [c.slug, c.title]));
+  const { ok, courses } = await fetchStudentCourseCatalog();
+  return { ok, titleBySlug: new Map(courses.map((c) => [c.slug, c.title])) };
 }
 
 export async function listClasses(teacherId, { status = 'active' } = {}) {
@@ -89,21 +119,21 @@ export async function listClasses(teacherId, { status = 'active' } = {}) {
   if (status && status !== 'all') filter.status = status;
 
   const classes = await SchoolClass.find(filter).sort({ name: 1 }).lean();
-  const [statsMap, courseTitleBySlug] = await Promise.all([
+  const [statsMap, catalog] = await Promise.all([
     getClassAggregateStatsMap(classes.map((c) => c._id)),
     buildCourseTitleMap(),
   ]);
-  return classes.map((c) => shapeClass(c, statsMap, courseTitleBySlug));
+  return classes.map((c) => shapeClass(c, statsMap, catalog));
 }
 
 export async function getClassById(teacherId, classId) {
   const cls = await SchoolClass.findOne({ _id: classId, teacher: teacherId }).lean();
   if (!cls) throw ApiError.notFound('Class not found.', 'CLASS_NOT_FOUND');
-  const [statsMap, courseTitleBySlug] = await Promise.all([
+  const [statsMap, catalog] = await Promise.all([
     getClassAggregateStatsMap([classId]),
     buildCourseTitleMap(),
   ]);
-  return shapeClass(cls, statsMap, courseTitleBySlug);
+  return shapeClass(cls, statsMap, catalog);
 }
 
 /** Throws 404 (not 403) for classes owned by another teacher, so IDs can't be used to probe existence. */
@@ -135,10 +165,24 @@ function batchCode(courseSlug, name) {
  * everything.
  */
 async function assertCourseSlugExists(studentCourseSlug) {
-  const options = await fetchStudentCourseOptions();
-  if (!options.length) return;
+  const { ok, courses } = await fetchStudentCourseCatalog();
 
-  if (!options.some((o) => o.slug === studentCourseSlug)) {
+  // Fail CLOSED. This previously returned early on an empty list so a
+  // temporarily-unreachable catalog wouldn't block a legitimate batch — but an
+  // empty list is also what a failed fetch returns, so during any student-portal
+  // outage every slug was accepted, including ones that exist nowhere. The batch
+  // written in that window looks healthy and can never receive a student, which
+  // is precisely the unrepairable state this whole workflow exists to prevent.
+  // A retryable 503 costs the teacher a minute; a silently-orphaned batch costs
+  // them a roster.
+  if (!ok) {
+    throw ApiError.serviceUnavailable(
+      'The course catalogue is unavailable right now, so this course link cannot be verified. Nothing was changed — please try again in a moment.',
+      'COURSE_CATALOG_UNAVAILABLE'
+    );
+  }
+
+  if (!courses.some((c) => c.slug === studentCourseSlug)) {
     throw ApiError.unprocessable(
       `'${studentCourseSlug}' is not an available course. Pick one from the course list.`,
       'COURSE_SLUG_UNKNOWN'
@@ -166,16 +210,42 @@ export async function createClass(teacherId, payload, ip) {
   return getClassById(teacherId, cls._id);
 }
 
+/**
+ * The only class fields a teacher may set through the edit endpoint.
+ *
+ * The handler used to Object.assign the whole request body onto the document,
+ * and the validator only constrains the fields it names — so `teacher`, `code`,
+ * `grade`, `section` and `academicSession` all rode straight through unchecked.
+ * A PATCH carrying `{"teacher": "<someone else's id>"}` reassigned ownership of
+ * the batch, and `{"code": "..."}` could collide with the unique per-teacher
+ * index. Enumerating what may change is the fix; anything absent here is
+ * ignored rather than rejected, so a client echoing back a full class object
+ * still works.
+ */
+const UPDATABLE_CLASS_FIELDS = ['name', 'subject', 'room', 'schedule', 'capacity', 'status', 'studentCourseSlug'];
+
+function pickClassUpdates(updates) {
+  const picked = {};
+  for (const field of UPDATABLE_CLASS_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(updates, field)) picked[field] = updates[field];
+  }
+  return picked;
+}
+
 export async function updateClass(teacherId, classId, updates, ip) {
   const cls = await assertClassOwnership(teacherId, classId);
+  const safeUpdates = pickClassUpdates(updates);
+
   // Reassigning a batch to a different course must clear the same bar as
-  // creating one, or the orphan is simply introduced a step later.
-  if (updates.studentCourseSlug && updates.studentCourseSlug !== cls.studentCourseSlug) {
-    await assertCourseSlugExists(updates.studentCourseSlug);
+  // creating one, or the orphan is simply introduced a step later. Checked
+  // BEFORE anything is written, so a rejected link leaves the batch untouched.
+  if (safeUpdates.studentCourseSlug && safeUpdates.studentCourseSlug !== cls.studentCourseSlug) {
+    await assertCourseSlugExists(safeUpdates.studentCourseSlug);
   }
-  Object.assign(cls, updates);
+
+  Object.assign(cls, safeUpdates);
   await cls.save();
-  await logAudit({ actorId: teacherId, action: 'class.updated', targetType: 'SchoolClass', targetId: cls._id, metadata: { updates }, ip });
+  await logAudit({ actorId: teacherId, action: 'class.updated', targetType: 'SchoolClass', targetId: cls._id, metadata: { updates: safeUpdates }, ip });
   return getClassById(teacherId, cls._id);
 }
 

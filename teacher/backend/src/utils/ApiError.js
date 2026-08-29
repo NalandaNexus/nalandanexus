@@ -51,6 +51,11 @@ export class ApiError extends Error {
   static internal(message = 'Internal server error', code = 'INTERNAL_ERROR', details) {
     return new ApiError(500, message, code, details);
   }
+
+  /** A dependency this request needed (e.g. the student-portal bridge) was unreachable — the caller should retry, nothing was written. */
+  static serviceUnavailable(message = 'Service temporarily unavailable', code = 'SERVICE_UNAVAILABLE', details) {
+    return new ApiError(503, message, code, details);
+  }
 }
 
 export default ApiError;

@@ -147,8 +147,17 @@ class TeacherApiService {
   getClassLeaderboard(classId, params = {}) {
     return get(`/classes/${classId}/leaderboard`, params).then((r) => r.data);
   }
+  /**
+   * Returns the whole envelope, not just `data`. `meta.catalogAvailable` says
+   * whether the student catalogue actually answered - an empty list alone
+   * cannot distinguish "no courses published yet" from "the catalogue is
+   * down", and the Classes page has to tell the teacher which one it is.
+   */
   getStudentCourseOptions() {
-    return get('/classes/course-options').then((r) => r.data);
+    return get('/classes/course-options').then((r) => ({
+      courses: r.data || [],
+      catalogAvailable: r.meta?.catalogAvailable !== false,
+    }));
   }
   syncClassEnrollment(classId) {
     return post(`/classes/${classId}/sync-enrollment`).then((r) => r.data);
