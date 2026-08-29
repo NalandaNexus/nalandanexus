@@ -19,6 +19,7 @@ export default function ClassesPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [syncingId, setSyncingId] = useState(null);
   const [syncError, setSyncError] = useState('');
+  const [linkingId, setLinkingId] = useState(null);
 
   const fetchClasses = useCallback(async () => {
     try {
@@ -74,6 +75,31 @@ export default function ClassesPage() {
       setFormError(err instanceof ApiClientError ? err.message : 'Failed to create class.');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  /**
+   * Links a legacy batch to a student course.
+   *
+   * Batches seeded before the course-link feature existed carry no
+   * studentCourseSlug, and syncEnrollmentForClass returns NOT_LINKED before it
+   * ever calls the student portal - so their roster can never be verified and
+   * their student count is stuck at 0 forever. The API has always supported
+   * setting it (PATCH /classes/:id, and teacherApiService.updateClass wrapped
+   * it), but nothing in the UI ever called it, leaving a teacher no way to
+   * repair a legacy batch from inside the product.
+   */
+  const handleLinkCourse = async (classId, slug) => {
+    if (!slug) return;
+    setLinkingId(classId);
+    setSyncError('');
+    try {
+      await teacherApiService.updateClass(classId, { studentCourseSlug: slug });
+      await fetchClasses();
+    } catch (err) {
+      setSyncError(err instanceof ApiClientError ? err.message : 'Failed to link this batch to a course.');
+    } finally {
+      setLinkingId(null);
     }
   };
 
@@ -191,7 +217,31 @@ export default function ClassesPage() {
                   {cls.studentCourseSlug ? (
                     <span className="inline-block mt-1 text-[10px] font-bold text-[#5C7A5E]">Verified enrollment enabled</span>
                   ) : (
-                    <span className="inline-block mt-1 text-[10px] text-[#9B9690]">No linked course — legacy class</span>
+                    <div className="mt-1">
+                      <span className="block text-[10px] text-[#9B9690]">
+                        No linked course — enrollment cannot be verified
+                      </span>
+                      {/* Without this a legacy batch is permanently stuck: sync
+                          short-circuits on the missing slug, so its roster can
+                          never be verified and its student count stays 0. */}
+                      <label className="sr-only" htmlFor={`link-course-${cls.id}`}>
+                        Link {cls.name} to a course
+                      </label>
+                      <select
+                        id={`link-course-${cls.id}`}
+                        defaultValue=""
+                        disabled={linkingId === cls.id}
+                        onChange={(e) => handleLinkCourse(cls.id, e.target.value)}
+                        className="mt-1 w-full text-[11px] px-2 py-1.5 rounded-lg bg-[#F7F5EE] border border-[#DFDACB] text-[#22355E] disabled:opacity-50"
+                      >
+                        <option value="">
+                          {linkingId === cls.id ? 'Linking…' : 'Link to a course…'}
+                        </option>
+                        {courseOptions.map((o) => (
+                          <option key={o.slug} value={o.slug}>{o.title}</option>
+                        ))}
+                      </select>
+                    </div>
                   )}
 
                   <div className="grid grid-cols-3 gap-2 mt-4 pt-4 border-t border-[#DFDACB] text-center">
