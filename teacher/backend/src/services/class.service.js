@@ -119,7 +119,36 @@ function batchCode(courseSlug, name) {
   return `${courseSlug.toUpperCase()}-${slug}`.slice(0, 80);
 }
 
+/**
+ * Confirms the batch is being linked to a course that actually exists in the
+ * Student portal.
+ *
+ * The validator only checks the slug's SHAPE, so any well-formed string was
+ * accepted - creating a batch permanently linked to nothing. Such a batch
+ * looks healthy (status active, no error) but can never receive a student,
+ * because enrollment sync matches on this slug: syncing reports success with
+ * 0 results forever, and courseTitle renders empty. Confirmed live before
+ * this check existed.
+ *
+ * If the bridge is unreachable the list comes back empty; that must not block
+ * a legitimate batch, so an empty list skips the check rather than rejecting
+ * everything.
+ */
+async function assertCourseSlugExists(studentCourseSlug) {
+  const options = await fetchStudentCourseOptions();
+  if (!options.length) return;
+
+  if (!options.some((o) => o.slug === studentCourseSlug)) {
+    throw ApiError.unprocessable(
+      `'${studentCourseSlug}' is not an available course. Pick one from the course list.`,
+      'COURSE_SLUG_UNKNOWN'
+    );
+  }
+}
+
 export async function createClass(teacherId, payload, ip) {
+  await assertCourseSlugExists(payload.studentCourseSlug);
+
   const code = batchCode(payload.studentCourseSlug, payload.name);
   const existing = await SchoolClass.findOne({ teacher: teacherId, code });
   if (existing) throw ApiError.conflict(`You already have a batch named '${payload.name}' for this course.`, 'CLASS_CODE_TAKEN');
@@ -139,6 +168,11 @@ export async function createClass(teacherId, payload, ip) {
 
 export async function updateClass(teacherId, classId, updates, ip) {
   const cls = await assertClassOwnership(teacherId, classId);
+  // Reassigning a batch to a different course must clear the same bar as
+  // creating one, or the orphan is simply introduced a step later.
+  if (updates.studentCourseSlug && updates.studentCourseSlug !== cls.studentCourseSlug) {
+    await assertCourseSlugExists(updates.studentCourseSlug);
+  }
   Object.assign(cls, updates);
   await cls.save();
   await logAudit({ actorId: teacherId, action: 'class.updated', targetType: 'SchoolClass', targetId: cls._id, metadata: { updates }, ip });
