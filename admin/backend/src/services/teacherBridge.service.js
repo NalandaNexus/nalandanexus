@@ -20,9 +20,47 @@ function isConfigured() {
   return Boolean(env.teacherBridge.url && env.teacherBridge.serviceKey);
 }
 
-async function call(path, options) {
+/**
+ * Cross-service call sizing, and why it is what it is.
+ *
+ * Both services run on Render's free tier, which stops an instance after ~15
+ * minutes idle; the next request pays a cold start that was measured at 22-32
+ * seconds against all three of our backends. The original 8-second budget was
+ * therefore shorter than a routine cold start, so any admin action taken while
+ * the teacher portal happened to be asleep failed - and, for course assignment,
+ * failed silently and permanently.
+ *
+ * Keeping the peer awake was the obvious answer and does not hold: the
+ * scheduled keep-warm workflow asks for a ping every 10 minutes and GitHub
+ * actually delivered 7 runs in 32 hours, with gaps up to 8.6 hours. Scheduled
+ * Actions are best-effort and heavily throttled, so warmth cannot be a
+ * correctness dependency - at best it makes the cold path rarer.
+ *
+ * So the call itself absorbs a cold start: one short attempt (a warm peer
+ * answers in well under a second, and the common case must stay fast), then two
+ * further attempts with a budget long enough to cover the boot, spaced to let it
+ * finish. Worst case is roughly 75 seconds before a real, reported failure -
+ * acceptable for an admin-triggered background sync, and far better than losing
+ * the assignment. It is BOUNDED: three attempts, never a loop.
+ *
+ * Only transport failures and 5xx are retried. A 4xx is the peer answering
+ * clearly ("no such teacher"), and repeating it would just be slower.
+ */
+const ATTEMPT_TIMEOUTS_MS = [8000, 35000, 35000];
+const RETRY_BACKOFF_MS = [1000, 3000];
+
+class BridgeError extends Error {
+  constructor(message, { status = 0, retryable = false } = {}) {
+    super(message);
+    this.name = 'BridgeError';
+    this.status = status;
+    this.retryable = retryable;
+  }
+}
+
+async function attempt(path, options, timeoutMs) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(`${env.teacherBridge.url}${path}`, {
       ...options,
@@ -31,12 +69,36 @@ async function call(path, options) {
     });
     if (!res.ok) {
       const body = await res.text().catch(() => '');
-      throw new Error(`Teacher backend returned ${res.status}: ${body.slice(0, 200)}`);
+      throw new BridgeError(`Teacher backend returned ${res.status}: ${body.slice(0, 200)}`, {
+        status: res.status,
+        // 5xx and 429 are the peer struggling; 4xx is the peer answering.
+        retryable: res.status >= 500 || res.status === 429,
+      });
     }
     return res.json();
+  } catch (err) {
+    if (err instanceof BridgeError) throw err;
+    // Abort (cold start outran the budget) or a network-level failure.
+    throw new BridgeError(err.name === 'AbortError' ? `Timed out after ${timeoutMs}ms` : err.message, { retryable: true });
   } finally {
-    clearTimeout(timeout);
+    clearTimeout(timer);
   }
+}
+
+async function call(path, options) {
+  let last;
+  for (let i = 0; i < ATTEMPT_TIMEOUTS_MS.length; i += 1) {
+    try {
+      return await attempt(path, options, ATTEMPT_TIMEOUTS_MS[i]);
+    } catch (err) {
+      last = err;
+      const more = i < ATTEMPT_TIMEOUTS_MS.length - 1;
+      if (!err.retryable || !more) break;
+      console.warn(`[teacherBridge] ${path} attempt ${i + 1} failed (${err.message}); retrying`);
+      await new Promise((resolve) => setTimeout(resolve, RETRY_BACKOFF_MS[i]));
+    }
+  }
+  throw last;
 }
 
 /** Creates the real teacher/backend login. Returns a real status — never throws, never silently succeeds. */

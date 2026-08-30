@@ -154,7 +154,7 @@ export async function createCourse(data, actor, req) {
     await recordAuditLog({ actor, action: 'course.teacherAssigned', entityType: 'Course', entityId: course._id, req });
   }
 
-  return course;
+  return { course, teacherAssignment };
 }
 
 export async function updateCourse(id, data, actor, req) {
@@ -193,13 +193,33 @@ export async function updateCourse(id, data, actor, req) {
   // Keep the assigned teacher's Teacher Portal view in sync — either a
   // fresh/updated assignment (new teacher or unchanged teacher with edited
   // fields), or an explicit removal when the instructor was cleared.
+  //
+  // The result is RETURNED, not discarded. This previously called the bridge
+  // and threw the answer away, so an admin who re-saved a course to retry a
+  // failed assignment got an unqualified success either way - no audit entry,
+  // no message, no way to tell whether the teacher had actually received it.
+  // The local save is deliberately kept: the course edit genuinely succeeded,
+  // and rolling it back would lose real work over a downstream outage. The
+  // caller reports the two outcomes separately.
+  let teacherAssignment;
   if (course.instructor) {
-    await syncToAssignedTeacher(course);
+    teacherAssignment = await syncToAssignedTeacher(course);
+    if (!teacherAssignment?.assigned) {
+      await recordAuditLog({
+        actor,
+        action: 'course.teacherAssigned',
+        entityType: 'Course',
+        entityId: course._id,
+        metadata: { reason: teacherAssignment?.reason || 'UNKNOWN' },
+        result: 'FAILURE',
+        req,
+      });
+    }
   } else if (instructorRemoved) {
     await removeCourseAssignment(String(course._id));
   }
 
-  return course;
+  return { course, teacherAssignment };
 }
 
 export async function setCourseStatus(id, { status, notes }, actor, req) {

@@ -12,20 +12,24 @@ export const SOCKET_URL = import.meta.env.VITE_ADMIN_SOCKET_URL || 'http://local
 export const TEACHER_PORTAL_URL = import.meta.env.VITE_TEACHER_PORTAL_URL || 'http://localhost:5174';
 export const STUDENT_PORTAL_URL = import.meta.env.VITE_STUDENT_PORTAL_URL || 'http://localhost:3000';
 
-const TOKEN_KEY = 'nalanda_admin_token';
-
-export function getToken() {
-  return localStorage.getItem(TOKEN_KEY);
-}
-
-export function setToken(token) {
-  if (token) localStorage.setItem(TOKEN_KEY, token);
-  else localStorage.removeItem(TOKEN_KEY);
-}
-
-function authHeaders() {
-  const token = getToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
+/**
+ * The session lives in an httpOnly cookie the backend sets at login, and every
+ * request opts into sending it with `credentials: 'include'`.
+ *
+ * It used to be a JWT in localStorage with an Authorization header. That put a
+ * SUPER_ADMIN token where any script on the page could read it, so a single XSS
+ * anywhere in this bundle - or in a dependency - could lift full administrative
+ * access and use it from anywhere. httpOnly removes it from JavaScript's reach
+ * entirely, matching how the Student and Teacher portals already work.
+ *
+ * A token left over from the previous scheme is cleared once, on load, so it
+ * does not sit in storage indefinitely after this deploys.
+ */
+const LEGACY_TOKEN_KEY = 'nalanda_admin_token';
+try {
+  localStorage.removeItem(LEGACY_TOKEN_KEY);
+} catch {
+  // Private mode or blocked storage - nothing to clean up.
 }
 
 /** Course create/update carries an optional image file, so it goes as multipart, not JSON. */
@@ -58,11 +62,13 @@ async function request(path, { method = 'GET', body, query, isFormData = false }
 
   const res = await fetch(url.toString(), {
     method,
+    // Sends the httpOnly session cookie. The API is on a different origin, so
+    // without this the browser omits it and every request is unauthenticated.
+    credentials: 'include',
     headers: {
       // multipart/form-data needs its own auto-generated boundary — the
       // browser sets Content-Type itself when the body is a FormData.
       ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
-      ...authHeaders(),
     },
     body: body !== undefined ? (isFormData ? body : JSON.stringify(body)) : undefined,
   });
@@ -95,17 +101,14 @@ async function request(path, { method = 'GET', body, query, isFormData = false }
 export const adminApi = {
   // ── Auth ──────────────────────────────────────────────────────────────
   async login({ email, password }) {
+    // The session arrives as an httpOnly cookie on this response; nothing to store.
     const json = await request('/auth/login', { method: 'POST', body: { email, password } });
-    if (json.data?.token) setToken(json.data.token);
     return json.data;
   },
 
   async logout() {
-    try {
-      await request('/auth/logout', { method: 'POST' });
-    } finally {
-      setToken(null);
-    }
+    // Only the server can clear an httpOnly cookie, so this request IS the logout.
+    await request('/auth/logout', { method: 'POST' });
   },
 
   async getMe() {
@@ -114,8 +117,9 @@ export const adminApi = {
   },
 
   async changePassword({ currentPassword, newPassword }) {
+    // Changing the password bumps tokenVersion and invalidates every other
+    // session; the backend re-issues this browser's cookie on the same response.
     const json = await request('/auth/change-password', { method: 'POST', body: { currentPassword, newPassword } });
-    if (json.data?.token) setToken(json.data.token);
     return json.data;
   },
 

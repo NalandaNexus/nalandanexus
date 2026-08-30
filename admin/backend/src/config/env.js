@@ -29,6 +29,11 @@ export const env = {
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '8h',
   jwtRememberExpiresIn: process.env.JWT_REMEMBER_EXPIRES_IN || '30d',
   cookieName: process.env.COOKIE_NAME || 'nalanda_admin_token',
+  // The admin frontend (vercel.app) and this API (onrender.com) are different
+  // registrable domains, so the session cookie is cross-site and browsers only
+  // send it when it is SameSite=None AND Secure. Local development is
+  // same-site, where 'lax' works and 'none' would be rejected over plain http.
+  cookieSameSite: (process.env.COOKIE_SAMESITE || (process.env.NODE_ENV === 'production' ? 'none' : 'lax')).toLowerCase(),
 
   rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) || 15 * 60 * 1000,
   rateLimitMax: parseInt(process.env.RATE_LIMIT_MAX, 10) || 300,

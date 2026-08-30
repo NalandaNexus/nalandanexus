@@ -3,6 +3,25 @@ import { sendSuccess } from '../utils/ApiResponse.js';
 import { publicUrlFor } from '../middleware/upload.js';
 import * as courseService from '../services/course.service.js';
 
+/**
+ * Says what actually happened, in two parts.
+ *
+ * The course is saved in this database and the teacher is notified through a
+ * separate service, and those succeed independently. Reporting only the first
+ * let an assignment fail in silence - an admin saw "Course updated
+ * successfully" whether or not the teacher would ever see the course. The save
+ * is real and is kept; the sentence just stops overstating it, and the reason
+ * travels in `meta` so the UI can offer a retry.
+ */
+function assignmentMessage(base, course, teacherAssignment) {
+  if (!course.instructor || !teacherAssignment) return base;
+  if (teacherAssignment.assigned) return `${base}. The assigned teacher has been notified.`;
+  if (teacherAssignment.reason === 'TEACHER_NOT_FOUND' || teacherAssignment.reason === 'TEACHER_PROFILE_MISSING') {
+    return `${base}, but this teacher has no Teacher Portal account yet, so the course was not assigned to them.`;
+  }
+  return `${base}, but the Teacher Portal could not be reached, so the teacher has not received this course yet. Save again to retry.`;
+}
+
 export const list = catchAsync(async (req, res) => {
   const { items, meta } = await courseService.listCourses(req.query);
   return sendSuccess(res, { data: items, meta });
@@ -16,15 +35,24 @@ export const getById = catchAsync(async (req, res) => {
 export const create = catchAsync(async (req, res) => {
   const data = { ...req.body };
   if (req.file) data.image = publicUrlFor('courses', req.file.filename);
-  const course = await courseService.createCourse(data, req.admin, req);
-  return sendSuccess(res, { statusCode: 201, data: course, message: 'Course submitted for review' });
+  const { course, teacherAssignment } = await courseService.createCourse(data, req.admin, req);
+  return sendSuccess(res, {
+    statusCode: 201,
+    data: course,
+    message: assignmentMessage('Course submitted for review', course, teacherAssignment),
+    meta: teacherAssignment ? { teacherAssignment } : undefined,
+  });
 });
 
 export const update = catchAsync(async (req, res) => {
   const data = { ...req.body };
   if (req.file) data.image = publicUrlFor('courses', req.file.filename);
-  const course = await courseService.updateCourse(req.params.id, data, req.admin, req);
-  return sendSuccess(res, { data: course, message: 'Course updated successfully' });
+  const { course, teacherAssignment } = await courseService.updateCourse(req.params.id, data, req.admin, req);
+  return sendSuccess(res, {
+    data: course,
+    message: assignmentMessage('Course updated successfully', course, teacherAssignment),
+    meta: teacherAssignment ? { teacherAssignment } : undefined,
+  });
 });
 
 export const setStatus = catchAsync(async (req, res) => {

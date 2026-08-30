@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import { adminApi, getToken, setToken as persistToken } from '../services/adminApi';
+import { adminApi } from '../services/adminApi';
 import { disconnectSocket } from '../services/socket';
 
 const AdminAuthContext = createContext(null);
@@ -8,33 +8,21 @@ export function AdminAuthProvider({ children }) {
   // No default-authenticated fallback user — session state starts unknown
   // (isLoading=true) and is only ever set from a real backend response.
   const [user, setUser] = useState(null);
-  const [token, setTokenState] = useState(() => getToken());
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // On mount (and after any refresh), if a token exists, verify it against
-  // the backend via /auth/me rather than trusting whatever was cached in
-  // localStorage — a suspended/deleted account is rejected immediately.
+  // On mount (and after any refresh) ask the backend who we are. The session
+  // cookie is httpOnly, so this page cannot inspect it and must not try to
+  // guess - /auth/me is the only way to know whether it is still valid, and it
+  // also rejects a suspended or deleted account immediately.
   useEffect(() => {
     let cancelled = false;
     async function restoreSession() {
-      const existingToken = getToken();
-      if (!existingToken) {
-        setIsLoading(false);
-        return;
-      }
       try {
         const me = await adminApi.getMe();
-        if (!cancelled) {
-          setUser(me);
-          setTokenState(existingToken);
-        }
+        if (!cancelled) setUser(me);
       } catch {
-        if (!cancelled) {
-          persistToken(null);
-          setUser(null);
-          setTokenState(null);
-        }
+        if (!cancelled) setUser(null);
       } finally {
         if (!cancelled) setIsLoading(false);
       }
@@ -49,10 +37,8 @@ export function AdminAuthProvider({ children }) {
   // session immediately, wherever in the app it happens.
   useEffect(() => {
     const handleUnauthorized = () => {
-      persistToken(null);
       disconnectSocket();
       setUser(null);
-      setTokenState(null);
     };
     window.addEventListener('nalanda-admin-unauthorized', handleUnauthorized);
     return () => window.removeEventListener('nalanda-admin-unauthorized', handleUnauthorized);
@@ -63,9 +49,10 @@ export function AdminAuthProvider({ children }) {
     setError(null);
 
     try {
+      // The backend sets the session cookie on this response; `result.token`
+      // is a transitional leftover and is deliberately not stored anywhere.
       const result = await adminApi.login({ email, password });
       setUser(result.admin);
-      setTokenState(result.token);
       if (rememberMe) {
         localStorage.setItem('nalanda_admin_remembered_email', email);
       } else {
@@ -80,11 +67,13 @@ export function AdminAuthProvider({ children }) {
     }
   }, []);
 
-  const logout = useCallback(() => {
-    adminApi.logout().catch(() => {});
+  const logout = useCallback(async () => {
+    // Awaited: only the backend can clear an httpOnly cookie, so a logout that
+    // tore down local state without waiting could leave the browser still
+    // holding a valid session.
+    await adminApi.logout().catch(() => {});
     disconnectSocket();
     setUser(null);
-    setTokenState(null);
   }, []);
 
   const hasRole = useCallback(
@@ -116,7 +105,6 @@ export function AdminAuthProvider({ children }) {
 
   const value = {
     user,
-    token,
     isAuthenticated: Boolean(user),
     isLoading,
     error,
