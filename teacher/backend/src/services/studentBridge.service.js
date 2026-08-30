@@ -195,6 +195,9 @@ export async function pushLiveClassToStudents(session, classDoc, teacherName) {
       method: 'POST',
       body: JSON.stringify({
         studentCourseSlug: classDoc.studentCourseSlug,
+        // Scopes the lecture to THIS batch on the student side; without it the
+        // session is delivered to every batch of the course.
+        batchId: String(classDoc._id),
         title: session.topic || `${classDoc.subject || 'Class'} Live Session`,
         instructor: teacherName || 'Your Teacher',
         scheduledAt: session.startAt,
@@ -382,11 +385,15 @@ export async function fetchStudentCourseOptions() {
  * an empty array (not an error) when unconfigured/unreachable/unlinked —
  * callers must treat that as "nothing to show", never fall back to fake data.
  */
-export async function fetchEnrollmentSnapshot(studentCourseSlug) {
+export async function fetchEnrollmentSnapshot(studentCourseSlug, { batchId } = {}) {
   if (!isConfigured()) return { ok: false, reason: 'NOT_CONFIGURED', students: [] };
   if (!studentCourseSlug) return { ok: false, reason: 'NOT_LINKED', students: [] };
   try {
-    const result = await call(`/api/internal/courses/${encodeURIComponent(studentCourseSlug)}/enrolled-students`, { method: 'GET' });
+    // Scoped to ONE batch when the caller has one. A course runs several
+    // batches, so an unscoped answer lists every student who bought the course
+    // and each batch would import all of them.
+    const query = batchId ? `?batchId=${encodeURIComponent(batchId)}` : '';
+    const result = await call(`/api/internal/courses/${encodeURIComponent(studentCourseSlug)}/enrolled-students${query}`, { method: 'GET' });
     return { ok: true, students: result?.data || [] };
   } catch (err) {
     console.error('[studentBridge] Failed to fetch enrolled students:', err.message);

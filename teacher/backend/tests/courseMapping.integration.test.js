@@ -182,7 +182,7 @@ test('mapping a batch lets sync find and link the real existing enrollment', asy
   const classId = await createLegacyBatch(teacher._id);
 
   student.state.enrolledBySlug['physics-foundation'] = [
-    { userId: '650000000000000000000001', name: 'Real Student', email: 'Real.Student@example.com', avatar: null },
+    { userId: '650000000000000000000001', enrollmentId: 'ENR-2026-100001', batchId: classId, name: 'Real Student', email: 'Real.Student@example.com', avatar: null },
   ];
 
   // Before mapping: sync short-circuits and reports it plainly.
@@ -214,7 +214,7 @@ test('running sync repeatedly does not duplicate roster rows', async () => {
   const classId = await createLegacyBatch(teacher._id);
 
   student.state.enrolledBySlug['maths-advanced'] = [
-    { userId: '650000000000000000000002', name: 'Repeat Student', email: 'repeat@example.com', avatar: null },
+    { userId: '650000000000000000000002', enrollmentId: 'ENR-2026-100002', batchId: classId, name: 'Repeat Student', email: 'repeat@example.com', avatar: null },
   ];
 
   await api('PATCH', `/api/teacher/classes/${classId}`, { cookie, body: { studentCourseSlug: 'maths-advanced' } });
@@ -237,7 +237,7 @@ test('concurrent syncs do not race into duplicate roster rows', async () => {
   const classId = await createLegacyBatch(teacher._id);
 
   student.state.enrolledBySlug['maths-advanced'] = [
-    { userId: '650000000000000000000003', name: 'Race Student', email: 'race@example.com', avatar: null },
+    { userId: '650000000000000000000003', enrollmentId: 'ENR-2026-100003', batchId: classId, name: 'Race Student', email: 'race@example.com', avatar: null },
   ];
   await api('PATCH', `/api/teacher/classes/${classId}`, { cookie, body: { studentCourseSlug: 'maths-advanced' } });
 
@@ -273,7 +273,7 @@ test('a sync during a student-portal outage errors instead of unlinking verified
   const classId = await createLegacyBatch(teacher._id);
 
   student.state.enrolledBySlug['physics-foundation'] = [
-    { userId: '650000000000000000000004', name: 'Verified Student', email: 'verified@example.com', avatar: null },
+    { userId: '650000000000000000000004', enrollmentId: 'ENR-2026-100004', batchId: classId, name: 'Verified Student', email: 'verified@example.com', avatar: null },
   ];
   await api('PATCH', `/api/teacher/classes/${classId}`, { cookie, body: { studentCourseSlug: 'physics-foundation' } });
   await api('POST', `/api/teacher/classes/${classId}/sync-enrollment`, { cookie });
@@ -297,7 +297,7 @@ test('a genuinely revoked enrollment still unlinks the roster row without deleti
   const classId = await createLegacyBatch(teacher._id);
 
   student.state.enrolledBySlug['physics-foundation'] = [
-    { userId: '650000000000000000000005', name: 'Refunded Student', email: 'refunded@example.com', avatar: null },
+    { userId: '650000000000000000000005', enrollmentId: 'ENR-2026-100005', batchId: classId, name: 'Refunded Student', email: 'refunded@example.com', avatar: null },
   ];
   await api('PATCH', `/api/teacher/classes/${classId}`, { cookie, body: { studentCourseSlug: 'physics-foundation' } });
   await api('POST', `/api/teacher/classes/${classId}/sync-enrollment`, { cookie });
@@ -450,7 +450,7 @@ test('listClasses reports each batch real link state', async () => {
   const verifiedId = await createLegacyBatch(teacher._id, 'Verified Batch');
   await SchoolClass.updateOne({ _id: verifiedId }, { studentCourseSlug: 'maths-advanced' });
   student.state.enrolledBySlug['maths-advanced'] = [
-    { userId: '650000000000000000000006', name: 'Enrolled One', email: 'enrolled.one@example.com', avatar: null },
+    { userId: '650000000000000000000006', enrollmentId: 'ENR-2026-100006', batchId: verifiedId, name: 'Enrolled One', email: 'enrolled.one@example.com', avatar: null },
   ];
   await api('POST', `/api/teacher/classes/${verifiedId}/sync-enrollment`, { cookie });
 

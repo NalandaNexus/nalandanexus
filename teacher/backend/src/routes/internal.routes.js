@@ -4,6 +4,7 @@ import { requireInternalServiceKey } from '../middleware/internalService.js';
 import { validate } from '../middleware/validate.js';
 import {
   teacherForCourseValidator,
+  placeEnrollmentValidator,
   deliverMessageValidator,
   provisionTeacherValidator,
   resetCredentialsValidator,
@@ -23,6 +24,7 @@ const router = Router();
 router.use(requireInternalServiceKey);
 
 router.get('/teacher-for-course/:studentCourseSlug', teacherForCourseValidator, validate, internalController.getTeacherForCourse);
+router.post('/batches/place', placeEnrollmentValidator, validate, internalController.placeEnrollmentInBatch);
 router.post('/messages', deliverMessageValidator, validate, internalController.deliverMessage);
 router.post('/teachers', provisionTeacherValidator, validate, internalController.provisionTeacher);
 router.patch('/teachers/credentials', resetCredentialsValidator, validate, internalController.resetTeacherCredentials);

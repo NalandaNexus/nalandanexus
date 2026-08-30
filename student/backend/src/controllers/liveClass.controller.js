@@ -14,9 +14,23 @@ import { Enrollment } from '../models/Enrollment.js';
  */
 export const listLiveClasses = asyncHandler(async (req, res) => {
   const now = new Date();
-  const enrollments = await Enrollment.find({ userId: req.user._id, status: 'active' }).select('courseId');
-  const courseIds = enrollments.map((e) => e.courseId);
-  const courseFilter = { $or: [{ courseId: { $in: courseIds } }, { courseId: null }] };
+  const enrollments = await Enrollment.find({ userId: req.user._id, status: 'active' }).select('courseId batchId');
+
+  // Scoped per enrollment, not per course. A course runs several batches, each
+  // with its own teacher and timetable, so "enrolled in the course" is not
+  // "entitled to every lecture of the course" - a course-only filter showed
+  // (and let a student join) another batch's session. Each enrollment admits
+  // its own batch's lectures plus the course-wide ones (batchId null).
+  const courseFilter = {
+    $or: [
+      ...enrollments.map((e) => ({
+        courseId: e.courseId,
+        batchId: { $in: e.batchId ? [null, e.batchId] : [null] },
+      })),
+      // Institution-wide sessions belong to no course at all.
+      { courseId: null },
+    ],
+  };
 
   const [upcoming, recorded] = await Promise.all([
     LiveClass.find({

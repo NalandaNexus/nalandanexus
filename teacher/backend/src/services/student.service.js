@@ -7,6 +7,7 @@ import { parsePagination, buildPaginationMeta } from '../utils/pagination.js';
 import { assertClassOwnership } from './class.service.js';
 import { logAudit } from './audit.service.js';
 import { fetchEnrollmentSnapshot } from './studentBridge.service.js';
+import { recountBatchSeats } from './batchPlacement.service.js';
 
 function shapeStudentSummary(s) {
   return {
@@ -169,7 +170,7 @@ export async function syncEnrollmentForClass(teacherId, classId) {
     return { synced: false, outcome: 'NOT_LINKED', created: 0, linked: 0, unlinked: 0, totalEnrolled: 0 };
   }
 
-  const snapshot = await fetchEnrollmentSnapshot(classDoc.studentCourseSlug);
+  const snapshot = await fetchEnrollmentSnapshot(classDoc.studentCourseSlug, { batchId: String(classId) });
 
   // A failed fetch used to be indistinguishable from "nobody is enrolled":
   // both produced an empty list, and the unlink pass below then read that as
@@ -183,32 +184,55 @@ export async function syncEnrollmentForClass(teacherId, classId) {
     );
   }
 
-  const enrolled = snapshot.students.filter((e) => e && typeof e.email === 'string' && e.email);
-  const enrolledByEmail = new Map(enrolled.map((e) => [e.email.toLowerCase(), e]));
+  // Only students actually PLACED in this batch. The student portal returns
+  // everyone who bought the course, because a course runs several batches and it
+  // has no opinion about which one this caller is. Importing all of them was
+  // invisible while a course had a single batch and a cross-batch data leak the
+  // moment it had two: PB1's teacher would see PB2's students. An enrollment
+  // still awaiting placement (batchId null) belongs to no batch yet and is left
+  // alone rather than swept into whichever batch happened to sync first.
+  const forThisBatch = snapshot.students.filter((e) => e && String(e.batchId || '') === String(classId));
+
+  const capacity = Number.isFinite(classDoc.capacity) && classDoc.capacity > 0 ? classDoc.capacity : 60;
+  const enrolled = forThisBatch.slice(0, capacity);
+  const overCapacity = forThisBatch.length - enrolled.length;
 
   let created = 0;
   let linked = 0;
 
   for (const e of enrolled) {
-    const email = e.email.toLowerCase();
-    const existing = await Student.findOne({ class: classId, email });
+    const email = typeof e.email === 'string' && e.email ? e.email.toLowerCase() : null;
+    if (!email) continue;
+
+    // Enrollment ID first, email only as a fallback for rows predating it.
+    // Matching on email alone meant a student who changed their address on the
+    // student portal returned as a second roster row, orphaning their grades and
+    // attendance under the old one.
+    const existing = e.enrollmentId
+      ? await Student.findOne({ class: classId, $or: [{ enrollmentId: e.enrollmentId }, { email }] })
+      : await Student.findOne({ class: classId, email });
+
     if (existing) {
-      if (String(existing.linkedUserId || '') !== e.userId) {
-        existing.linkedUserId = e.userId;
-        await existing.save();
-        linked += 1;
-      }
+      const before = { link: String(existing.linkedUserId || ''), email: existing.email };
+      existing.linkedUserId = e.userId;
+      if (e.enrollmentId) existing.enrollmentId = e.enrollmentId;
+      // A placement placeholder carries no real identity yet; the first sync
+      // that finds the enrollment is what fills it in.
+      if (email !== existing.email) existing.email = email;
+      if (e.name) existing.name = e.name;
+      if (e.avatar) existing.avatarUrl = e.avatar;
+      await existing.save();
+      if (before.link !== String(e.userId) || before.email !== email) linked += 1;
     } else {
-      // Upsert rather than create: sync is meant to be safely repeatable, and
-      // two syncs racing (a double-click, or a retry landing beside the first
-      // call) would otherwise both pass the findOne miss and insert the same
-      // student twice. The filter matches the read above exactly, so a
-      // concurrent insert is absorbed as an update instead of a duplicate.
       const previous = await Student.findOneAndUpdate(
         { class: classId, email },
         {
           $setOnInsert: { name: e.name, class: classId, teacher: teacherId },
-          $set: { avatarUrl: e.avatar || null, linkedUserId: e.userId },
+          $set: {
+            avatarUrl: e.avatar || null,
+            linkedUserId: e.userId,
+            ...(e.enrollmentId ? { enrollmentId: e.enrollmentId } : {}),
+          },
         },
         { upsert: true, new: false, setDefaultsOnInsert: true }
       );
@@ -217,25 +241,36 @@ export async function syncEnrollmentForClass(teacherId, classId) {
     }
   }
 
-  // Clear verification on roster rows that no longer have an active enrollment.
-  // Safe to run now: `enrolled` is a real answer from the student portal, never
-  // a fallback empty list.
-  const currentlyLinked = await Student.find({ class: classId, teacher: teacherId, linkedUserId: { $ne: null } }).select('_id email').lean();
-  const toUnlink = currentlyLinked.filter((s) => !enrolledByEmail.has(s.email.toLowerCase())).map((s) => s._id);
+  // Clear verification on roster rows whose enrollment is no longer active in
+  // this batch. Safe to run now: `snapshot` is a real answer from the student
+  // portal, never a fallback empty list.
+  const placedIds = new Set(enrolled.map((e) => String(e.enrollmentId || '')).filter(Boolean));
+  const placedEmails = new Set(enrolled.map((e) => (e.email || '').toLowerCase()).filter(Boolean));
+  const currentlyLinked = await Student.find({ class: classId, teacher: teacherId, linkedUserId: { $ne: null } })
+    .select('_id email enrollmentId')
+    .lean();
+  const toUnlink = currentlyLinked
+    .filter((s) => (s.enrollmentId ? !placedIds.has(s.enrollmentId) : !placedEmails.has((s.email || '').toLowerCase())))
+    .map((s) => s._id);
   let unlinked = 0;
   if (toUnlink.length) {
     const result = await Student.updateMany({ _id: { $in: toUnlink } }, { linkedUserId: null });
     unlinked = result.modifiedCount || 0;
   }
 
-  await logAudit({ actorId: teacherId, action: 'class.enrollment_synced', targetType: 'SchoolClass', targetId: classId, metadata: { created, linked, unlinked, totalEnrolled: enrolled.length } });
+  // `enrolledCount` is a cache that lets capacity be claimed atomically at
+  // placement time; reconciling it here against the real roster means it can
+  // never drift permanently.
+  await recountBatchSeats(classId);
+
+  await logAudit({ actorId: teacherId, action: 'class.enrollment_synced', targetType: 'SchoolClass', targetId: classId, metadata: { created, linked, unlinked, overCapacity, totalEnrolled: enrolled.length } });
 
   // The mapping working and students being found are separate facts, and the
   // caller has to be able to say which happened: a correctly-linked course
   // nobody has enrolled in yet is a success, not a silent no-op reported as
   // "enrollment synced".
   const outcome = enrolled.length === 0 ? 'NO_ENROLLMENTS' : 'SYNCED';
-  return { synced: true, outcome, created, linked, unlinked, totalEnrolled: enrolled.length };
+  return { synced: true, outcome, created, linked, unlinked, overCapacity, totalEnrolled: enrolled.length };
 }
 
 export async function createStudent(teacherId, payload, ip) {

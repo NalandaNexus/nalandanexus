@@ -1,8 +1,54 @@
 import { Enrollment } from '../models/Enrollment.js';
 import { Notification } from '../models/Notification.js';
+import { Counter } from '../models/Counter.js';
+import { requestBatchPlacement } from './teacherBridge.service.js';
 
 export async function getActiveEnrollment(userId, courseId) {
   return Enrollment.findOne({ userId, courseId, status: 'active' });
+}
+
+/**
+ * Issues the next business enrollment identifier, e.g. ENR-2026-000123.
+ *
+ * Year-scoped and zero-padded so the sequence reads naturally and sorts
+ * correctly. The counter is incremented atomically (see models/Counter.js), so
+ * two simultaneous checkouts can never be handed the same number.
+ */
+export async function nextEnrollmentId(now = new Date()) {
+  const year = now.getUTCFullYear();
+  const seq = await Counter.next(`enrollment:${year}`);
+  return `ENR-${year}-${String(seq).padStart(6, '0')}`;
+}
+
+/**
+ * Places an enrollment into one of its course's batches.
+ *
+ * The batches, their capacity and their teachers all live in the teacher
+ * portal's database, so it is the only service that can answer "which batch has
+ * room" - this asks it, and records the answer here, where the
+ * student-to-course relationship is authoritative.
+ *
+ * Best-effort by design. If the teacher portal is unreachable, or the course has
+ * no batch with room, the enrollment stays unplaced (batchId null) and the
+ * purchase still completes. Placement is retried later rather than failing a
+ * transaction the student has already paid for; an unplaced enrollment is a real,
+ * visible state, not a silent error.
+ */
+export async function assignEnrollmentToBatch(enrollment, courseSlug) {
+  if (enrollment.batchId) return enrollment;
+
+  const placement = await requestBatchPlacement({
+    courseSlug,
+    enrollmentId: enrollment.enrollmentId,
+    studentName: enrollment.studentName,
+  });
+  if (!placement?.batchId) return enrollment;
+
+  enrollment.batchId = placement.batchId;
+  enrollment.batchCode = placement.batchCode || null;
+  enrollment.batchAssignedAt = new Date();
+  await enrollment.save();
+  return enrollment;
 }
 
 export async function createEnrollment({ userId, courseId, orderId = null, course }) {
@@ -11,7 +57,16 @@ export async function createEnrollment({ userId, courseId, orderId = null, cours
     if (existing.status !== 'active') {
       existing.status = 'active';
       existing.orderId = orderId || existing.orderId;
+      // A re-activated enrollment predating this field still needs an identity,
+      // but an existing one is never reissued - it has already been quoted.
+      if (!existing.enrollmentId) {
+        existing.enrollmentId = await nextEnrollmentId();
+        existing.$locals.allowEnrollmentIdBackfill = true;
+      }
       await existing.save();
+    }
+    if (course?.slug && !existing.batchId) {
+      await assignEnrollmentToBatch(existing, course.slug).catch(() => existing);
     }
     return existing;
   }
@@ -23,9 +78,16 @@ export async function createEnrollment({ userId, courseId, orderId = null, cours
     userId,
     courseId,
     orderId,
+    enrollmentId: await nextEnrollmentId(),
     currentModuleId: firstModule?.moduleId || null,
     currentLessonId: firstLesson?.lessonId || null,
   });
+
+  // Placement is attempted immediately but never blocks the enrollment itself
+  // (see assignEnrollmentToBatch).
+  if (course?.slug) {
+    await assignEnrollmentToBatch(enrollment, course.slug).catch(() => enrollment);
+  }
 
   await Notification.create({
     userId,

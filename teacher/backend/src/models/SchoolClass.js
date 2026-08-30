@@ -36,6 +36,12 @@ const schoolClassSchema = new Schema(
     // classes; every new batch's create form requires it (see
     // validators/class.validators.js#createClassValidator).
     studentCourseSlug: { type: String, default: null, trim: true, index: true },
+    // Seats given out, maintained as a cache so capacity can be enforced with a
+    // single atomic $expr-guarded $inc (see services/batchPlacement.service.js).
+    // A plain count-then-insert would let two simultaneous purchases both take
+    // the last seat. Reconciled against the real roster after every enrollment
+    // sync, so the cache can never drift permanently.
+    enrolledCount: { type: Number, default: 0, min: 0 },
   },
   { timestamps: true }
 );

@@ -38,6 +38,14 @@ const studentSchema = new Schema(
     teacher: { type: Schema.Types.ObjectId, ref: 'Teacher', required: true, index: true },
     linkedUserId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
 
+    // The student portal's business enrollment identifier (ENR-YYYY-NNNNNN) -
+    // the authoritative identity for matching during sync. Email was the only
+    // join key before, so a student who changed their address on the student
+    // portal came back as a SECOND roster row, orphaning their grades and
+    // attendance under the old one. No `default: null`: the unique index below
+    // is sparse, and a sparse index only skips a genuinely ABSENT field.
+    enrollmentId: { type: String, trim: true, uppercase: true },
+
     guardianName: { type: String, default: null, trim: true },
     guardianPhone: { type: String, default: null, trim: true },
     guardianEmail: { type: String, default: null, trim: true },
@@ -68,6 +76,9 @@ studentSchema.index({ teacher: 1, class: 1 });
 studentSchema.index({ teacher: 1, 'metrics.riskLevel': 1 });
 studentSchema.index({ teacher: 1, status: 1 });
 studentSchema.index({ class: 1, email: 1 }, { unique: true });
+// One roster row per enrollment, globally: an enrollment belongs to exactly one
+// batch, so this also stops a student being placed into two batches at once.
+studentSchema.index({ enrollmentId: 1 }, { unique: true, sparse: true });
 studentSchema.index({ name: 'text', email: 'text' });
 
 /** Deterministic risk classification used everywhere a score needs a tier. */

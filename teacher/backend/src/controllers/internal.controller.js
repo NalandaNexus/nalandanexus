@@ -1,6 +1,7 @@
 import { catchAsync } from '../utils/catchAsync.js';
 import { sendSuccess } from '../utils/ApiResponse.js';
 import { resolveTeacherForCourseSlug, deliverExternalStudentMessage } from '../services/externalMessage.service.js';
+import { placeEnrollment } from '../services/batchPlacement.service.js';
 import { createTeacherAccount, resetCredentials, setAccountStatus } from '../services/auth.service.js';
 import { assignCourse, unassignCourse } from '../services/assignedCourse.service.js';
 import { AdminAnnouncement } from '../models/AdminAnnouncement.js';
@@ -190,7 +191,30 @@ export const receiveQuizResult = catchAsync(async (req, res) => {
   sendSuccess(res, { statusCode: result.recorded ? 201 : 200, message: result.recorded ? 'Result recorded.' : 'Not recorded.', data: result });
 });
 
+/**
+ * Places a paid enrollment into a batch of its course.
+ *
+ * Called by the student portal at purchase time: it owns the enrollment but not
+ * the batches, their capacity, or their teachers, all of which live here.
+ *
+ * A course with no batch that has room returns 200 with `data: null`, not an
+ * error - "every batch is full, open another one" is a real business state, and
+ * a student who has already paid must not see their purchase fail because of it.
+ */
+export const placeEnrollmentInBatch = catchAsync(async (req, res) => {
+  const placement = await placeEnrollment({
+    studentCourseSlug: req.body.studentCourseSlug,
+    enrollmentId: req.body.enrollmentId,
+    studentName: req.body.studentName,
+  });
+  sendSuccess(res, {
+    message: placement ? 'Enrollment placed in a batch.' : 'No batch of this course has room right now.',
+    data: placement,
+  });
+});
+
 export default {
+  placeEnrollmentInBatch,
   getTeacherForCourse,
   deliverMessage,
   resetTeacherCredentials,

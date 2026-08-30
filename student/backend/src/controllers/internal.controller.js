@@ -249,7 +249,7 @@ async function notifyEnrolledStudents(courseId, { title, description, link }) {
 
 /** Delivers a newly-scheduled teacher-portal live session. Idempotent on `sourceId` (the ClassSession _id). */
 export const createBridgedLiveClass = asyncHandler(async (req, res) => {
-  const { studentCourseSlug, title, instructor, scheduledAt, durationMinutes, joinUrl, sourceId } = req.body;
+  const { studentCourseSlug, batchId, title, instructor, scheduledAt, durationMinutes, joinUrl, sourceId } = req.body;
 
   const existing = await LiveClass.findOne({ source: 'teacher-portal', sourceId });
   if (existing) {
@@ -263,6 +263,7 @@ export const createBridgedLiveClass = asyncHandler(async (req, res) => {
 
   const liveClass = await LiveClass.create({
     courseId,
+    batchId: batchId || null,
     title,
     instructor,
     scheduledAt,
@@ -454,7 +455,14 @@ export const listEnrolledStudents = asyncHandler(async (req, res) => {
     return sendSuccess(res, { message: 'No matching student course.', data: [] });
   }
 
-  const enrollments = await Enrollment.find({ courseId: course._id, status: 'active' })
+  // `batchId` scopes the answer to ONE batch of the course. A course runs
+  // several batches, each with its own teacher and lectures, so an unscoped
+  // answer would let every batch import every student of the course. The filter
+  // is optional so an admin-side caller can still see the whole course.
+  const filter = { courseId: course._id, status: 'active' };
+  if (req.query.batchId) filter.batchId = req.query.batchId;
+
+  const enrollments = await Enrollment.find(filter)
     .populate('userId', 'name email avatar')
     .sort({ enrolledAt: -1 })
     .lean();
@@ -462,6 +470,13 @@ export const listEnrolledStudents = asyncHandler(async (req, res) => {
   const students = enrollments
     .filter((e) => e.userId) // drop any enrollment whose user was hard-deleted
     .map((e) => ({
+      // The authoritative identity for cross-portal matching. Email changes;
+      // this does not.
+      enrollmentId: e.enrollmentId || null,
+      // Which batch of the course this student was actually placed in. Null
+      // means awaiting placement — a real state, and one no batch may claim.
+      batchId: e.batchId || null,
+      batchCode: e.batchCode || null,
       userId: String(e.userId._id),
       name: e.userId.name,
       email: e.userId.email,

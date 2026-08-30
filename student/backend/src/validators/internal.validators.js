@@ -58,6 +58,13 @@ export const upsertBridgedTaskSchema = z.object({
 export const createBridgedLiveClassSchema = z.object({
   body: z.object({
     studentCourseSlug: z.string().trim().min(1),
+    // The teacher portal's SchoolClass._id. Optional: a lecture with no batch
+    // is a course-wide session every batch attends.
+    batchId: z
+      .string()
+      .trim()
+      .regex(/^[a-f\d]{24}$/i, 'batchId must be a valid identifier')
+      .nullish(),
     title: z.string().trim().min(1).max(200),
     instructor: z.string().trim().min(1).max(160),
     scheduledAt: z.coerce.date(),
@@ -86,6 +93,17 @@ export const updateBridgedLiveClassSchema = z.object({
 export const enrolledStudentsQuerySchema = z.object({
   params: z.object({
     slug: z.string().trim().min(1),
+  }),
+  // batchId is the teacher portal's own SchoolClass._id arriving as a string
+  // across the service boundary. Shape-checked here so an arbitrary value can
+  // never reach the enrollment query - declaring `query` at all also makes the
+  // middleware replace req.query with just these keys.
+  query: z.object({
+    batchId: z
+      .string()
+      .trim()
+      .regex(/^[a-f\d]{24}$/i, 'batchId must be a valid identifier')
+      .optional(),
   }),
 });
 

@@ -5,6 +5,13 @@ const { Schema } = mongoose;
 const liveClassSchema = new Schema(
   {
     courseId: { type: Schema.Types.ObjectId, ref: 'Course', default: null, index: true },
+    // Which BATCH of the course this lecture is for, as the teacher portal's own
+    // SchoolClass._id string (a cross-database reference, like
+    // Enrollment.batchId). A course runs several batches, each taught separately
+    // on its own timetable, so a lecture scoped only by course was delivered to
+    // every student of every batch - PB2 could see and join PB1's session.
+    // Null is meaningful and kept: a course-wide session that everyone attends.
+    batchId: { type: String, default: null, index: true },
     title: { type: String, required: true, trim: true },
     instructor: { type: String, required: true, trim: true },
     scheduledAt: { type: Date, required: true, index: true },

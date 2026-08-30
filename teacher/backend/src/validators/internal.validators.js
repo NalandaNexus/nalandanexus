@@ -70,7 +70,19 @@ export const receiveQuizResultValidator = [
   body('totalCount').isInt({ min: 0 }).toInt(),
 ];
 
+/**
+ * A placement request from the student portal. `enrollmentId` is the student
+ * portal's business identifier (ENR-YYYY-NNNNNN), not one of our ObjectIds -
+ * shape-checked here so an arbitrary string can never become a roster identity.
+ */
+export const placeEnrollmentValidator = [
+  body('studentCourseSlug').trim().notEmpty().withMessage('studentCourseSlug is required').isLength({ max: 200 }).matches(/^[a-z0-9-]+$/i),
+  body('enrollmentId').trim().notEmpty().withMessage('enrollmentId is required').isLength({ max: 40 }).matches(/^[A-Z0-9-]+$/i).withMessage('Invalid enrollment identifier.'),
+  body('studentName').optional({ nullable: true }).trim().isLength({ max: 120 }),
+];
+
 export default {
+  placeEnrollmentValidator,
   teacherForCourseValidator,
   deliverMessageValidator,
   provisionTeacherValidator,

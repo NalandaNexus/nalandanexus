@@ -104,7 +104,12 @@ async function startFakeStudentPortal() {
       }
       if (state.enrolledStatus !== 200) return send(state.enrolledStatus, { success: false });
       const slug = decodeURIComponent(enrolled[1]);
-      return send(200, { success: true, data: state.enrolledBySlug[slug] || [] });
+      const all = state.enrolledBySlug[slug] || [];
+      // Mirrors the real endpoint: ?batchId scopes the answer to one batch of
+      // the course, so each batch only ever sees its own placed students.
+      const batchId = url.searchParams.get('batchId');
+      const data = batchId ? all.filter((e) => String(e.batchId || '') === batchId) : all;
+      return send(200, { success: true, data });
     }
 
     // Every other bridge call (announcements, materials, ...) is a best-effort

@@ -100,4 +100,30 @@ export async function pushQuizResult({ examSourceId, studentUserId, studentName,
   }
 }
 
-export default { fetchTeacherForCourse, pushMessageToTeacher, pushTaskSubmission, pushQuizResult };
+/**
+ * Asks the teacher portal to place a paid enrollment into one of its batches.
+ *
+ * Batches, their capacity and their teachers all live in that service's
+ * database, so it is the only one that can answer "which batch of this course
+ * still has room" - and the only one that can decide it atomically, without two
+ * simultaneous purchases both being handed the last remaining seat.
+ *
+ * Best-effort like every other call here: an unreachable teacher portal returns
+ * null and the enrollment simply stays unplaced. A student who has paid must
+ * never lose their purchase because a downstream service was restarting.
+ */
+export async function requestBatchPlacement({ courseSlug, enrollmentId, studentName }) {
+  if (!isConfigured() || !courseSlug || !enrollmentId) return null;
+  try {
+    const body = await call('/api/internal/batches/place', {
+      method: 'POST',
+      body: JSON.stringify({ studentCourseSlug: courseSlug, enrollmentId, studentName: studentName || null }),
+    });
+    return body?.data || null;
+  } catch (err) {
+    console.error('[teacherBridge] Batch placement unavailable, enrollment left unplaced:', err.message);
+    return null;
+  }
+}
+
+export default { fetchTeacherForCourse, requestBatchPlacement, pushMessageToTeacher, pushTaskSubmission, pushQuizResult };
