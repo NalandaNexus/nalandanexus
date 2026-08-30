@@ -1,4 +1,5 @@
 import { env } from '../config/env.js';
+import { ApiError } from '../utils/ApiError.js';
 
 /**
  * Provisions a REAL Teacher Portal login when Admin creates a teacher.
@@ -210,7 +211,82 @@ export async function removeCourseAssignment(sourceId) {
   }
 }
 
+/**
+ * Batch administration, proxied to the teacher service.
+ *
+ * Batches live in that service's database and there is deliberately no copy
+ * here - a second Batch model would be two answers to "how many seats are
+ * taken", and capacity is enforced against the counter over there. These calls
+ * inherit the bounded cold-start retry in call() above, so an admin managing
+ * batches while the teacher backend is asleep waits rather than fails.
+ *
+ * Unlike the fire-and-forget bridges, these THROW on failure: an admin pressing
+ * Save needs to know the batch was not created, not be told it worked.
+ */
+function bridgeUnavailable() {
+  return ApiError.serviceUnavailable(
+    'The Teacher service is unavailable, so batches cannot be managed right now. Nothing was changed - please try again in a moment.',
+    'TEACHER_SERVICE_UNAVAILABLE'
+  );
+}
+
+async function batchCall(path, options) {
+  if (!isConfigured()) throw bridgeUnavailable();
+  try {
+    return await call(path, options);
+  } catch (err) {
+    // A 4xx is the teacher service rejecting the request on its merits
+    // (unknown course, unknown teacher, bad capacity); that message is the
+    // useful one and must reach the admin rather than being flattened into
+    // "service unavailable".
+    if (err?.status >= 400 && err.status < 500) {
+      throw ApiError.unprocessable(err.message.replace(/^Teacher backend returned \d+:\s*/, ''), 'BATCH_REJECTED');
+    }
+    console.error('[teacherBridge] Batch administration call failed:', err.message);
+    throw bridgeUnavailable();
+  }
+}
+
+export async function listBatches(query = {}) {
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries(query)) if (v !== undefined && v !== null && v !== '') params.set(k, v);
+  const qs = params.toString();
+  const body = await batchCall(`/api/internal/batches${qs ? `?${qs}` : ''}`, { method: 'GET' });
+  return { batches: body?.data || [], catalogAvailable: body?.meta?.catalogAvailable !== false };
+}
+
+export async function getBatch(id) {
+  const body = await batchCall(`/api/internal/batches/${encodeURIComponent(id)}`, { method: 'GET' });
+  return body?.data || null;
+}
+
+export async function createBatch(payload) {
+  const body = await batchCall('/api/internal/batches', { method: 'POST', body: JSON.stringify(payload) });
+  return body?.data || null;
+}
+
+export async function updateBatch(id, payload) {
+  const body = await batchCall(`/api/internal/batches/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(payload) });
+  return body?.data || null;
+}
+
+export async function reassignBatchTeacher(id, payload) {
+  const body = await batchCall(`/api/internal/batches/${encodeURIComponent(id)}/teacher`, { method: 'PATCH', body: JSON.stringify(payload) });
+  return body?.data || null;
+}
+
+export async function listBatchStudents(id) {
+  const body = await batchCall(`/api/internal/batches/${encodeURIComponent(id)}/students`, { method: 'GET' });
+  return body?.data || [];
+}
+
 export default {
+  listBatches,
+  getBatch,
+  createBatch,
+  updateBatch,
+  reassignBatchTeacher,
+  listBatchStudents,
   provisionTeacherAccount,
   resetTeacherCredentials,
   setTeacherAccountStatus,

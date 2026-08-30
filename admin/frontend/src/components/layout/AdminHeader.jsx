@@ -140,7 +140,11 @@ export default function AdminHeader({
             <div className="w-7 h-7 rounded-lg bg-[#22355E] text-white flex items-center justify-center font-bold text-xs shadow-inner">
               {getInitials(user?.name)}
             </div>
-            <div className="hidden md:block text-left">
+            {/* lg, not md. The sidebar is still expanded at the md breakpoint
+                (768px), and revealing the name there pushed the header ~130px
+                past the viewport - the block appeared at exactly the width that
+                could no longer hold it. Measured at 768x1024. */}
+            <div className="hidden lg:block text-left">
               <p className="text-xs font-bold text-[#22355E] leading-tight truncate max-w-[100px]">
                 {user?.name || 'Admin'}
               </p>

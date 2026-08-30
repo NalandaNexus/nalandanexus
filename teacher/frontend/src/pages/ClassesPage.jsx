@@ -337,9 +337,17 @@ export default function ClassesPage() {
                   </div>
 
                   <div className="grid grid-cols-3 gap-2 mt-4 pt-4 border-t border-[#DFDACB] text-center">
+                    {/* Occupancy against capacity, taken from the backend's own
+                        seat counter - the number placement is enforced against.
+                        A bare student count hid whether a batch had room. */}
                     <div className="p-2 rounded-lg bg-[#F7F5EE] border border-[#DFDACB]">
-                      <span className="text-[10px] text-[#6E6A64]">Students</span>
-                      <div className="text-xs font-bold text-[#22355E] font-mono tabular-nums">{cls.studentCount}</div>
+                      <span className="text-[10px] text-[#6E6A64]">Enrolled</span>
+                      <div className="text-xs font-bold text-[#22355E] font-mono tabular-nums">
+                        {cls.enrolledCount ?? cls.studentCount} / {cls.capacity}
+                      </div>
+                      <div className="text-[9px] mt-0.5 font-semibold" style={{ color: cls.isFull ? '#8F6A15' : '#5C7A5E' }}>
+                        {cls.isFull ? 'Full' : `${cls.seatsRemaining} left`}
+                      </div>
                     </div>
                     <div className="p-2 rounded-lg bg-[#F7F5EE] border border-[#DFDACB]">
                       <span className="text-[10px] text-[#6E6A64]">Avg. Score</span>

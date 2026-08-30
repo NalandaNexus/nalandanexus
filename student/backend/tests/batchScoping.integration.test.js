@@ -156,3 +156,54 @@ test('two enrollments cannot share an identifier', async () => {
     'the unique index must reject a duplicate identifier'
   );
 });
+
+/**
+ * What the student is actually told about their own enrollment.
+ *
+ * The endpoint used to send this database's ObjectId under the name
+ * `enrollmentId`, so any screen rendering it would have shown an internal key
+ * where the student expects the ENR-YYYY-NNNNNN they quote to support.
+ */
+test('a student is shown their business enrollment identity, batch and teacher', async () => {
+  const course = await makeCourse('identity-course', 'Identity Course');
+  const gina = await registerAndLogin(request, { name: 'Gina Identity', email: 'gina.identity@example.com' });
+
+  const created = await Enrollment.create({
+    enrollmentId: 'ENR-2026-970001',
+    userId: gina.user.id || gina.user._id,
+    courseId: course._id,
+    batchId: PB1,
+    batchCode: 'PB1',
+    status: 'active',
+    assignedTeacher: { teacherId: 't-1', name: 'Faculty Name', avatarUrl: null, resolvedAt: new Date() },
+  });
+
+  const res = await request.get('/api/student/courses').set(bearer(gina.accessToken));
+  assert.equal(res.status, 200);
+
+  const row = res.body.data.find((c) => c.slug === 'identity-course');
+  assert.ok(row, 'the enrolled course must be listed');
+  assert.equal(row.enrollmentId, 'ENR-2026-970001', 'the business identifier, not the database key');
+  assert.notEqual(row.enrollmentId, String(created._id), 'the internal id must never masquerade as the enrollment id');
+  assert.equal(row.batchCode, 'PB1', 'the student can see which batch they are in');
+  assert.equal(row.teacherName, 'Faculty Name', 'and who teaches it');
+  assert.equal(row.status, 'active');
+});
+
+test('an unplaced student is told so honestly rather than shown a wrong batch', async () => {
+  const course = await makeCourse('pending-course', 'Pending Course');
+  const hank = await registerAndLogin(request, { name: 'Hank Pending', email: 'hank.pending@example.com' });
+
+  await Enrollment.create({
+    enrollmentId: 'ENR-2026-980001',
+    userId: hank.user.id || hank.user._id,
+    courseId: course._id,
+    status: 'active',
+  });
+
+  const res = await request.get('/api/student/courses').set(bearer(hank.accessToken));
+  const row = res.body.data.find((c) => c.slug === 'pending-course');
+  assert.equal(row.batchCode, null, 'awaiting placement is a real state, not a fabricated batch');
+  assert.equal(row.teacherName, null);
+  assert.equal(row.enrollmentId, 'ENR-2026-980001', 'the identity is issued even before placement');
+});

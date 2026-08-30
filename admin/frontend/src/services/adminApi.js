@@ -273,6 +273,40 @@ export const adminApi = {
     return request(`/students/${id}`, { method: 'DELETE' });
   },
 
+  // ── Batches ───────────────────────────────────────────────────────────
+  // Batches live in the Teacher service; these endpoints proxy to it, so the
+  // seat counts below are the same numbers capacity is enforced against rather
+  // than anything this page computes.
+  async getBatches(params = {}) {
+    const json = await request('/batches', { query: params });
+    return { batches: json.data || [], catalogAvailable: json.meta?.catalogAvailable !== false };
+  },
+
+  async getBatch(id) {
+    const json = await request(`/batches/${id}`);
+    return json.data;
+  },
+
+  async createBatch(payload) {
+    const json = await request('/batches', { method: 'POST', body: payload });
+    return json.data;
+  },
+
+  async updateBatch(id, payload) {
+    const json = await request(`/batches/${id}`, { method: 'PATCH', body: payload });
+    return json.data;
+  },
+
+  async reassignBatchTeacher(id, teacherEmail) {
+    const json = await request(`/batches/${id}/teacher`, { method: 'PATCH', body: { teacherEmail } });
+    return json.data;
+  },
+
+  async getBatchStudents(id) {
+    const json = await request(`/batches/${id}/students`);
+    return json.data || [];
+  },
+
   // ── Courses ───────────────────────────────────────────────────────────
   async getCourses(params = {}) {
     const json = await request('/courses', { query: params });

@@ -145,6 +145,12 @@ export default function StudentsPage() {
                       {st.verified && <ShieldCheck className="w-3 h-3 text-[#5C7A5E]" title="Verified enrollment" />}
                     </h4>
                     <p className="text-[11px] text-[#6E6A64] truncate">{st.className} • {st.email}</p>
+                    {/* The business identity the student quotes in support and
+                        that cross-portal sync matches on. Shown because a
+                        teacher cannot otherwise tie a person to their enrollment. */}
+                    {st.enrollmentId && (
+                      <p className="text-[10px] text-[#9B9690] font-mono truncate">{st.enrollmentId}</p>
+                    )}
                   </div>
                 </div>
                 <div className="text-right flex-shrink-0">

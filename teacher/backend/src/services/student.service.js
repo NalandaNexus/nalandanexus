@@ -14,6 +14,10 @@ function shapeStudentSummary(s) {
     id: s._id,
     name: s.name,
     email: s.email,
+    // The student portal's business enrollment identifier. Surfaced so a
+    // teacher can tie a person on the roster to the enrollment support and
+    // cross-portal sync both refer to.
+    enrollmentId: s.enrollmentId || null,
     avatar: s.avatarUrl || dicebearAvatar(s.name),
     classId: s.class?._id || s.class,
     className: s.class?.name || undefined,
@@ -28,8 +32,9 @@ function shapeStudentSummary(s) {
     riskLevel: s.metrics?.riskLevel ?? 'good',
     atRiskReason: s.metrics?.atRiskReason ?? undefined,
     status: s.status,
-    // True only once matched, by email, against a REAL active enrollment in
-    // student/backend (see syncEnrollmentForClass) — never inferred from
+    // True only once matched — by enrollmentId, falling back to email for rows
+    // predating it — against a REAL active enrollment in student/backend (see
+    // syncEnrollmentForClass). Never inferred from
     // merely being on this roster. A class with no linked student course
     // has no way to verify anyone, so this is always false there rather
     // than silently claiming a guarantee that can't be checked.

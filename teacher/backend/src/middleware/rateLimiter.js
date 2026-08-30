@@ -1,5 +1,16 @@
 import rateLimit from 'express-rate-limit';
 import { env } from '../config/env.js';
+import { MongoRateLimitStore } from './mongoRateLimitStore.js';
+
+/**
+ * Counters are shared across instances (see mongoRateLimitStore.js). The
+ * library's default store is per-process, so on a multi-instance deployment the
+ * real limit was the configured one times the instance count - confirmed live,
+ * with the remaining-count climbing back up between requests.
+ *
+ * Each limiter gets its own prefix so the general ceiling and the login limiter
+ * never share a counter.
+ */
 
 function rateLimitedJson(req, res) {
   res.status(429).json({
@@ -11,6 +22,7 @@ function rateLimitedJson(req, res) {
 
 /** General ceiling applied to the whole API to blunt abusive traffic. */
 export const generalLimiter = rateLimit({
+  store: new MongoRateLimitStore({ prefix: 'general' }),
   windowMs: env.rateLimitWindowMs,
   max: env.rateLimitMax,
   standardHeaders: true,
@@ -23,6 +35,7 @@ export const generalLimiter = rateLimit({
  * brute-force password guessing without punishing normal API usage.
  */
 export const authLimiter = rateLimit({
+  store: new MongoRateLimitStore({ prefix: 'auth' }),
   windowMs: env.rateLimitWindowMs,
   max: env.authRateLimitMax,
   standardHeaders: true,

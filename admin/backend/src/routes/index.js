@@ -4,6 +4,7 @@ import dashboardRoutes from './dashboard.routes.js';
 import teacherRoutes from './teacher.routes.js';
 import studentRoutes from './student.routes.js';
 import courseRoutes from './course.routes.js';
+import batchRoutes from './batch.routes.js';
 import resourceRoutes from './resource.routes.js';
 import enrollmentRoutes from './enrollment.routes.js';
 import announcementRoutes from './announcement.routes.js';
@@ -22,6 +23,9 @@ router.use('/', dashboardRoutes); // /overview, /leaderboard, /live-telemetry (k
 router.use('/teachers', teacherRoutes);
 router.use('/students', studentRoutes);
 router.use('/courses', courseRoutes);
+// Batches live in the teacher service; these routes proxy to it (see
+// controllers/batch.controller.js) rather than duplicating the model here.
+router.use('/batches', batchRoutes);
 router.use('/resources', resourceRoutes);
 router.use('/enrollments', enrollmentRoutes);
 router.use('/announcements', announcementRoutes);

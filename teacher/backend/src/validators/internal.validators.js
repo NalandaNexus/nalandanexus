@@ -1,4 +1,4 @@
-import { body, param } from 'express-validator';
+import { body, param, query } from 'express-validator';
 
 export const teacherForCourseValidator = [param('studentCourseSlug').trim().notEmpty()];
 
@@ -81,7 +81,50 @@ export const placeEnrollmentValidator = [
   body('studentName').optional({ nullable: true }).trim().isLength({ max: 120 }),
 ];
 
+/**
+ * Admin batch administration. The teacher is identified by EMAIL, the identity
+ * shared across services - never by one of this database's ObjectIds, which
+ * Admin has no way to know and must not be able to guess at.
+ */
+const emailRule = (field) => body(field).trim().notEmpty().isEmail().withMessage('A valid teacher email is required').normalizeEmail();
+
+export const adminCreateBatchValidator = [
+  body('courseSlug').trim().notEmpty().withMessage('A course is required').isLength({ max: 200 }).matches(/^[a-z0-9-]+$/i),
+  body('name').trim().notEmpty().withMessage('A batch name is required').isLength({ max: 120 }),
+  emailRule('teacherEmail'),
+  body('capacity').optional().isInt({ min: 1, max: 500 }).withMessage('Capacity must be between 1 and 500').toInt(),
+  body('room').optional({ nullable: true }).trim().isLength({ max: 60 }),
+  body('schedule').optional({ nullable: true }).trim().isLength({ max: 200 }),
+  body('actorEmail').optional({ nullable: true }).trim().isLength({ max: 160 }),
+];
+
+export const adminUpdateBatchValidator = [
+  body('name').optional().trim().notEmpty().isLength({ max: 120 }),
+  body('capacity').optional().isInt({ min: 1, max: 500 }).withMessage('Capacity must be between 1 and 500').toInt(),
+  body('status').optional().isIn(['active', 'archived']),
+  body('room').optional({ nullable: true }).trim().isLength({ max: 60 }),
+  body('schedule').optional({ nullable: true }).trim().isLength({ max: 200 }),
+  body('studentCourseSlug').optional().trim().notEmpty().isLength({ max: 200 }).matches(/^[a-z0-9-]+$/i),
+  body('actorEmail').optional({ nullable: true }).trim().isLength({ max: 160 }),
+];
+
+export const adminReassignBatchValidator = [
+  emailRule('teacherEmail'),
+  body('actorEmail').optional({ nullable: true }).trim().isLength({ max: 160 }),
+];
+
+export const adminListBatchesValidator = [
+  query('courseSlug').optional().trim().isLength({ max: 200 }).matches(/^[a-z0-9-]+$/i),
+  query('teacherEmail').optional().trim().isEmail().normalizeEmail(),
+  query('status').optional().isIn(['all', 'active', 'archived']),
+  query('search').optional().trim().isLength({ max: 120 }),
+];
+
 export default {
+  adminCreateBatchValidator,
+  adminUpdateBatchValidator,
+  adminReassignBatchValidator,
+  adminListBatchesValidator,
   placeEnrollmentValidator,
   teacherForCourseValidator,
   deliverMessageValidator,

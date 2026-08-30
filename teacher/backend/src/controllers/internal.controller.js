@@ -2,6 +2,7 @@ import { catchAsync } from '../utils/catchAsync.js';
 import { sendSuccess } from '../utils/ApiResponse.js';
 import { resolveTeacherForCourseSlug, deliverExternalStudentMessage } from '../services/externalMessage.service.js';
 import { placeEnrollment } from '../services/batchPlacement.service.js';
+import * as adminBatch from '../services/adminBatch.service.js';
 import { createTeacherAccount, resetCredentials, setAccountStatus } from '../services/auth.service.js';
 import { assignCourse, unassignCourse } from '../services/assignedCourse.service.js';
 import { AdminAnnouncement } from '../models/AdminAnnouncement.js';
@@ -213,7 +214,53 @@ export const placeEnrollmentInBatch = catchAsync(async (req, res) => {
   });
 });
 
+/**
+ * Batch administration for the Admin portal.
+ *
+ * Batches live in this service's database, so Admin reaches them over the same
+ * shared-secret bridge it already uses. Every mutation delegates to the service
+ * layer a teacher's own requests go through, so course validation, the update
+ * allow-list and the audit trail are identical whichever portal called.
+ */
+export const adminListBatches = catchAsync(async (req, res) => {
+  const { batches, catalogAvailable } = await adminBatch.listAllBatches(req.query);
+  sendSuccess(res, { data: batches, meta: { catalogAvailable } });
+});
+
+export const adminGetBatch = catchAsync(async (req, res) => {
+  sendSuccess(res, { data: await adminBatch.getBatchForAdmin(req.params.id) });
+});
+
+export const adminCreateBatch = catchAsync(async (req, res) => {
+  const batch = await adminBatch.createBatchForAdmin(req.body, { adminEmail: req.body.actorEmail, ip: req.ip });
+  sendSuccess(res, { statusCode: 201, message: 'Batch created.', data: batch });
+});
+
+export const adminUpdateBatch = catchAsync(async (req, res) => {
+  const { actorEmail, ...updates } = req.body;
+  const batch = await adminBatch.updateBatchForAdmin(req.params.id, updates, { adminEmail: actorEmail, ip: req.ip });
+  sendSuccess(res, { message: 'Batch updated.', data: batch });
+});
+
+export const adminReassignBatchTeacher = catchAsync(async (req, res) => {
+  const batch = await adminBatch.reassignBatchTeacher(req.params.id, req.body.teacherEmail, {
+    adminEmail: req.body.actorEmail,
+    ip: req.ip,
+  });
+  sendSuccess(res, { message: 'Batch reassigned.', data: batch });
+});
+
+export const adminListBatchStudents = catchAsync(async (req, res) => {
+  sendSuccess(res, { data: await adminBatch.listBatchStudentsForAdmin(req.params.id) });
+});
+
 export default {
+  adminListBatches,
+  adminGetBatch,
+  adminCreateBatch,
+  adminUpdateBatch,
+  adminReassignBatchTeacher,
+  adminListBatchStudents,
   placeEnrollmentInBatch,
   getTeacherForCourse,
   deliverMessage,

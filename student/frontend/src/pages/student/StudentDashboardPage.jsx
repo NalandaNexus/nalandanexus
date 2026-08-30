@@ -11,6 +11,7 @@ import DueTasks from '../../components/student/DueTasks';
 import PerformanceChart from '../../components/student/PerformanceChart';
 import LeaderboardSection from '../../components/student/LeaderboardSection';
 import ParambhJourney from '../../components/student/ParambhJourney';
+import MyEnrollmentCard from '../../components/student/MyEnrollmentCard';
 
 export default function StudentDashboardPage() {
   const navigate = useNavigate();
@@ -90,6 +91,10 @@ export default function StudentDashboardPage() {
 
         {/* Section 5: Parambh Journey */}
         <ParambhJourney />
+
+        {/* Section 6: the student's own enrollment identity, batch and teacher —
+            all of which existed in the data and appeared on no screen. */}
+        <MyEnrollmentCard />
       </motion.div>
     </div>
   );

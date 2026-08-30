@@ -74,6 +74,10 @@ function deriveLinkState(cls, courseTitle, studentCount, catalogReachable) {
 function shapeClass(cls, statsMap, catalog) {
   const stats = statsMap.get(String(cls._id)) || emptyStats();
   const courseTitle = (cls.studentCourseSlug && catalog?.titleBySlug?.get(cls.studentCourseSlug)) || null;
+  // A missing capacity falls back to the schema default rather than reading as
+  // unlimited, matching batchPlacement.service.js.
+  const capacity = Number.isFinite(cls.capacity) && cls.capacity > 0 ? cls.capacity : 60;
+  const enrolled = Number.isFinite(cls.enrolledCount) ? cls.enrolledCount : 0;
   return {
     id: cls._id,
     code: cls.code,
@@ -84,7 +88,15 @@ function shapeClass(cls, statsMap, catalog) {
     academicSession: cls.academicSession,
     room: cls.room,
     schedule: cls.schedule,
-    capacity: cls.capacity,
+    capacity: capacity,
+    // Authoritative occupancy, straight from the counter capacity is claimed
+    // against - never derived from however many roster rows a client happens to
+    // have fetched, which would under-report as soon as the list is paginated.
+    enrolledCount: enrolled,
+    seatsRemaining: Math.max(0, capacity - enrolled),
+    // FULL is derived, never stored: a stored flag drifts the moment a seat is
+    // released, and there would then be two answers to the same question.
+    isFull: enrolled >= capacity,
     status: cls.status,
     studentCourseSlug: cls.studentCourseSlug || null,
     // Resolved live from the real public course catalog (student/backend),

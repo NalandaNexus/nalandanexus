@@ -6,12 +6,25 @@ import { Enrollment } from '../models/Enrollment.js';
 import { LessonProgress } from '../models/LessonProgress.js';
 import { awardXp } from '../services/xp.service.js';
 
-/** GET /api/student/courses - courses the authenticated student is enrolled in. */
+/**
+ * GET /api/student/courses - courses the authenticated student is enrolled in,
+ * with the enrollment details they can actually be told.
+ *
+ * `enrollmentId` previously carried this database's ObjectId under the name of
+ * the business identifier, so anything rendering it would have shown a student
+ * an internal key instead of the ENR-YYYY-NNNNNN they are asked to quote. The
+ * two are now distinct: `enrollmentId` is the real business identity, and the
+ * internal handle is not sent at all - nothing outside this service needs it.
+ *
+ * Batch and teacher are included because a coaching student's first questions
+ * are which batch they are in and who teaches it. A null batch is honest: it
+ * means placement has not happened yet, which is a real state.
+ */
 export const getMyCourses = asyncHandler(async (req, res) => {
   const enrollments = await Enrollment.find({ userId: req.user._id, status: 'active' }).populate('courseId');
   return sendSuccess(res, {
     data: enrollments.map((e) => ({
-      enrollmentId: e._id,
+      enrollmentId: e.enrollmentId || null,
       courseId: e.courseId._id,
       slug: e.courseId.slug,
       title: e.courseId.title,
@@ -21,6 +34,13 @@ export const getMyCourses = asyncHandler(async (req, res) => {
       currentModuleId: e.currentModuleId,
       currentLessonId: e.currentLessonId,
       enrolledAt: e.enrolledAt,
+      status: e.status,
+      batchCode: e.batchCode || null,
+      batchAssignedAt: e.batchAssignedAt || null,
+      // Resolved and cached from the teacher portal (see
+      // teacherBridge.service.js); null while it has not been resolved yet.
+      teacherName: e.assignedTeacher?.name || null,
+      teacherAvatarUrl: e.assignedTeacher?.avatarUrl || null,
     })),
   });
 });
