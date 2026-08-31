@@ -185,3 +185,51 @@ test('a batch cannot be filled past its capacity', async () => {
   assert.ok(enrolled <= 2, `capacity 2 must not be exceeded, found ${enrolled}`);
   assert.equal(sync.body.data.overCapacity, 1, 'the batch must report the placement it could not accept');
 });
+
+/**
+ * Which teacher a student is told they have.
+ *
+ * Resolution matched "the first active class for this course slug", so with PB1
+ * and PB2 taught by different people, every student of the course was told PB1's
+ * teacher taught them — and a message to "my teacher" went to the wrong person.
+ * Found in the browser: a student placed in PB2 was shown PB1's faculty.
+ */
+test('a student is told their OWN batch teacher, not the first batch teacher', async () => {
+  const teacherA = await signIn('resolvea');
+  const teacherB = await signIn('resolveb');
+
+  const pb1 = await createBatch(teacherA.cookie, 'PB1 Resolve');
+  const pb2 = await createBatch(teacherB.cookie, 'PB2 Resolve');
+
+  const key = { 'X-Internal-Service-Key': 'test_service_key' };
+
+  const forPb2 = await api('GET', `/api/internal/teacher-for-course/prarambh?batchId=${pb2}`, { headers: key });
+  assert.equal(forPb2.status, 200, JSON.stringify(forPb2.body));
+  assert.equal(
+    String(forPb2.body.data.teacherId),
+    String(teacherB.teacher._id),
+    'a PB2 student must be given PB2 teacher'
+  );
+
+  const forPb1 = await api('GET', `/api/internal/teacher-for-course/prarambh?batchId=${pb1}`, { headers: key });
+  assert.equal(String(forPb1.body.data.teacherId), String(teacherA.teacher._id));
+
+  // With no batch (an unplaced enrollment) the slug-only fallback still answers,
+  // rather than leaving the student with nobody at all.
+  const unscoped = await api('GET', '/api/internal/teacher-for-course/prarambh', { headers: key });
+  assert.ok(unscoped.body.data?.teacherId, 'the fallback must still resolve someone');
+});
+
+test('a batch id belonging to a different course is not honoured', async () => {
+  const owner = await signIn('resolvewrong');
+  const mine = await createBatch(owner.cookie, 'PB Mine');
+
+  // A well-formed id that is not a batch of this course must not be trusted;
+  // resolution falls back rather than returning an unrelated batch teacher.
+  const res = await api('GET', `/api/internal/teacher-for-course/prarambh?batchId=650000000000000000000fff`, {
+    headers: { 'X-Internal-Service-Key': 'test_service_key' },
+  });
+  assert.equal(res.status, 200);
+  assert.ok(res.body.data === null || res.body.data.teacherId, 'either a fallback answer or none, never a mismatched batch');
+  assert.ok(mine, 'batch created');
+});

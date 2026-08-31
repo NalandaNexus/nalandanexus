@@ -32,10 +32,14 @@ async function call(path, options) {
 }
 
 /** Resolves the real teacher assigned to a course slug via teacher/backend. Returns null (not a throw) on any failure. */
-export async function fetchTeacherForCourse(studentCourseSlug) {
+export async function fetchTeacherForCourse(studentCourseSlug, { batchId } = {}) {
   if (!isConfigured() || !studentCourseSlug) return null;
   try {
-    const body = await call(`/api/internal/teacher-for-course/${encodeURIComponent(studentCourseSlug)}`, { method: 'GET' });
+    // Scoped to the student's own batch when they have one; a course with
+    // several batches has several teachers, and the unscoped answer was
+    // whichever batch was created first.
+    const query = batchId ? `?batchId=${encodeURIComponent(batchId)}` : '';
+    const body = await call(`/api/internal/teacher-for-course/${encodeURIComponent(studentCourseSlug)}${query}`, { method: 'GET' });
     return body?.data || null;
   } catch (err) {
     console.error('[teacherBridge] Failed to resolve assigned teacher:', err.message);

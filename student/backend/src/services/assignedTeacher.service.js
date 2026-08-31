@@ -23,7 +23,7 @@ export async function resolveAssignedTeacher(userId) {
     return { ...(enrollment.assignedTeacher.toObject?.() || enrollment.assignedTeacher), courseSlug: slug };
   }
 
-  const resolved = slug ? await fetchTeacherForCourse(slug) : null;
+  const resolved = slug ? await fetchTeacherForCourse(slug, { batchId: enrollment.batchId }) : null;
 
   enrollment.assignedTeacher = {
     teacherId: resolved?.teacherId || enrollment.assignedTeacher?.teacherId || null,

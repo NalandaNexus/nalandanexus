@@ -64,11 +64,17 @@ function emptyStats() {
  *   LINKED_NO_ENROLLMENT - mapping is good; nobody has an active enrollment yet
  *   LINKED_VERIFIED      - mapping is good and real enrolled students are on the roster
  */
-function deriveLinkState(cls, courseTitle, studentCount, catalogReachable) {
+function deriveLinkState(cls, courseTitle, studentCount, catalogReachable, enrolledCount) {
   if (!cls.studentCourseSlug) return 'UNLINKED';
   // Only accuse a link of being broken when the catalogue actually answered.
   if (catalogReachable && !courseTitle) return 'LINK_BROKEN';
-  return studentCount > 0 ? 'LINKED_VERIFIED' : 'LINKED_NO_ENROLLMENT';
+  if (studentCount > 0) return 'LINKED_VERIFIED';
+  // Seats taken but nobody verified yet: students have been PLACED and the
+  // enrollment sync has not run. Without this the card read "no enrollments
+  // yet" directly above "2 / 2 Full", because the label was derived from the
+  // verified count while the number came from the seat counter.
+  if (enrolledCount > 0) return 'LINKED_AWAITING_SYNC';
+  return 'LINKED_NO_ENROLLMENT';
 }
 
 function shapeClass(cls, statsMap, catalog) {
@@ -104,7 +110,7 @@ function shapeClass(cls, statsMap, catalog) {
     // title. Null only for a legacy class predating the "every batch has a
     // course" requirement, or if the linked course was since removed.
     courseTitle,
-    linkState: deriveLinkState(cls, courseTitle, stats.studentCount, Boolean(catalog?.ok)),
+    linkState: deriveLinkState(cls, courseTitle, stats.studentCount, Boolean(catalog?.ok), enrolled),
     studentCount: stats.studentCount,
     averageScore: stats.averageScore,
     attendanceRate: stats.attendanceRate,

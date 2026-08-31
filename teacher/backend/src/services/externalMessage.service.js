@@ -9,12 +9,19 @@ import { notifyTeacher } from './notification.service.js';
  * Resolves the teacher a student-portal course's linked class belongs to —
  * backs both `GET /api/internal/teacher-for-course/:slug` (so the student
  * portal can show/cache "your teacher") and inbound message delivery below.
- * If more than one class links to the same slug (unusual — one course
- * "should" map to one teacher), the first match wins; this mirrors the
- * single-thread messaging model chosen for the student side.
+ * Resolution prefers the caller's own batch and falls back to the first active
+ * class for the slug only when no batch is supplied.
  */
-export async function resolveTeacherForCourseSlug(studentCourseSlug) {
-  const classDoc = await SchoolClass.findOne({ studentCourseSlug, status: 'active' });
+export async function resolveTeacherForCourseSlug(studentCourseSlug, { batchId } = {}) {
+  // Prefer the student's OWN batch. A course runs several batches with
+  // different teachers, so "the first active class for this slug" answered with
+  // whichever batch happened to be created first - a PB2 student was told PB1's
+  // teacher taught them, and messages addressed to "my teacher" went to the
+  // wrong person. The slug-only path remains for callers that have no batch
+  // (a course-wide question, or an enrollment still awaiting placement).
+  const classDoc =
+    (batchId && (await SchoolClass.findOne({ _id: batchId, studentCourseSlug, status: 'active' }))) ||
+    (await SchoolClass.findOne({ studentCourseSlug, status: 'active' }));
   if (!classDoc) return null;
   const teacher = await Teacher.findById(classDoc.teacher).populate('user', 'name avatarUrl').lean();
   if (!teacher) return null;

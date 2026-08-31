@@ -54,7 +54,10 @@ export default function AdminHeader({
   return (
     <header className="h-16 bg-[#EDEAE0] border-b border-[#DFDACB] px-4 sm:px-6 flex items-center justify-between sticky top-0 z-30 shadow-subtle">
       {/* Left: Mobile Toggle & Quick Search */}
-      <div className="flex items-center gap-3 flex-1 max-w-xl">
+      {/* min-w-0: a flex-1 child refuses to shrink below its content width
+          without it, and the search box was forcing the header past the viewport
+          on narrow screens (502px of content at 375px wide). */}
+      <div className="flex items-center gap-3 flex-1 min-w-0 max-w-xl">
         <button
           type="button"
           onClick={onToggleMobileSidebar}
@@ -70,8 +73,11 @@ export default function AdminHeader({
           onClick={onOpenSearch}
           className="w-full max-w-md flex items-center justify-between bg-white border border-[#DFDACB] hover:border-[#22355E]/50 rounded-xl px-3.5 py-2 text-xs text-[#9B9690] transition-all shadow-sm group text-left"
         >
-          <div className="flex items-center gap-2.5">
-            <Search className="w-4 h-4 text-[#9B9690] group-hover:text-[#22355E] transition-colors" />
+          {/* min-w-0 again, and flex-shrink-0 on the icon: `truncate` cannot
+              take effect while its flex parent is sized by the text it is meant
+              to be truncating. */}
+          <div className="flex items-center gap-2.5 min-w-0">
+            <Search className="w-4 h-4 flex-shrink-0 text-[#9B9690] group-hover:text-[#22355E] transition-colors" />
             <span className="truncate">Search anything (Teachers, Courses, Logs)...</span>
           </div>
           <kbd className="hidden sm:inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-[#EDEAE0] border border-[#DFDACB] rounded text-[10px] font-mono text-[#2B2B28]">
@@ -81,7 +87,7 @@ export default function AdminHeader({
       </div>
 
       {/* Right: Telemetry Pill, Notifications, Help, User Avatar */}
-      <div className="flex items-center gap-2 sm:gap-3">
+      <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
         {/* Real-time Telemetry Pill */}
         <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-[#DFDACB] text-[11px] font-medium text-[#22355E] shadow-sm">
           {telemetryStatus === 'LIVE' ? (

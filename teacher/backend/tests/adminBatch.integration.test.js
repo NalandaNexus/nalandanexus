@@ -254,3 +254,33 @@ test('archiving through admin takes the batch out of placement', async () => {
   });
   assert.equal(placement.body.data, null, 'an archived batch must never receive a student');
 });
+
+/**
+ * A batch whose seats are taken but whose students have not yet been confirmed
+ * against the student portal.
+ *
+ * The card derived its label from the VERIFIED count while showing the SEAT
+ * count, so it read "Mapped - no enrollments yet" directly above "2 / 2 Full".
+ * Caught in the browser, not by a test.
+ */
+test('a batch with placed but unsynced students is not reported as having no enrollments', async () => {
+  const owner = await signIn('awaitingsync');
+  const created = await adminCreate({ courseSlug, name: 'PB Awaiting', teacherEmail: owner.user.email, capacity: 2 });
+  const batchId = created.body.data.id;
+
+  await api('POST', '/api/internal/batches/place', {
+    headers: KEY,
+    body: { studentCourseSlug: courseSlug, enrollmentId: 'ENR-2026-880001', studentName: 'Seated' },
+  });
+
+  const list = await api('GET', '/api/teacher/classes', { cookie: owner.cookie });
+  const batch = list.body.data.find((b) => b.id === batchId);
+
+  assert.equal(batch.enrolledCount, 1, 'the seat is taken');
+  assert.equal(batch.studentCount, 0, 'and nobody is verified yet');
+  assert.equal(
+    batch.linkState,
+    'LINKED_AWAITING_SYNC',
+    'the label must not contradict the seat count it is displayed beside'
+  );
+});

@@ -258,7 +258,7 @@ export default function CoursesPage() {
                   type="text"
                   value={createForm.category}
                   onChange={(e) => setCreateForm({ ...createForm, category: e.target.value })}
-                  placeholder="e.g. Class 12 Physics"
+                  placeholder="e.g. Foundation Skills"
                   className="w-full bg-[#F7F5EE] border border-[#D8D3C5] rounded-xl px-3.5 py-2 text-xs text-[#2B2B28] placeholder-[#9B9690] focus:outline-none focus:border-[#22355E]"
                 />
               </div>

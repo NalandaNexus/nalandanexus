@@ -1,6 +1,11 @@
 import { body, param, query } from 'express-validator';
 
-export const teacherForCourseValidator = [param('studentCourseSlug').trim().notEmpty()];
+export const teacherForCourseValidator = [
+  param('studentCourseSlug').trim().notEmpty(),
+  // The caller's batch, so a student gets THEIR batch's teacher rather than
+  // whichever batch of the course was created first.
+  query('batchId').optional().trim().matches(/^[a-f\d]{24}$/i).withMessage('batchId must be a valid identifier'),
+];
 
 export const deliverMessageValidator = [
   body('studentCourseSlug').trim().notEmpty(),

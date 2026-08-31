@@ -25,6 +25,11 @@ const LINK_STATES = {
     tone: 'bg-[#C1352B]/15 text-[#C1352B] border-[#C1352B]/30',
     detail: 'The linked course is no longer published. Pick a current one to restore sync.',
   },
+  LINKED_AWAITING_SYNC: {
+    label: 'Placed — awaiting sync',
+    tone: 'bg-[#C99A2E]/15 text-[#8F6A15] border-[#C99A2E]/30',
+    detail: 'Students hold seats in this batch. Run Sync to confirm them against the student portal.',
+  },
   LINKED_NO_ENROLLMENT: {
     label: 'Mapped — no enrollments yet',
     tone: 'bg-[#EDEAE0] text-[#6E6A64] border-[#DFDACB]',

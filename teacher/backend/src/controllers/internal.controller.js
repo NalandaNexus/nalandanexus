@@ -49,7 +49,7 @@ async function notifyAllTeachersOfAdminAnnouncement(announcement) {
 }
 
 export const getTeacherForCourse = catchAsync(async (req, res) => {
-  const resolved = await resolveTeacherForCourseSlug(req.params.studentCourseSlug);
+  const resolved = await resolveTeacherForCourseSlug(req.params.studentCourseSlug, { batchId: req.query.batchId });
   sendSuccess(res, { data: resolved });
 });
 
