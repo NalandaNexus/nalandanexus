@@ -28,6 +28,10 @@ import mongoose from 'mongoose';
 
 const COLLECTION = 'ratelimits';
 
+// Identifies this process, so a health probe can reveal how many containers are
+// actually serving traffic - a question the platform does not otherwise answer.
+const INSTANCE_ID = `${process.pid.toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
 let indexReady = null;
 
 function collection() {
@@ -140,6 +144,35 @@ export class MongoRateLimitStore {
     const col = collection();
     if (!col) return;
     await col.deleteOne({ _id: this.key(key) });
+  }
+}
+
+/**
+ * Reports whether the shared counter is actually reachable from THIS instance,
+ * and which instance answered.
+ *
+ * The store degrades quietly by design - if the database is unreachable it lets
+ * the request through rather than taking the API down over rate limiting. That
+ * is the right trade, but it makes a broken store indistinguishable from a
+ * working one from outside, which is exactly the position this deployment ended
+ * up in: counters demonstrably not shared, with no way to tell whether the store
+ * was failing or whether several containers were serving.
+ *
+ * `instanceId` is per-process, so repeated calls that return different ids prove
+ * how many containers are live - the other half of the same question.
+ */
+export async function probeStore() {
+  const col = collection();
+  if (!col) return { reachable: false, reason: 'DATABASE_NOT_CONNECTED', instanceId: INSTANCE_ID };
+  try {
+    const key = `probe:${INSTANCE_ID}`;
+    const expiresAt = new Date(Date.now() + 60_000);
+    await col.updateOne({ _id: key }, { $set: { hits: 1, expiresAt } }, { upsert: true });
+    const found = await col.findOne({ _id: key });
+    await col.deleteOne({ _id: key });
+    return { reachable: Boolean(found), instanceId: INSTANCE_ID, collection: COLLECTION };
+  } catch (err) {
+    return { reachable: false, reason: err.message, instanceId: INSTANCE_ID };
   }
 }
 

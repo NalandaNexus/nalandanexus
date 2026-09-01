@@ -190,3 +190,36 @@ test('a forged or tampered token is rejected', async () => {
   const res = await call('/api/admin/auth/me', { cookie: tampered });
   assert.equal(res.status, 401, 'a signature that does not verify must never authenticate');
 });
+
+/**
+ * Health must report whether the shared rate-limit counter is actually
+ * reachable from this instance.
+ *
+ * The store degrades quietly when the database is unreachable - it lets the
+ * request through rather than taking the API down - which is the right trade but
+ * made a real production problem invisible from outside. `instanceId` is
+ * per-process, so repeated calls returning different ids reveal how many
+ * containers are serving, the other half of diagnosing an unshared counter.
+ */
+test('health reports the rate-limit store and the answering instance', async () => {
+  const res = await call('/api/health');
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+
+  assert.equal(res.body.database, 'connected');
+  assert.ok(res.body.rateLimitStore, 'health must describe the store');
+  assert.equal(res.body.rateLimitStore.reachable, true, 'the store must be reachable when the database is');
+  assert.equal(res.body.rateLimitStore.collection, 'ratelimits');
+  assert.ok(res.body.rateLimitStore.instanceId, 'the answering instance must identify itself');
+
+  // Same process, so the same id - a differing id across calls in production is
+  // what proves more than one container is live.
+  const again = await call('/api/health');
+  assert.equal(again.body.rateLimitStore.instanceId, res.body.rateLimitStore.instanceId);
+});
+
+test('the probe leaves no residue in the counter collection', async () => {
+  const mongoose = (await import('mongoose')).default;
+  await call('/api/health');
+  const leftovers = await mongoose.connection.collection('ratelimits').countDocuments({ _id: /^probe:/ });
+  assert.equal(leftovers, 0, 'a diagnostic must not accumulate documents');
+});

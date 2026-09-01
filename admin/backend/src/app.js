@@ -8,6 +8,7 @@ import morgan from 'morgan';
 import { env } from './config/env.js';
 import { isDatabaseConnected } from './config/db.js';
 import { apiLimiter } from './middleware/rateLimiter.js';
+import { probeStore } from './middleware/mongoRateLimitStore.js';
 import { notFoundHandler, errorHandler } from './middleware/errorHandler.js';
 import { UPLOADS_ROOT } from './middleware/upload.js';
 import adminRoutes from './routes/index.js';
@@ -42,11 +43,17 @@ export function createApp() {
   // Static file serving for local-disk course cover images — see middleware/upload.js.
   app.use('/uploads', express.static(UPLOADS_ROOT));
 
-  app.get('/api/health', (req, res) => {
+  app.get('/api/health', async (req, res) => {
+    // rateLimitStore is reported because a store that cannot reach the database
+    // degrades silently by design, which made a real production problem
+    // invisible from outside. instanceId also reveals how many containers serve
+    // traffic, which is the other half of diagnosing an unshared counter.
+    const rateLimitStore = await probeStore();
     res.json({
       status: 'ok',
       service: 'nalanda-admin-backend',
       database: isDatabaseConnected() ? 'connected' : 'disconnected',
+      rateLimitStore,
       timestamp: new Date().toISOString(),
     });
   });
