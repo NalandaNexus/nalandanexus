@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Ticket, Plus, Search, X, AlertTriangle, Copy, Check, Ban, RotateCcw, Trash2 } from 'lucide-react';
+import { Ticket, Plus, Search, X, AlertTriangle, Copy, Check, Ban, RotateCcw, Trash2, Download } from 'lucide-react';
 import { adminApi } from '../services/adminApi';
 
 /**
@@ -27,17 +27,26 @@ export default function CouponsPage() {
   const [courses, setCourses] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
-  const [filters, setFilters] = useState({ status: 'ALL', courseSlug: '', search: '' });
+  const [filters, setFilters] = useState({ status: 'ALL', courseSlug: '', campaignId: '', search: '' });
   const [createOpen, setCreateOpen] = useState(false);
   const [generated, setGenerated] = useState(null);
+  const [campaigns, setCampaigns] = useState([]);
+  const [exportingId, setExportingId] = useState('');
 
   const load = useCallback(async () => {
     try {
       setError('');
       const query = Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== '' && v !== 'ALL'));
-      const res = await adminApi.getCoupons(query);
+      const [res, camps] = await Promise.all([
+        adminApi.getCoupons(query),
+        // Campaign statistics follow the course filter but not the status or
+        // search filters - narrowing the table should not make a campaign look
+        // like it has fewer seats than it does.
+        adminApi.getCampaigns(filters.courseSlug ? { courseSlug: filters.courseSlug } : {}),
+      ]);
       setCoupons(res.coupons);
       setSummary(res.summary || {});
+      setCampaigns(camps);
     } catch (err) {
       setError(err.message || 'Could not load coupons.');
     } finally {
@@ -61,6 +70,17 @@ export default function CouponsPage() {
       await load();
     } catch (err) {
       setError(err.message || 'Could not update that coupon.');
+    }
+  };
+
+  const exportCampaign = async (campaign) => {
+    setExportingId(campaign.id);
+    try {
+      await adminApi.downloadCampaignCodes(campaign.id, campaign.name);
+    } catch (err) {
+      setError(err.message || 'Could not export that campaign.');
+    } finally {
+      setExportingId('');
     }
   };
 
@@ -89,7 +109,7 @@ export default function CouponsPage() {
           onClick={() => setCreateOpen(true)}
           className="flex items-center gap-2 bg-[#22355E] hover:bg-[#16233F] text-white font-semibold px-4 py-2 rounded-xl text-sm transition-colors shrink-0"
         >
-          <Plus className="w-4 h-4" /> Generate Coupons
+          <Plus className="w-4 h-4" /> Create Coupon Campaign
         </button>
       </div>
 
@@ -109,6 +129,76 @@ export default function CouponsPage() {
           </div>
         ))}
       </div>
+
+      {/* Campaign-level statistics: the question an operator actually has is
+          "how much of THAT giveaway is left", which the global tiles cannot
+          answer once there is more than one batch. */}
+      {campaigns.length > 0 && (
+        <div className="rounded-xl bg-white border border-slate-200 overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-200">
+            <h2 className="text-sm font-bold text-[#22355E]">Campaigns</h2>
+            <p className="text-xs text-slate-500 mt-0.5">Each campaign is one batch of codes minted together.</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-[10px] uppercase tracking-wider text-slate-400 border-b border-slate-200">
+                  <th className="text-left font-semibold px-4 py-2.5">Campaign</th>
+                  <th className="text-left font-semibold px-4 py-2.5">Course</th>
+                  <th className="text-right font-semibold px-4 py-2.5">Total</th>
+                  <th className="text-right font-semibold px-4 py-2.5">Available</th>
+                  <th className="text-right font-semibold px-4 py-2.5">Used</th>
+                  <th className="text-right font-semibold px-4 py-2.5">Expired</th>
+                  <th className="text-right font-semibold px-4 py-2.5">Inactive</th>
+                  <th className="px-4 py-2.5" />
+                </tr>
+              </thead>
+              <tbody>
+                {campaigns.map((c) => {
+                  const isFiltered = filters.campaignId === c.id;
+                  return (
+                    <tr key={c.id} className={`border-b border-slate-100 last:border-0 ${isFiltered ? 'bg-[#22355E]/5' : ''}`}>
+                      <td className="px-4 py-3 min-w-0">
+                        <button
+                          type="button"
+                          onClick={() => setFilters((f) => ({ ...f, campaignId: isFiltered ? '' : c.id }))}
+                          className="font-semibold text-[#22355E] hover:underline text-left"
+                          aria-pressed={isFiltered}
+                        >
+                          {c.name}
+                        </button>
+                        <p className="text-[11px] text-slate-400">
+                          {c.discountType === 'FULL' ? '100% off' : c.discountType === 'PERCENT' ? `${c.discountValue}% off` : `${rupees(c.discountValue)} off`}
+                          {' · '}{c.maxUsesPerCoupon} use{c.maxUsesPerCoupon === 1 ? '' : 's'} each
+                          {c.createdByName ? ` · by ${c.createdByName}` : ''}
+                        </p>
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">{c.courseTitle || '—'}</td>
+                      <td className="px-4 py-3 text-right tabular-nums font-semibold text-[#22355E]">{c.total}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-emerald-700">{c.available}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-slate-600">{c.used}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-amber-700">{c.expired}</td>
+                      <td className="px-4 py-3 text-right tabular-nums text-red-700">{c.inactive}</td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => exportCampaign(c)}
+                          disabled={exportingId === c.id}
+                          title="Download these codes as CSV"
+                          className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#22355E] hover:underline disabled:opacity-50"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          {exportingId === c.id ? 'Preparing…' : 'Export'}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 rounded-xl bg-white border border-slate-200">
         <div className="relative">
@@ -172,7 +262,7 @@ export default function CouponsPage() {
                 <tr key={c.id} className="border-b border-slate-100 last:border-0 align-top">
                   <td className="py-3 px-4">
                     <CopyableCode code={c.code} />
-                    {c.batchLabel && <p className="text-[10px] text-slate-400 mt-0.5">{c.batchLabel}</p>}
+                    {c.campaignName && <p className="text-[10px] text-slate-400 mt-0.5">{c.campaignName}</p>}
                   </td>
                   <td className="py-3 px-4 text-slate-600">{c.courseTitle || '—'}</td>
                   <td className="py-3 px-4">
@@ -241,7 +331,14 @@ export default function CouponsPage() {
         />
       )}
 
-      {generated && <GeneratedCodesDialog coupons={generated} onClose={() => setGenerated(null)} />}
+      {generated && (
+        <GeneratedCodesDialog
+          campaign={generated.campaign}
+          coupons={generated.coupons}
+          onExport={exportCampaign}
+          onClose={() => setGenerated(null)}
+        />
+      )}
     </div>
   );
 }
@@ -273,7 +370,14 @@ function CopyableCode({ code }) {
 const field = 'w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm';
 
 function GenerateDialog({ courses, onCancel, onCreated }) {
-  const [form, setForm] = useState({ courseSlug: '', count: '25', expiresAt: '', batchLabel: '' });
+  const [form, setForm] = useState({
+    courseSlug: '',
+    name: '',
+    count: '25',
+    discountPercent: '100',
+    maxUses: '1',
+    expiresAt: '',
+  });
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
@@ -282,27 +386,32 @@ function GenerateDialog({ courses, onCancel, onCreated }) {
   const selectable = courses.filter((c) => c.slug);
   const course = selectable.find((c) => c.slug === form.courseSlug);
   const count = Number(form.count);
+  const maxUses = Number(form.maxUses);
+  const discountPercent = Number(form.discountPercent);
 
   const submit = async (e) => {
     e.preventDefault();
     setErr('');
     if (!form.courseSlug) return setErr('Choose the course these coupons unlock.');
+    if (!form.name.trim()) return setErr('Name the campaign — it is what stops a second batch being created by mistake.');
     if (!Number.isInteger(count) || count < 1) return setErr('Enter how many coupons to create.');
+    if (!Number.isInteger(maxUses) || maxUses < 1) return setErr('Each coupon needs at least one use.');
+    if (!(discountPercent > 0 && discountPercent <= 100)) return setErr('Discount must be between 1% and 100%.');
 
     setBusy(true);
     try {
-      const created = await adminApi.createCoupons({
+      const created = await adminApi.createCampaign({
         // Slug, not _id: this portal's course _ids belong to this portal's
         // database, and the coupons are stored by the student backend.
         courseSlug: form.courseSlug,
+        name: form.name.trim(),
         count,
-        // The giveaway is all-or-nothing by design: a coupon that only discounts
-        // still requires payment, which is the normal Razorpay flow.
-        discountType: 'FULL',
-        discountValue: 100,
-        maxUses: 1,
+        // 100% is FULL, which is the only kind that skips Razorpay entirely.
+        // Anything less is a discount on a payment, and still goes to checkout.
+        discountType: discountPercent === 100 ? 'FULL' : 'PERCENT',
+        discountValue: discountPercent,
+        maxUses,
         expiresAt: form.expiresAt || null,
-        batchLabel: form.batchLabel.trim() || null,
       });
       await onCreated(created);
     } catch (error) {
@@ -313,7 +422,7 @@ function GenerateDialog({ courses, onCancel, onCreated }) {
   };
 
   return (
-    <Dialog title="Generate Coupons" onCancel={onCancel}>
+    <Dialog title="Create Coupon Campaign" onCancel={onCancel}>
       <form onSubmit={submit} className="space-y-3">
         {err && <div role="alert" className="p-2.5 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs">{err}</div>}
 
@@ -329,10 +438,34 @@ function GenerateDialog({ courses, onCancel, onCreated }) {
           </select>
         </div>
 
+        <div>
+          <label className="block text-xs font-semibold text-slate-600 mb-1">Campaign name *</label>
+          <input
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+            className={field}
+            placeholder="e.g. Launch giveaway"
+          />
+          <p className="text-[11px] text-slate-400 mt-1">
+            Names this batch, and is what stops it being created twice — one campaign of a given name per course.
+          </p>
+        </div>
+
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1">How many *</label>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">Number of coupons *</label>
             <input type="number" min="1" max="500" value={form.count} onChange={(e) => setForm({ ...form, count: e.target.value })} className={field} />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">Max uses per coupon *</label>
+            <input type="number" min="1" max="1000" value={form.maxUses} onChange={(e) => setForm({ ...form, maxUses: e.target.value })} className={field} />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">Discount % *</label>
+            <input type="number" min="1" max="100" value={form.discountPercent} onChange={(e) => setForm({ ...form, discountPercent: e.target.value })} className={field} />
           </div>
           <div>
             <label className="block text-xs font-semibold text-slate-600 mb-1">Expires (optional)</label>
@@ -340,24 +473,25 @@ function GenerateDialog({ courses, onCancel, onCreated }) {
           </div>
         </div>
 
-        <div>
-          <label className="block text-xs font-semibold text-slate-600 mb-1">Label (optional)</label>
-          <input
-            value={form.batchLabel}
-            onChange={(e) => setForm({ ...form, batchLabel: e.target.value })}
-            className={field}
-            placeholder="e.g. Launch giveaway"
-          />
-          <p className="text-[11px] text-slate-400 mt-1">Helps you tell one generated batch from another later.</p>
-        </div>
+        {/* Anything under 100% still goes through checkout, and an operator
+            setting up a free giveaway should find that out here, not from a
+            confused student at the payment screen. */}
+        {discountPercent > 0 && discountPercent < 100 && (
+          <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-[11px] text-amber-800">
+            At {discountPercent}% these are discounts, not free places — students will still be taken to Razorpay to pay the balance.
+          </div>
+        )}
 
         <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 text-[11px] text-slate-600">
-          Each coupon gives <strong>100% off</strong> and can be used <strong>once</strong>.
+          Each coupon gives <strong>{discountPercent === 100 ? '100% off' : `${discountPercent || 0}% off`}</strong> and can be used{' '}
+          <strong>{maxUses === 1 ? 'once' : `${maxUses} times`}</strong>.
           {course && count > 0 && (
             <>
               {' '}
-              This creates <strong>{count}</strong> free {count === 1 ? 'place' : 'places'} on{' '}
-              <strong>{course.title}</strong>, worth {rupees((course.priceInPaise || 0) * count)} in total.
+              This creates <strong>{count * maxUses}</strong>{' '}
+              {discountPercent === 100 ? 'free' : 'discounted'} {count * maxUses === 1 ? 'place' : 'places'} on{' '}
+              <strong>{course.title}</strong>, worth{' '}
+              {rupees(Math.floor(((course.priceInPaise || 0) * count * maxUses * discountPercent) / 100))} in total.
             </>
           )}
         </div>
@@ -380,21 +514,36 @@ function GenerateDialog({ courses, onCancel, onCreated }) {
  * is most likely to want the whole list to paste somewhere, so it is offered
  * plainly rather than making them copy 25 rows one at a time.
  */
-function GeneratedCodesDialog({ coupons, onClose }) {
+function GeneratedCodesDialog({ campaign, coupons, onExport, onClose }) {
   const [copied, setCopied] = useState(false);
   const all = coupons.map((c) => c.code).join('\n');
 
   return (
     <Dialog title={`${coupons.length} coupon${coupons.length === 1 ? '' : 's'} generated`} onCancel={onClose}>
       <div className="space-y-3">
+        {campaign && (
+          <p className="text-xs text-slate-500">
+            Campaign <strong className="text-[#22355E]">{campaign.name}</strong>
+            {campaign.courseTitle ? ` · ${campaign.courseTitle}` : ''}
+          </p>
+        )}
         <div className="p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-[11px] flex gap-2">
           <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-          <span>Each of these unlocks the course for one student. Treat them like access keys.</span>
+          <span>Each of these unlocks the course for one student. Treat them like access keys &mdash; they can be exported again later.</span>
         </div>
         <pre className="max-h-64 overflow-y-auto p-3 rounded-lg bg-slate-900 text-slate-100 font-mono text-xs leading-relaxed">
           {all}
         </pre>
         <div className="flex justify-end gap-2">
+          {campaign && (
+            <button
+              type="button"
+              onClick={() => onExport(campaign)}
+              className="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-sm font-semibold flex items-center gap-1.5"
+            >
+              <Download className="w-3.5 h-3.5" /> Export CSV
+            </button>
+          )}
           <button
             type="button"
             onClick={async () => {

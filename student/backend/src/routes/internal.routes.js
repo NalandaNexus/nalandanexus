@@ -18,7 +18,9 @@ import {
   retractBridgedResourceSchema,
   gradeBridgedTaskSubmissionSchema,
   adminListCouponsSchema,
-  adminCreateCouponsSchema,
+  adminCreateCampaignSchema,
+  adminListCampaignsSchema,
+  adminCampaignIdSchema,
   adminUpdateCouponSchema,
   adminCouponIdSchema,
 } from '../validators/internal.validators.js';
@@ -68,8 +70,10 @@ router.patch(
 // Coupon administration for the Admin portal. Coupons live in this database
 // beside Course and Enrollment, so Admin reaches them here rather than keeping a
 // second copy - the same arrangement batches use.
+router.get('/coupon-campaigns', validate(adminListCampaignsSchema), internalController.adminListCampaigns);
+router.post('/coupon-campaigns', validate(adminCreateCampaignSchema), internalController.adminCreateCampaign);
+router.get('/coupon-campaigns/:id/export', validate(adminCampaignIdSchema), internalController.adminExportCampaign);
 router.get('/coupons', validate(adminListCouponsSchema), internalController.adminListCoupons);
-router.post('/coupons', validate(adminCreateCouponsSchema), internalController.adminCreateCoupons);
 router.patch('/coupons/:id', validate(adminUpdateCouponSchema), internalController.adminUpdateCoupon);
 router.delete('/coupons/:id', validate(adminCouponIdSchema), internalController.adminDeleteCoupon);
 

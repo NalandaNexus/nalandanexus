@@ -95,11 +95,26 @@ async function couponCall(path, options) {
     return await call(path, options);
   } catch (err) {
     // A 4xx is the student service rejecting this on its merits (unknown
-    // course, already-used coupon); that message is the useful one and must
-    // reach the admin rather than being flattened into "unavailable".
-    const status = Number(/returned (\d{3})/.exec(err.message)?.[1]);
+    // course, a campaign name already in use); that judgement is the useful
+    // one and must reach the admin rather than being flattened into
+    // "unavailable".
+    //
+    // Its body is unwrapped rather than passed through: `call` puts the whole
+    // JSON payload into the error message, and forwarding that verbatim put a
+    // raw {"success":false,...} blob on screen where a sentence belonged.
+    const match = /returned (\d{3}):\s*([\s\S]*)$/.exec(err.message);
+    const status = Number(match?.[1]);
     if (status >= 400 && status < 500) {
-      throw ApiError.unprocessable(err.message.replace(/^Student backend returned \d+:\s*/, ''), 'COUPON_REJECTED');
+      let message = match?.[2] || err.message;
+      let code = 'COUPON_REJECTED';
+      try {
+        const body = JSON.parse(message);
+        message = body?.error?.message || body?.message || message;
+        code = body?.error?.code || code;
+      } catch {
+        // Not JSON - the raw text is still better than nothing.
+      }
+      throw ApiError.unprocessable(message, code);
     }
     console.error('[studentCourseBridge] Coupon administration failed:', err.message);
     throw couponsUnavailable();
@@ -114,9 +129,22 @@ export async function listCoupons(query = {}) {
   return { coupons: body?.data || [], summary: body?.meta?.summary || {} };
 }
 
-export async function createCoupons(payload) {
-  const body = await couponCall('/api/internal/coupons', { method: 'POST', body: JSON.stringify(payload) });
+export async function createCampaign(payload) {
+  const body = await couponCall('/api/internal/coupon-campaigns', { method: 'POST', body: JSON.stringify(payload) });
+  return body?.data || { campaign: null, coupons: [] };
+}
+
+export async function listCampaigns(query = {}) {
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries(query)) if (v !== undefined && v !== null && v !== '') params.set(k, v);
+  const qs = params.toString();
+  const body = await couponCall(`/api/internal/coupon-campaigns${qs ? `?${qs}` : ''}`, { method: 'GET' });
   return body?.data || [];
+}
+
+export async function exportCampaign(id) {
+  const body = await couponCall(`/api/internal/coupon-campaigns/${encodeURIComponent(id)}/export`, { method: 'GET' });
+  return body?.data || { campaign: null, coupons: [] };
 }
 
 export async function updateCoupon(id, payload) {
@@ -130,6 +158,8 @@ export async function deleteCoupon(id) {
 
 export default {
   listCoupons,
-  createCoupons,
+  createCampaign,
+  listCampaigns,
+  exportCampaign,
   updateCoupon,
   deleteCoupon, publishCourseToStudents, unpublishCourseFromStudents };

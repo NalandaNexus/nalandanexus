@@ -88,10 +88,15 @@ async function request(path, { method = 'GET', body, query, isFormData = false }
   }
 
   if (!res.ok) {
-    const error = new Error(json?.message || `Request failed with status ${res.status}`);
+    // This API answers failures as { success: false, error: { code, message } },
+    // so reading only the top-level `message` found nothing and every rejection
+    // reached the UI as a generic "Request failed with status 409" - or, where a
+    // caller printed the payload, as a raw JSON blob. Both shapes are read here.
+    const detail = json?.error ?? json ?? {};
+    const error = new Error(detail.message || `Request failed with status ${res.status}`);
     error.status = res.status;
-    error.code = json?.code;
-    error.errors = json?.errors;
+    error.code = detail.code;
+    error.errors = detail.details || detail.errors;
     throw error;
   }
 
@@ -315,8 +320,13 @@ export const adminApi = {
     return { coupons: json.data || [], summary: json.meta?.summary || {} };
   },
 
-  async createCoupons(payload) {
-    const json = await request('/coupons', { method: 'POST', body: payload });
+  async createCampaign(payload) {
+    const json = await request('/coupons/campaigns', { method: 'POST', body: payload });
+    return json.data || { campaign: null, coupons: [] };
+  },
+
+  async getCampaigns(params = {}) {
+    const json = await request('/coupons/campaigns', { query: params });
     return json.data || [];
   },
 
@@ -460,27 +470,45 @@ export const adminApi = {
     return json.data || [];
   },
 
-  // ── CSV Report Download ───────────────────────────────────────────────
-  // A plain <a href> can't carry an Authorization header, so this fetches
-  // the CSV as an authenticated blob and triggers a client-side download —
-  // no token is ever put in the URL/browser history/server access logs.
-  async downloadReport(type) {
-    const res = await fetch(`${API_BASE}/reports/export?type=${encodeURIComponent(type)}`, {
-      headers: authHeaders(),
-    });
+  // ── CSV downloads ─────────────────────────────────────────────────────
+  // A plain <a href> can't carry the session, and putting a token in the URL
+  // would write it into browser history and server access logs. So the CSV is
+  // fetched as an authenticated blob and handed to a temporary link instead.
+  //
+  // `credentials: 'include'` is what carries the session here: the admin token
+  // is an httpOnly cookie, so there is no header to attach and nothing for this
+  // page to read. (This previously called an authHeaders() helper that no longer
+  // exists, which made every download throw a ReferenceError.)
+  async downloadCsv(path, filename) {
+    const res = await fetch(`${API_BASE}${path}`, { credentials: 'include' });
     if (!res.ok) {
       const json = await res.json().catch(() => ({}));
-      throw new Error(json.message || 'Failed to generate report');
+      throw new Error(json.message || json.error?.message || 'Failed to generate the file');
     }
     const blob = await res.blob();
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `nalanda-${type}-report.csv`;
+    a.download = filename;
     document.body.appendChild(a);
     a.click();
     a.remove();
     window.URL.revokeObjectURL(url);
+  },
+
+  async downloadReport(type) {
+    return adminApi.downloadCsv(`/reports/export?type=${encodeURIComponent(type)}`, `nalanda-${type}-report.csv`);
+  },
+
+  /**
+   * Downloads one campaign's codes.
+   *
+   * The filename is server-chosen; this only needs a sensible fallback, and the
+   * codes never touch the URL.
+   */
+  async downloadCampaignCodes(campaignId, campaignName) {
+    const safe = String(campaignName || campaignId).replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+    return adminApi.downloadCsv(`/coupons/campaigns/${campaignId}/export`, `nalanda-coupons-${safe}.csv`);
   },
 };
 

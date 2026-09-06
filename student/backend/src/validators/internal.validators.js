@@ -213,20 +213,35 @@ export const adminListCouponsSchema = z.object({
   query: z.object({
     status: z.enum(['ALL', 'AVAILABLE', 'USED', 'EXPIRED', 'INACTIVE']).optional(),
     courseSlug: z.string().trim().max(120).optional(),
+    campaignId: objectId.optional(),
     search: z.string().trim().max(64).optional(),
   }),
 });
 
-export const adminCreateCouponsSchema = z.object({
+export const adminListCampaignsSchema = z.object({
+  query: z.object({
+    courseSlug: z.string().trim().max(120).optional(),
+  }),
+});
+
+export const adminCampaignIdSchema = z.object({
+  params: z.object({ id: objectId }),
+});
+
+export const adminCreateCampaignSchema = z.object({
   body: z.object({
     // Slug, not _id - see the note on adminListCouponsSchema.
     courseSlug: z.string().trim().min(1).max(120),
+    // Names the giveaway, and doubles as the idempotency key: one campaign of a
+    // given name per course, so re-running generation cannot mint a second set.
+    name: z.string().trim().min(1, 'Give the campaign a name').max(120),
     count: z.coerce.number().int().min(1, 'Create at least one').max(500, 'No more than 500 at a time'),
     discountType: z.enum(['FULL', 'PERCENT', 'FIXED']).optional().default('FULL'),
     discountValue: z.coerce.number().min(0).max(100000000).optional().default(100),
     maxUses: z.coerce.number().int().min(1).max(1000).optional().default(1),
     expiresAt: z.coerce.date().nullish(),
-    batchLabel: z.string().trim().max(120).nullish(),
+    createdByEmail: z.string().trim().email().max(160).nullish(),
+    createdByName: z.string().trim().max(120).nullish(),
   }),
 });
 
@@ -245,7 +260,9 @@ export const adminCouponIdSchema = z.object({
 
 export default {
   adminListCouponsSchema,
-  adminCreateCouponsSchema,
+  adminCreateCampaignSchema,
+  adminListCampaignsSchema,
+  adminCampaignIdSchema,
   adminUpdateCouponSchema,
   adminCouponIdSchema,
   createBridgedAnnouncementSchema,

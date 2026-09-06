@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { Coupon } from '../models/Coupon.js';
+import { CouponCampaign } from '../models/CouponCampaign.js';
 import { Course } from '../models/Course.js';
 import { AppError } from '../utils/AppError.js';
 import { getActiveEnrollment } from './enrollment.service.js';
@@ -25,18 +26,62 @@ import { getActiveEnrollment } from './enrollment.service.js';
 const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 const CODE_PREFIX = 'NN';
 const CODE_BODY_LENGTH = 8;
+// Grouped as NNxx-xxxx-xx. Chunking is the whole reason people can read a code
+// back over a phone without losing their place; the groups carry no meaning and
+// are not part of what is matched.
+const CODE_GROUPS = [2, 4, 2];
 
+/** `NNX7-K4P9-X2` - eight random characters from a 31-symbol alphabet, drawn one at a time. */
 export function generateCouponCode() {
   let body = '';
   for (let i = 0; i < CODE_BODY_LENGTH; i += 1) {
     body += ALPHABET[crypto.randomInt(0, ALPHABET.length)];
   }
-  return `${CODE_PREFIX}${body}`;
+  return formatCode(`${CODE_PREFIX}${body}`);
 }
 
-/** Trim and uppercase before any lookup, so casing and stray spaces never decide the answer. */
+/** Inserts the display grouping into a bare `NN…` code. */
+export function formatCode(bare) {
+  const chars = String(bare).slice(CODE_PREFIX.length);
+  const groups = [];
+  let at = 0;
+  for (const size of CODE_GROUPS) {
+    groups.push(chars.slice(at, at + size));
+    at += size;
+  }
+  return `${CODE_PREFIX}${groups[0]}-${groups.slice(1).join('-')}`;
+}
+
+/**
+ * Reduces whatever the student typed to the one form a lookup can use.
+ *
+ * People retype these from a screenshot or a WhatsApp message, so the dashes
+ * arrive missing, doubled, or as spaces or en-dashes depending on the keyboard.
+ * Every separator is dropped and the grouping re-applied, which means the code
+ * matches whether it was pasted as `NNX7-K4P9-X2`, `nnx7k4p9x2` or
+ * `NNX7 K4P9 X2` - none of which should be the difference between a free course
+ * and "Invalid coupon code."
+ */
 export function normalizeCode(code) {
-  return String(code ?? '').trim().toUpperCase();
+  const stripped = String(code ?? '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '');
+  if (!stripped.startsWith(CODE_PREFIX)) return stripped;
+  if (stripped.length !== CODE_PREFIX.length + CODE_BODY_LENGTH) return stripped;
+  return formatCode(stripped);
+}
+
+/**
+ * Both shapes a stored code could take.
+ *
+ * Codes are stored grouped, but matching on the bare form too costs one index
+ * entry in an $in and means a code minted before the grouping existed still
+ * works for the person holding it.
+ */
+export function codeLookupForms(code) {
+  const normalized = normalizeCode(code);
+  const bare = normalized.replace(/-/g, '');
+  return normalized === bare ? [bare] : [normalized, bare];
 }
 
 /**
@@ -90,7 +135,7 @@ export async function evaluateCoupon({ code, courseSlug, userId }) {
   const existing = await getActiveEnrollment(userId, course._id);
   if (existing) throw AppError.conflict('You are already enrolled in this course.', 'ALREADY_ENROLLED');
 
-  const coupon = await Coupon.findOne({ code: normalized });
+  const coupon = await Coupon.findOne({ code: { $in: codeLookupForms(normalized) } });
 
   // Unknown, inactive, and wrong-course all answer identically - see UNKNOWN.
   if (!coupon || !coupon.isActive || String(coupon.courseId) !== String(course._id)) throw UNKNOWN();
@@ -177,35 +222,165 @@ export async function attachEnrollmentToClaim({ couponId, userId, enrollmentId }
  * failing the whole batch. Returns the codes so the caller can hand them out -
  * this is the only moment they are assembled in one place.
  */
-export async function generateCoupons({ courseId, count, discountType = 'FULL', discountValue = 100, maxUses = 1, expiresAt = null, batchLabel = null }) {
+/**
+ * Mints a campaign and its coupons.
+ *
+ * Uniqueness is delegated to the unique index on `code`, not to a "does this
+ * exist?" read beforehand. A read cannot promise anything: two generators can
+ * both find a code free and both write it. The index is the only thing that
+ * actually decides, so a duplicate key is treated as an ordinary event - draw
+ * again - rather than an error.
+ *
+ * The whole batch is all-or-nothing. A campaign that says 25 but holds 19
+ * because generation gave up partway is worse than no campaign: the operator
+ * hands out 25 codes from a list that never had them. On failure the campaign
+ * and everything minted under it are removed, which also leaves the name free
+ * for an immediate retry.
+ */
+export async function createCampaign({
+  courseId,
+  name,
+  count,
+  discountType = 'FULL',
+  discountValue = 100,
+  maxUses = 1,
+  expiresAt = null,
+  createdByEmail = null,
+  createdByName = null,
+}) {
   const course = await Course.findById(courseId);
   if (!course) throw AppError.notFound('Course not found', 'COURSE_NOT_FOUND');
 
-  const created = [];
-  for (let i = 0; i < count; i += 1) {
-    let inserted = null;
-    for (let attempt = 0; attempt < 5 && !inserted; attempt += 1) {
-      try {
-        inserted = await Coupon.create({
-          code: generateCouponCode(),
-          courseId: course._id,
-          discountType,
-          discountValue,
-          maxUses,
-          expiresAt,
-          batchLabel,
-        });
-      } catch (err) {
-        if (err?.code !== 11000) throw err;
-        // Collided with an existing code; draw another.
-      }
-    }
-    // Five collisions on a 31^8 space is not chance - let the central error
-    // handler turn it into a 500 rather than inventing a partial batch.
-    if (!inserted) throw new Error('Could not generate a unique coupon code after 5 attempts.');
-    created.push(inserted);
+  const trimmedName = String(name ?? '').trim();
+  if (!trimmedName) throw AppError.badRequest('Give the campaign a name.', 'CAMPAIGN_NAME_REQUIRED');
+
+  // Checked before minting for a clear message, and enforced by the unique index
+  // below for correctness - two operators clicking Generate at the same moment
+  // both pass this read, and only one survives the write.
+  const clash = await CouponCampaign.findOne({ courseId: course._id, name: trimmedName }).lean();
+  if (clash) {
+    throw AppError.conflict(
+      `A campaign named "${trimmedName}" already exists for this course. Use a different name, or open the existing campaign.`,
+      'CAMPAIGN_EXISTS'
+    );
   }
-  return created;
+
+  let campaign;
+  try {
+    campaign = await CouponCampaign.create({
+      name: trimmedName,
+      courseId: course._id,
+      discountType,
+      discountValue,
+      maxUsesPerCoupon: maxUses,
+      couponCount: count,
+      expiresAt,
+      createdByEmail,
+      createdByName,
+    });
+  } catch (err) {
+    if (err?.code === 11000) {
+      throw AppError.conflict(
+        `A campaign named "${trimmedName}" already exists for this course.`,
+        'CAMPAIGN_EXISTS'
+      );
+    }
+    throw err;
+  }
+
+  const created = [];
+  try {
+    for (let i = 0; i < count; i += 1) {
+      let inserted = null;
+      for (let attempt = 0; attempt < 5 && !inserted; attempt += 1) {
+        try {
+          inserted = await Coupon.create({
+            code: generateCouponCode(),
+            courseId: course._id,
+            campaignId: campaign._id,
+            discountType,
+            discountValue,
+            maxUses,
+            expiresAt,
+          });
+        } catch (err) {
+          if (err?.code !== 11000) throw err;
+          // Collided with an existing code; draw another.
+        }
+      }
+      // Five collisions on a 31^8 space is not chance - something is wrong with
+      // the generator, and a partial batch must not be passed off as a full one.
+      if (!inserted) throw new Error('Could not generate a unique coupon code after 5 attempts.');
+      created.push(inserted);
+    }
+  } catch (err) {
+    await Coupon.deleteMany({ campaignId: campaign._id });
+    await CouponCampaign.deleteOne({ _id: campaign._id });
+    throw err;
+  }
+
+  return { campaign, coupons: created };
+}
+
+/**
+ * Per-campaign counts, computed from the coupons themselves.
+ *
+ * Never stored on the campaign: a cached "used" total drifts the moment a
+ * redemption, a release or a deactivation touches a coupon without going through
+ * whatever would have updated it.
+ */
+export async function summarizeCampaigns(match = {}) {
+  const now = new Date();
+  return Coupon.aggregate([
+    { $match: match },
+    {
+      $group: {
+        _id: {
+          campaignId: '$campaignId',
+          // Mirrors shapeCouponForAdmin's precedence exactly.
+          status: {
+            $switch: {
+              branches: [
+                { case: { $eq: ['$isActive', false] }, then: 'INACTIVE' },
+                { case: { $and: [{ $ne: ['$expiresAt', null] }, { $lte: ['$expiresAt', now] }] }, then: 'EXPIRED' },
+                { case: { $gte: ['$usedCount', '$maxUses'] }, then: 'USED' },
+              ],
+              default: 'AVAILABLE',
+            },
+          },
+        },
+        count: { $sum: 1 },
+      },
+    },
+  ]);
+}
+
+/** Campaign shape for the admin table, with its live statistics attached. */
+export function shapeCampaignForAdmin(campaign, stats = {}) {
+  const counts = { AVAILABLE: 0, USED: 0, EXPIRED: 0, INACTIVE: 0, ...stats };
+  return {
+    id: String(campaign._id),
+    name: campaign.name,
+    courseId: String(campaign.courseId?._id || campaign.courseId),
+    courseTitle: campaign.courseId?.title || null,
+    courseSlug: campaign.courseId?.slug || null,
+    discountType: campaign.discountType,
+    discountValue: campaign.discountValue,
+    maxUsesPerCoupon: campaign.maxUsesPerCoupon,
+    // What was asked for, beside what is actually there - they differ if coupons
+    // were deleted afterwards, and hiding that would make the table lie.
+    requestedCount: campaign.couponCount,
+    total: counts.AVAILABLE + counts.USED + counts.EXPIRED + counts.INACTIVE,
+    available: counts.AVAILABLE,
+    used: counts.USED,
+    expired: counts.EXPIRED,
+    inactive: counts.INACTIVE,
+    expiresAt: campaign.expiresAt,
+    createdByEmail: campaign.createdByEmail,
+    createdByName: campaign.createdByName,
+    createdAt: campaign.createdAt,
+    updatedAt: campaign.updatedAt,
+  };
 }
 
 /** Admin-facing shape. `usedBy` carries real student identities, so it is only ever sent to an authenticated admin. */
@@ -215,6 +390,8 @@ export function shapeCouponForAdmin(coupon, { courseTitle = null } = {}) {
   return {
     id: String(coupon._id),
     code: coupon.code,
+    campaignId: String(coupon.campaignId?._id || coupon.campaignId || ''),
+    campaignName: coupon.campaignId?.name || null,
     courseId: String(coupon.courseId?._id || coupon.courseId),
     courseTitle: courseTitle || coupon.courseId?.title || null,
     discountType: coupon.discountType,
@@ -223,7 +400,6 @@ export function shapeCouponForAdmin(coupon, { courseTitle = null } = {}) {
     usedCount: coupon.usedCount,
     isActive: coupon.isActive,
     expiresAt: coupon.expiresAt,
-    batchLabel: coupon.batchLabel,
     // A single word for the table, derived here so every surface agrees.
     status: !coupon.isActive ? 'INACTIVE' : expired ? 'EXPIRED' : exhausted ? 'USED' : 'AVAILABLE',
     usedBy: (coupon.usedBy || []).map((u) => ({
@@ -246,6 +422,8 @@ export default {
   claimCoupon,
   releaseCoupon,
   attachEnrollmentToClaim,
-  generateCoupons,
+  createCampaign,
+  summarizeCampaigns,
+  shapeCampaignForAdmin,
   shapeCouponForAdmin,
 };

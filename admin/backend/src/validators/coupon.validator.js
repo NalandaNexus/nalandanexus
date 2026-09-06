@@ -22,14 +22,24 @@ export const listCouponsQuery = {
   query: z.object({
     status: z.enum(['ALL', 'AVAILABLE', 'USED', 'EXPIRED', 'INACTIVE']).optional(),
     courseSlug: z.string().trim().max(120).optional(),
+    campaignId: z.string().trim().regex(/^[a-f0-9]{24}$/i, 'Invalid campaign').optional(),
     search: z.string().trim().max(64).optional(),
   }),
 };
 
-export const createCouponsSchema = {
+export const listCampaignsQuery = {
+  query: z.object({
+    courseSlug: z.string().trim().max(120).optional(),
+  }),
+};
+
+export const createCampaignSchema = {
   body: z.object({
     // Slug, not _id - see the note on listCouponsQuery.
     courseSlug: z.string().trim().min(1).max(120),
+    // Names the giveaway and keys its uniqueness: one campaign of a given name
+    // per course, so clicking Generate twice cannot mint two batches.
+    name: z.string().trim().min(1, 'Give the campaign a name').max(120),
     // Capped so a mistyped figure cannot mint thousands of free places in one
     // click - the giveaway this was built for is 25.
     count: z.coerce.number().int().min(1, 'Create at least one coupon').max(500, 'No more than 500 at a time'),
@@ -37,7 +47,6 @@ export const createCouponsSchema = {
     discountValue: z.coerce.number().min(0).max(100000000).optional(),
     maxUses: z.coerce.number().int().min(1).max(1000).optional(),
     expiresAt: z.coerce.date().nullish(),
-    batchLabel: z.string().trim().max(120).nullish(),
   }),
 };
 
@@ -51,4 +60,4 @@ export const updateCouponSchema = {
   }),
 };
 
-export default { listCouponsQuery, createCouponsSchema, updateCouponSchema };
+export default { listCouponsQuery, listCampaignsQuery, createCampaignSchema, updateCouponSchema };

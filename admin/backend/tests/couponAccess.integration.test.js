@@ -76,7 +76,16 @@ const OBJECT_ID = '000000000000000000000001';
 // Every coupon route, so a future addition cannot quietly land unguarded.
 const ROUTES = [
   { name: 'list', method: 'GET', path: '/api/admin/coupons' },
-  { name: 'create', method: 'POST', path: '/api/admin/coupons', body: { courseId: OBJECT_ID, count: 25 } },
+  { name: 'list campaigns', method: 'GET', path: '/api/admin/coupons/campaigns' },
+  {
+    name: 'create campaign',
+    method: 'POST',
+    path: '/api/admin/coupons/campaigns',
+    body: { courseSlug: 'some-course', name: 'Launch', count: 25 },
+  },
+  // The export hands over every live code in a campaign as a file, so it is the
+  // single most valuable route here to get wrong.
+  { name: 'export campaign', method: 'GET', path: `/api/admin/coupons/campaigns/${OBJECT_ID}/export` },
   { name: 'update', method: 'PATCH', path: `/api/admin/coupons/${OBJECT_ID}`, body: { isActive: false } },
   { name: 'delete', method: 'DELETE', path: `/api/admin/coupons/${OBJECT_ID}` },
 ];
@@ -104,7 +113,7 @@ test('a refused STAFF request never reveals a coupon code', async () => {
 
   // The denial body is the whole response a STAFF user can observe. If a code
   // ever leaked through an error path, this is where it would show up.
-  assert.doesNotMatch(JSON.stringify(res.body ?? {}), /NN[A-Z0-9]{8}/, 'no coupon code may appear in a denial');
+  assert.doesNotMatch(JSON.stringify(res.body ?? {}), /NN[A-Z0-9]{2}-/, 'no coupon code may appear in a denial');
 });
 
 test('STAFF is not simply locked out of the whole portal', async () => {

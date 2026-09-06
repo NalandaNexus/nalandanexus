@@ -6,7 +6,12 @@ import { Enrollment } from '../models/Enrollment.js';
 import { AuditLog } from '../models/AuditLog.js';
 import { ApiError } from '../utils/ApiError.js';
 
-function toCsv(rows, columns) {
+/**
+ * Shared with the coupon export, which needs exactly this escaping - a code, a
+ * student name and a course title can all contain a comma or a quote, and a
+ * second implementation would be a second thing to get wrong.
+ */
+export function toCsv(rows, columns) {
   const header = columns.map((c) => c.label).join(',');
   const escape = (val) => {
     const str = val === undefined || val === null ? '' : String(val);

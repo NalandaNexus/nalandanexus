@@ -3,7 +3,12 @@ import * as couponController from '../controllers/coupon.controller.js';
 import { authenticate, requirePermission } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { objectIdParam } from '../validators/common.js';
-import { listCouponsQuery, createCouponsSchema, updateCouponSchema } from '../validators/coupon.validator.js';
+import {
+  listCouponsQuery,
+  listCampaignsQuery,
+  createCampaignSchema,
+  updateCouponSchema,
+} from '../validators/coupon.validator.js';
 
 /**
  * Coupon administration.
@@ -20,8 +25,11 @@ const router = Router();
 
 router.use(authenticate);
 
+router.get('/campaigns', requirePermission('courses.manage'), validate(listCampaignsQuery), couponController.listCampaigns);
+router.post('/campaigns', requirePermission('courses.manage'), validate(createCampaignSchema), couponController.createCampaign);
+// The one route that hands over the whole list of live codes as a file.
+router.get('/campaigns/:id/export', requirePermission('courses.manage'), validate({ params: objectIdParam() }), couponController.exportCampaign);
 router.get('/', requirePermission('courses.manage'), validate(listCouponsQuery), couponController.list);
-router.post('/', requirePermission('courses.manage'), validate(createCouponsSchema), couponController.create);
 router.patch('/:id', requirePermission('courses.manage'), validate({ params: objectIdParam(), ...updateCouponSchema }), couponController.update);
 router.delete('/:id', requirePermission('courses.manage'), validate({ params: objectIdParam() }), couponController.remove);
 

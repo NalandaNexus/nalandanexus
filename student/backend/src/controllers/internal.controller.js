@@ -5,7 +5,13 @@ import { AppError } from '../utils/AppError.js';
 import { Announcement } from '../models/Announcement.js';
 import { Course } from '../models/Course.js';
 import { Coupon } from '../models/Coupon.js';
-import { generateCoupons, shapeCouponForAdmin } from '../services/coupon.service.js';
+import {
+  createCampaign,
+  summarizeCampaigns,
+  shapeCampaignForAdmin,
+  shapeCouponForAdmin,
+} from '../services/coupon.service.js';
+import { CouponCampaign } from '../models/CouponCampaign.js';
 import { CourseMaterial } from '../models/CourseMaterial.js';
 import { Resource } from '../models/Resource.js';
 import { Task } from '../models/Task.js';
@@ -721,7 +727,7 @@ export const retractBridgedResource = asyncHandler(async (req, res) => {
  * leave through this key-guarded router.
  */
 export const adminListCoupons = asyncHandler(async (req, res) => {
-  const { status, courseSlug, search } = req.query;
+  const { status, courseSlug, search, campaignId } = req.query;
 
   // The admin portal knows courses by slug, because its own course _ids belong
   // to a different database entirely. An unknown slug filters to nothing rather
@@ -740,9 +746,14 @@ export const adminListCoupons = asyncHandler(async (req, res) => {
 
   const filter = {};
   if (courseId) filter.courseId = courseId;
+  if (campaignId) filter.campaignId = campaignId;
   if (search) {
-    const q = String(search).trim().toUpperCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    filter.code = new RegExp(q);
+    // Codes are stored grouped (NNX7-K4P9-X2), so a search typed without the
+    // dashes has to match anyway - otherwise pasting half a code from a message
+    // finds nothing. Separators are dropped from the term and made optional
+    // between every character of the pattern.
+    const chars = String(search).toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (chars) filter.code = new RegExp(chars.split('').join('-?'));
   }
 
   const now = new Date();
@@ -767,6 +778,7 @@ export const adminListCoupons = asyncHandler(async (req, res) => {
 
   const coupons = await Coupon.find(filter)
     .populate('courseId', 'title slug priceInPaise')
+    .populate('campaignId', 'name')
     .populate('usedBy.userId', 'name email')
     .sort({ createdAt: -1 })
     .limit(500);
@@ -818,27 +830,105 @@ export const adminListCoupons = asyncHandler(async (req, res) => {
   return sendSuccess(res, { data: shaped, meta: { total: shaped.length, summary } });
 });
 
-export const adminCreateCoupons = asyncHandler(async (req, res) => {
-  const { courseSlug, count, discountType, discountValue, maxUses, expiresAt, batchLabel } = req.body;
+export const adminCreateCampaign = asyncHandler(async (req, res) => {
+  const {
+    courseSlug,
+    name,
+    count,
+    discountType,
+    discountValue,
+    maxUses,
+    expiresAt,
+    createdByEmail,
+    createdByName,
+  } = req.body;
 
-  // Resolved here so the coupons are bound to THIS database's course document.
+  // Resolved here so the campaign and its coupons are bound to THIS database's
+  // course document - the caller's own course _id means nothing on this side.
   const course = await Course.findOne({ slug: courseSlug }).select('_id').lean();
   if (!course) throw AppError.notFound(`No course found for "${courseSlug}".`, 'COURSE_NOT_FOUND');
 
-  const created = await generateCoupons({
+  const { campaign, coupons } = await createCampaign({
     courseId: course._id,
+    name,
     count,
     discountType,
     discountValue,
     maxUses,
     expiresAt: expiresAt ? new Date(expiresAt) : null,
-    batchLabel: batchLabel || null,
+    createdByEmail: createdByEmail || null,
+    createdByName: createdByName || null,
   });
 
+  // The only response that ever carries the codes themselves. Everything after
+  // this returns them only through the guarded listing and export.
   return sendSuccess(res, {
     status: 201,
-    message: `${created.length} coupon(s) created.`,
-    data: created.map((c) => shapeCouponForAdmin(c)),
+    message: `${coupons.length} coupon(s) created.`,
+    data: {
+      campaign: shapeCampaignForAdmin(campaign, { AVAILABLE: coupons.length }),
+      coupons: coupons.map((c) => shapeCouponForAdmin(c)),
+    },
+  });
+});
+
+/**
+ * Campaigns with their live statistics.
+ *
+ * One aggregation over the coupons, not one query per campaign - a page showing
+ * a dozen campaigns should not cost a dozen round trips, and the counts have to
+ * come from the coupons regardless.
+ */
+export const adminListCampaigns = asyncHandler(async (req, res) => {
+  const { courseSlug } = req.query;
+
+  const match = {};
+  if (courseSlug) {
+    const course = await Course.findOne({ slug: courseSlug }).select('_id').lean();
+    if (!course) return sendSuccess(res, { data: [], meta: { total: 0 } });
+    match.courseId = course._id;
+  }
+
+  const campaigns = await CouponCampaign.find(match)
+    .populate('courseId', 'title slug priceInPaise')
+    .sort({ createdAt: -1 })
+    .limit(200);
+
+  const grouped = await summarizeCampaigns(
+    match.courseId ? { courseId: new mongoose.Types.ObjectId(String(match.courseId)) } : {}
+  );
+
+  const statsByCampaign = grouped.reduce((acc, row) => {
+    const key = String(row._id.campaignId);
+    return { ...acc, [key]: { ...(acc[key] || {}), [row._id.status]: row.count } };
+  }, {});
+
+  const shaped = campaigns.map((c) => shapeCampaignForAdmin(c, statsByCampaign[String(c._id)] || {}));
+  return sendSuccess(res, { data: shaped, meta: { total: shaped.length } });
+});
+
+/**
+ * Every code in one campaign, for the admin to export.
+ *
+ * Separate from the paged listing on purpose: an export that silently stopped at
+ * the page limit would hand out a short list of a giveaway the operator believes
+ * is complete. There is no page limit here, and the campaign bounds the size.
+ */
+export const adminExportCampaign = asyncHandler(async (req, res) => {
+  const campaign = await CouponCampaign.findById(req.params.id).populate('courseId', 'title slug priceInPaise');
+  if (!campaign) throw AppError.notFound('Campaign not found', 'CAMPAIGN_NOT_FOUND');
+
+  const coupons = await Coupon.find({ campaignId: campaign._id })
+    .populate('courseId', 'title slug priceInPaise')
+    .populate('campaignId', 'name')
+    .populate('usedBy.userId', 'name email')
+    .sort({ createdAt: 1 });
+
+  return sendSuccess(res, {
+    data: {
+      campaign: shapeCampaignForAdmin(campaign),
+      coupons: coupons.map((c) => shapeCouponForAdmin(c)),
+    },
   });
 });
 
@@ -886,7 +976,9 @@ export const adminDeleteCoupon = asyncHandler(async (req, res) => {
 
 export default {
   adminListCoupons,
-  adminCreateCoupons,
+  adminCreateCampaign,
+  adminListCampaigns,
+  adminExportCampaign,
   adminUpdateCoupon,
   adminDeleteCoupon,
   createBridgedAnnouncement,

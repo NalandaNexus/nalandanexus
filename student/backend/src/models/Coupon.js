@@ -51,8 +51,10 @@ const couponSchema = new Schema(
     // value - the launch codes have no deadline.
     expiresAt: { type: Date, default: null },
 
-    // Free-text label so an admin can tell one generated batch from another.
-    batchLabel: { type: String, default: null, trim: true, maxlength: 120 },
+    // The batch this was minted in. Every coupon belongs to one, so a campaign
+    // can report how many of its seats are left without the codes themselves
+    // having to carry any identifying detail.
+    campaignId: { type: Schema.Types.ObjectId, ref: 'CouponCampaign', required: true, index: true },
   },
   { timestamps: true }
 );
@@ -61,6 +63,8 @@ const couponSchema = new Schema(
 couponSchema.index({ courseId: 1, isActive: 1, usedCount: 1 });
 // Serves the admin "which coupons has this student used" lookup.
 couponSchema.index({ 'usedBy.userId': 1 });
+// Serves the per-campaign statistics aggregation.
+couponSchema.index({ campaignId: 1, isActive: 1, usedCount: 1 });
 
 /** True when every seat on this coupon is spoken for. Derived, never stored - a stored flag drifts. */
 couponSchema.virtual('isExhausted').get(function isExhausted() {
