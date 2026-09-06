@@ -74,20 +74,25 @@ async function attempt(path, options, timeoutMs) {
   }
 }
 
-async function call(path, options) {
+/** Drives one operation through the escalating budget. Shared so every call to this peer retries identically. */
+async function withRetry(run, label = 'request') {
   let last;
   for (let i = 0; i < ATTEMPT_TIMEOUTS_MS.length; i += 1) {
     try {
-      return await attempt(path, options, ATTEMPT_TIMEOUTS_MS[i]);
+      return await run(ATTEMPT_TIMEOUTS_MS[i]);
     } catch (err) {
       last = err;
       const more = i < ATTEMPT_TIMEOUTS_MS.length - 1;
       if (!err.retryable || !more) break;
-      console.warn(`[studentCourseBridge] ${path} attempt ${i + 1} failed (${err.message}); retrying`);
+      console.warn(`[studentCourseBridge] ${label} attempt ${i + 1} failed (${err.message}); retrying`);
       await new Promise((resolve) => setTimeout(resolve, RETRY_BACKOFF_MS[i]));
     }
   }
   throw last;
+}
+
+async function call(path, options) {
+  return withRetry((timeoutMs) => attempt(path, options, timeoutMs), path);
 }
 
 
@@ -112,12 +117,30 @@ async function call(path, options) {
 export async function fetchStudentCourseCatalog() {
   if (!env.studentBridge.url) return { ok: false, reason: 'NOT_CONFIGURED', courses: [] };
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 8000);
-    try {
-      const res = await fetch(`${env.studentBridge.url}/api/public/courses`, { signal: controller.signal });
-      if (!res.ok) return { ok: false, reason: 'UPSTREAM_ERROR', status: res.status, courses: [] };
-      const body = await res.json();
+    // Same escalating budget as every other call to this peer. A flat timeout
+    // here meant the first admin page load after the student service went to
+    // sleep showed an empty course list - which reads as "there are no courses"
+    // rather than "the catalogue is still waking up".
+    const body = await withRetry(async (timeoutMs) => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const res = await fetch(`${env.studentBridge.url}/api/public/courses`, { signal: controller.signal });
+        if (!res.ok) {
+          throw new BridgeError(`Student catalogue returned ${res.status}`, {
+            status: res.status,
+            retryable: res.status >= 500 || res.status === 429,
+          });
+        }
+        return res.json();
+      } catch (err) {
+        if (err instanceof BridgeError) throw err;
+        throw new BridgeError(err.name === 'AbortError' ? `Timed out after ${timeoutMs}ms` : err.message, { retryable: true });
+      } finally {
+        clearTimeout(timer);
+      }
+    });
+    {
       const courses = (body?.data || [])
         .filter((c) => c && typeof c.slug === 'string' && c.slug)
         .map((c) => ({
@@ -132,8 +155,6 @@ export async function fetchStudentCourseCatalog() {
           instructorName: c.instructor?.name || null,
         }));
       return { ok: true, courses };
-    } finally {
-      clearTimeout(timer);
     }
   } catch (err) {
     return { ok: false, reason: 'REQUEST_FAILED', error: err.message, courses: [] };

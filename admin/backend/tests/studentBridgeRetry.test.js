@@ -127,3 +127,35 @@ test('the first attempt is short so a dead peer fails fast', async () => {
   assert.match(src, /ATTEMPT_TIMEOUTS_MS\s*=\s*\[8000,\s*35000,\s*35000\]/, 'same budget as the teacher bridge');
   assert.match(src, /RETRY_BACKOFF_MS\s*=\s*\[1000,\s*3000\]/);
 });
+
+test('the course catalogue survives a cold peer too', async () => {
+  // The admin course list is built from this fetch. Leaving it on a flat
+  // timeout while the coupon calls retried meant the first page load after the
+  // student service slept showed an empty list - which reads as "there are no
+  // courses", which is exactly how Prarambh's absence went unnoticed.
+  script = [
+    { status: 502, body: {} },
+    { status: 200, body: { success: true, data: [{ id: '1', slug: 'prarambh', title: 'PRARAMBH', priceInPaise: 500000, isPurchasable: true }] } },
+  ];
+  received = [];
+
+  const { fetchStudentCourseCatalog } = await bridge();
+  const result = await fetchStudentCourseCatalog();
+
+  assert.equal(received.length, 2, 'retried the 502');
+  assert.equal(result.ok, true);
+  assert.equal(result.courses[0].slug, 'prarambh');
+  assert.equal(result.courses[0].priceInPaise, 500000);
+});
+
+test('an exhausted catalogue fetch reports unavailable rather than throwing', async () => {
+  script = [{ status: 500, body: {} }, { status: 500, body: {} }, { status: 500, body: {} }];
+  received = [];
+
+  const { fetchStudentCourseCatalog } = await bridge();
+  const result = await fetchStudentCourseCatalog();
+
+  assert.equal(received.length, 3);
+  assert.equal(result.ok, false, 'the course list still renders, flagged incomplete');
+  assert.deepEqual(result.courses, [], 'and never invents entries');
+});
