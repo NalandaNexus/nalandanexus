@@ -1,8 +1,11 @@
+import mongoose from 'mongoose';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { sendSuccess } from '../utils/apiResponse.js';
 import { AppError } from '../utils/AppError.js';
 import { Announcement } from '../models/Announcement.js';
 import { Course } from '../models/Course.js';
+import { Coupon } from '../models/Coupon.js';
+import { generateCoupons, shapeCouponForAdmin } from '../services/coupon.service.js';
 import { CourseMaterial } from '../models/CourseMaterial.js';
 import { Resource } from '../models/Resource.js';
 import { Task } from '../models/Task.js';
@@ -705,7 +708,187 @@ export const retractBridgedResource = asyncHandler(async (req, res) => {
   return sendSuccess(res, { message: 'Removed.', data: { id: resource._id } });
 });
 
+/**
+ * Coupon administration for the Admin portal.
+ *
+ * Coupons live beside Course and Enrollment in this database, so Admin manages
+ * them over the shared-secret bridge rather than owning a second copy - the same
+ * arrangement batches use. Everything routes through coupon.service.js, so the
+ * generator, the pricing rules and the shaped output are identical whichever
+ * portal asked.
+ *
+ * `usedBy` carries real student names and emails, so these responses only ever
+ * leave through this key-guarded router.
+ */
+export const adminListCoupons = asyncHandler(async (req, res) => {
+  const { status, courseSlug, search } = req.query;
+
+  // The admin portal knows courses by slug, because its own course _ids belong
+  // to a different database entirely. An unknown slug filters to nothing rather
+  // than erroring - it is a view, not an instruction.
+  let courseId = null;
+  if (courseSlug) {
+    const course = await Course.findOne({ slug: courseSlug }).select('_id').lean();
+    courseId = course ? course._id : null;
+    if (!courseId) {
+      return sendSuccess(res, {
+        data: [],
+        meta: { total: 0, summary: { AVAILABLE: 0, USED: 0, EXPIRED: 0, INACTIVE: 0 } },
+      });
+    }
+  }
+
+  const filter = {};
+  if (courseId) filter.courseId = courseId;
+  if (search) {
+    const q = String(search).trim().toUpperCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    filter.code = new RegExp(q);
+  }
+
+  const now = new Date();
+  // Status is derived from three fields, so it is expressed as a query rather
+  // than filtered in memory - otherwise paging would silently drop rows.
+  if (status === 'INACTIVE') filter.isActive = false;
+  else if (status === 'EXPIRED') {
+    filter.isActive = true;
+    filter.expiresAt = { $ne: null, $lte: now };
+  } else if (status === 'USED') {
+    filter.isActive = true;
+    filter.$expr = { $gte: ['$usedCount', '$maxUses'] };
+    // A coupon that ran out AND then expired displays as EXPIRED, so it must not
+    // also answer the USED filter - otherwise the table shows rows whose badge
+    // contradicts the filter that produced them.
+    filter.$or = [{ expiresAt: null }, { expiresAt: { $gt: now } }];
+  } else if (status === 'AVAILABLE') {
+    filter.isActive = true;
+    filter.$expr = { $lt: ['$usedCount', '$maxUses'] };
+    filter.$or = [{ expiresAt: null }, { expiresAt: { $gt: now } }];
+  }
+
+  const coupons = await Coupon.find(filter)
+    .populate('courseId', 'title slug priceInPaise')
+    .populate('usedBy.userId', 'name email')
+    .sort({ createdAt: -1 })
+    .limit(500);
+
+  const shaped = coupons.map((c) => shapeCouponForAdmin(c));
+
+  /**
+   * The tiles answer "how many free seats are left", so they must count the
+   * whole population - not the rows that survived the search box.
+   *
+   * Counting the shaped rows instead made the tiles agree with whatever was
+   * being looked at: searching one code showed AVAILABLE 0, which reads as "the
+   * giveaway is exhausted" rather than "you filtered it out". It also stopped at
+   * the 500-row page limit, so the count silently went wrong at the exact size
+   * where an operator would start relying on it.
+   *
+   * Course is the one filter kept, because "available in THIS course" is a real
+   * question. Status and search are views of the population, not the population.
+   */
+  const summaryMatch = {};
+  if (courseId) summaryMatch.courseId = new mongoose.Types.ObjectId(String(courseId));
+
+  const grouped = await Coupon.aggregate([
+    { $match: summaryMatch },
+    {
+      $group: {
+        // Mirrors shapeCouponForAdmin's precedence exactly; if that changes,
+        // this must change with it or the tiles will disagree with the badges.
+        _id: {
+          $switch: {
+            branches: [
+              { case: { $eq: ['$isActive', false] }, then: 'INACTIVE' },
+              { case: { $and: [{ $ne: ['$expiresAt', null] }, { $lte: ['$expiresAt', now] }] }, then: 'EXPIRED' },
+              { case: { $gte: ['$usedCount', '$maxUses'] }, then: 'USED' },
+            ],
+            default: 'AVAILABLE',
+          },
+        },
+        count: { $sum: 1 },
+      },
+    },
+  ]);
+
+  const summary = grouped.reduce(
+    (acc, row) => ({ ...acc, [row._id]: row.count }),
+    { AVAILABLE: 0, USED: 0, EXPIRED: 0, INACTIVE: 0 }
+  );
+
+  return sendSuccess(res, { data: shaped, meta: { total: shaped.length, summary } });
+});
+
+export const adminCreateCoupons = asyncHandler(async (req, res) => {
+  const { courseSlug, count, discountType, discountValue, maxUses, expiresAt, batchLabel } = req.body;
+
+  // Resolved here so the coupons are bound to THIS database's course document.
+  const course = await Course.findOne({ slug: courseSlug }).select('_id').lean();
+  if (!course) throw AppError.notFound(`No course found for "${courseSlug}".`, 'COURSE_NOT_FOUND');
+
+  const created = await generateCoupons({
+    courseId: course._id,
+    count,
+    discountType,
+    discountValue,
+    maxUses,
+    expiresAt: expiresAt ? new Date(expiresAt) : null,
+    batchLabel: batchLabel || null,
+  });
+
+  return sendSuccess(res, {
+    status: 201,
+    message: `${created.length} coupon(s) created.`,
+    data: created.map((c) => shapeCouponForAdmin(c)),
+  });
+});
+
+/**
+ * Activate or deactivate a coupon.
+ *
+ * Deliberately narrow: only `isActive` and `expiresAt` can change. A coupon's
+ * code, course, discount and recorded usage are history once issued - editing
+ * them would rewrite what a student was given, and `usedCount` in particular is
+ * the thing keeping a single-use code single-use.
+ */
+export const adminUpdateCoupon = asyncHandler(async (req, res) => {
+  const updates = {};
+  if (typeof req.body.isActive === 'boolean') updates.isActive = req.body.isActive;
+  if ('expiresAt' in req.body) updates.expiresAt = req.body.expiresAt ? new Date(req.body.expiresAt) : null;
+
+  const coupon = await Coupon.findByIdAndUpdate(req.params.id, updates, { new: true })
+    .populate('courseId', 'title slug priceInPaise')
+    .populate('usedBy.userId', 'name email');
+  if (!coupon) throw AppError.notFound('Coupon not found', 'COUPON_NOT_FOUND');
+
+  return sendSuccess(res, { message: 'Coupon updated.', data: shapeCouponForAdmin(coupon) });
+});
+
+/**
+ * Removes an UNUSED coupon.
+ *
+ * A coupon that has been redeemed is the record of a real enrollment, so it is
+ * refused here - deactivate it instead. Deleting it would leave an enrollment
+ * nobody could account for.
+ */
+export const adminDeleteCoupon = asyncHandler(async (req, res) => {
+  const coupon = await Coupon.findById(req.params.id);
+  if (!coupon) throw AppError.notFound('Coupon not found', 'COUPON_NOT_FOUND');
+  if (coupon.usedCount > 0) {
+    throw AppError.conflict(
+      'This coupon has been used and is part of an enrollment record. Deactivate it instead of deleting it.',
+      'COUPON_ALREADY_USED'
+    );
+  }
+
+  await coupon.deleteOne();
+  return sendSuccess(res, { message: 'Coupon removed.', data: { id: String(coupon._id) } });
+});
+
 export default {
+  adminListCoupons,
+  adminCreateCoupons,
+  adminUpdateCoupon,
+  adminDeleteCoupon,
   createBridgedAnnouncement,
   updateBridgedAnnouncement,
   deleteBridgedAnnouncement,

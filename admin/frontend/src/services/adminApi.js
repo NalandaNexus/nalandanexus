@@ -307,6 +307,28 @@ export const adminApi = {
     return json.data || [];
   },
 
+  // ── Coupons ───────────────────────────────────────────────────────────
+  // Coupons live in the Student service; these endpoints proxy to it, so the
+  // usage counts here are the same ones redemption is enforced against.
+  async getCoupons(params = {}) {
+    const json = await request('/coupons', { query: params });
+    return { coupons: json.data || [], summary: json.meta?.summary || {} };
+  },
+
+  async createCoupons(payload) {
+    const json = await request('/coupons', { method: 'POST', body: payload });
+    return json.data || [];
+  },
+
+  async updateCoupon(id, payload) {
+    const json = await request(`/coupons/${id}`, { method: 'PATCH', body: payload });
+    return json.data;
+  },
+
+  async deleteCoupon(id) {
+    await request(`/coupons/${id}`, { method: 'DELETE' });
+  },
+
   // ── Courses ───────────────────────────────────────────────────────────
   async getCourses(params = {}) {
     const json = await request('/courses', { query: params });

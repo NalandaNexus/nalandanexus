@@ -95,6 +95,30 @@ export const paymentService = {
     });
   },
 
+  /**
+   * Checks a coupon without spending it.
+   *
+   * The figures that come back are for display only. Redemption recomputes all
+   * of them server-side, so a stale or tampered preview cannot decide what a
+   * student pays.
+   */
+  async validateCoupon({ courseSlug, code }) {
+    const res = await apiClient.post('/coupons/validate', { courseSlug, code });
+    return res.data;
+  },
+
+  /**
+   * Redeems a coupon that covers the full price.
+   *
+   * Razorpay is not involved and is not loaded: there is nothing to charge, and
+   * a ₹0 order would be rejected by the gateway anyway. The backend re-validates
+   * and claims the coupon atomically before enrolling.
+   */
+  async enrollWithCoupon({ courseSlug, code }) {
+    const res = await apiClient.post('/coupons/redeem', { courseSlug, code });
+    return res.data;
+  },
+
   async getOrderStatus(orderId) {
     const res = await apiClient.get(`/payments/orders/${orderId}`);
     return res.data;

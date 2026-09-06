@@ -21,6 +21,7 @@ import taskRoutes from './routes/task.routes.js';
 import quizRoutes from './routes/quiz.routes.js';
 import leaderboardRoutes from './routes/leaderboard.routes.js';
 import paymentRoutes from './routes/payment.routes.js';
+import couponRoutes from './routes/coupon.routes.js';
 import adminRoutes from './routes/admin.routes.js';
 import internalRoutes from './routes/internal.routes.js';
 import { razorpayWebhook } from './controllers/payment.controller.js';
@@ -130,6 +131,8 @@ export function createApp() {
   app.use('/api/student', studentRoutes);
   app.use('/api/leaderboard', leaderboardRoutes);
   app.use('/api/payments', paymentRoutes);
+  // Beside payments, not inside it: the Razorpay routes above are unchanged.
+  app.use('/api/coupons', couponRoutes);
   app.use('/api/admin', adminRoutes);
   app.use('/api/internal', internalRoutes);
 

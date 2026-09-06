@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useStudent } from '../../context/StudentContext';
 import { courseService } from '../../services/courseService';
 import { paymentService } from '../../services/paymentService';
+import CouponField from '../../components/student/CouponField';
 
 const COURSE_SLUG = 'prarambh';
 
@@ -14,6 +15,7 @@ const STATUS_LABEL = {
   'verifying-payment': 'Verifying your payment…',
   verified: 'Payment verified! Setting up your course…',
   'enrolled-free': 'Enrolling you…',
+  'redeeming-coupon': 'Applying your coupon…',
 };
 
 export default function PurchasePage() {
@@ -26,6 +28,10 @@ export default function PurchasePage() {
   const [isPurchasing, setIsPurchasing] = useState(false);
   const [statusKey, setStatusKey] = useState('');
   const [error, setError] = useState('');
+  // The applied coupon is a PREVIEW from the backend, kept only to decide which
+  // button to show and what figures to display. Nothing is spent until enrolment,
+  // and the backend recomputes all of it then.
+  const [coupon, setCoupon] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -50,19 +56,39 @@ export default function PurchasePage() {
     return <Navigate to="/student/dashboard" replace />;
   }
 
+  const isFreeWithCoupon = Boolean(coupon?.isFree);
+
+  /**
+   * One button, two flows.
+   *
+   * A coupon that covers the whole price never reaches Razorpay - there is
+   * nothing to charge, and a ₹0 order would be rejected by the gateway. Anything
+   * else, including a partial discount, goes down the existing paid path exactly
+   * as before. The backend makes this decision again on its own; this only
+   * decides which request to send.
+   */
   const handlePurchase = async () => {
     setIsPurchasing(true);
     setError('');
     try {
-      await paymentService.purchaseCourse({
-        courseSlug: COURSE_SLUG,
-        studentName: user?.name,
-        studentEmail: user?.email,
-        onStatus: setStatusKey,
-      });
+      if (isFreeWithCoupon) {
+        setStatusKey('redeeming-coupon');
+        await paymentService.enrollWithCoupon({ courseSlug: COURSE_SLUG, code: coupon.code });
+      } else {
+        await paymentService.purchaseCourse({
+          courseSlug: COURSE_SLUG,
+          studentName: user?.name,
+          studentEmail: user?.email,
+          onStatus: setStatusKey,
+        });
+      }
       await refreshData();
       navigate('/student/dashboard', { replace: true });
     } catch (err) {
+      // A coupon can lapse between preview and enrolment - somebody else may
+      // have taken the last use. Drop it so the student sees the real price
+      // again rather than a total that is no longer available.
+      if (isFreeWithCoupon) setCoupon(null);
       setError(err.message || 'Payment could not be completed. Please try again.');
     } finally {
       setIsPurchasing(false);
@@ -108,17 +134,33 @@ export default function PurchasePage() {
               </div>
             </div>
 
+            <CouponField
+              courseSlug={COURSE_SLUG}
+              applied={coupon}
+              onApplied={setCoupon}
+              onRemoved={() => setCoupon(null)}
+              disabled={isPurchasing}
+            />
+
             <div className="p-5 rounded-2xl bg-white border border-[#DFDACB] flex flex-col sm:flex-row items-center justify-between gap-4">
               <div>
                 <div className="flex items-baseline gap-2">
-                  <span className="font-data font-black text-3xl text-[#AB5236]">{priceLabel}</span>
-                  {originalPriceLabel && (
-                    <span className="font-data text-sm text-[#2B2B28]/50 line-through">{originalPriceLabel}</span>
+                  <span className="font-data font-black text-3xl text-[#AB5236]">
+                    {coupon ? `₹${(coupon.finalAmountInPaise / 100).toLocaleString('en-IN')}` : priceLabel}
+                  </span>
+                  {coupon ? (
+                    <span className="font-data text-sm text-[#2B2B28]/50 line-through">{priceLabel}</span>
+                  ) : (
+                    originalPriceLabel && (
+                      <span className="font-data text-sm text-[#2B2B28]/50 line-through">{originalPriceLabel}</span>
+                    )
                   )}
                 </div>
                 <p className="text-[11px] text-[#2B2B28]/60 mt-1 flex items-center gap-1.5">
                   <Sparkles className="w-3.5 h-3.5 text-[#C99A2E]" />
-                  Secure checkout powered by Razorpay
+                  {/* Naming Razorpay when nothing is being charged would be a lie,
+                      and the checkout genuinely never opens on this path. */}
+                  {isFreeWithCoupon ? 'No payment needed — your coupon covers this course' : 'Secure checkout powered by Razorpay'}
                 </p>
               </div>
 
@@ -136,7 +178,7 @@ export default function PurchasePage() {
                 ) : (
                   <>
                     <CheckCircle2 className="w-4 h-4" />
-                    <span>Purchase & Unlock Dashboard</span>
+                    <span>{isFreeWithCoupon ? 'Enroll for Free' : 'Purchase & Unlock Dashboard'}</span>
                   </>
                 )}
               </button>

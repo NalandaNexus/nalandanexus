@@ -13,6 +13,12 @@ process.env.CLIENT_URL = 'http://localhost:3000';
 process.env.AUTH_RATE_LIMIT_MAX = '100000';
 process.env.RATE_LIMIT_MAX = '100000';
 
+// The admin portal reaches coupon and roster administration through the
+// service-key router, so tests that exercise those endpoints need a key to
+// present. The outbound bridge URLs stay empty, so setting this enables the
+// inbound routes without pointing anything at a real service.
+process.env.INTERNAL_SERVICE_KEY = 'test_internal_key';
+
 /**
  * Boots a real Express app against a throwaway in-memory MongoDB instance
  * (an ephemeral, auto-assigned port per call, so test files running in

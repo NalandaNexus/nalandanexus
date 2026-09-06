@@ -1,4 +1,5 @@
 import { env } from '../config/env.js';
+import { ApiError } from '../utils/ApiError.js';
 
 /**
  * Bridges an APPROVED admin-authored course into student/backend's real
@@ -73,4 +74,62 @@ export async function unpublishCourseFromStudents(sourceId) {
   }
 }
 
-export default { publishCourseToStudents, unpublishCourseFromStudents };
+/**
+ * Coupon administration, proxied to the student service.
+ *
+ * Unlike the publish/unpublish bridges above - which are best-effort side
+ * channels - these THROW on failure. An admin pressing "Generate" needs to know
+ * whether 25 free places now exist, and a swallowed error there would be
+ * answered by silence.
+ */
+function couponsUnavailable() {
+  return ApiError.serviceUnavailable(
+    'The Student service is unavailable, so coupons cannot be managed right now. Nothing was changed - please try again in a moment.',
+    'STUDENT_SERVICE_UNAVAILABLE'
+  );
+}
+
+async function couponCall(path, options) {
+  if (!isConfigured()) throw couponsUnavailable();
+  try {
+    return await call(path, options);
+  } catch (err) {
+    // A 4xx is the student service rejecting this on its merits (unknown
+    // course, already-used coupon); that message is the useful one and must
+    // reach the admin rather than being flattened into "unavailable".
+    const status = Number(/returned (\d{3})/.exec(err.message)?.[1]);
+    if (status >= 400 && status < 500) {
+      throw ApiError.unprocessable(err.message.replace(/^Student backend returned \d+:\s*/, ''), 'COUPON_REJECTED');
+    }
+    console.error('[studentCourseBridge] Coupon administration failed:', err.message);
+    throw couponsUnavailable();
+  }
+}
+
+export async function listCoupons(query = {}) {
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries(query)) if (v !== undefined && v !== null && v !== '' && v !== 'ALL') params.set(k, v);
+  const qs = params.toString();
+  const body = await couponCall(`/api/internal/coupons${qs ? `?${qs}` : ''}`, { method: 'GET' });
+  return { coupons: body?.data || [], summary: body?.meta?.summary || {} };
+}
+
+export async function createCoupons(payload) {
+  const body = await couponCall('/api/internal/coupons', { method: 'POST', body: JSON.stringify(payload) });
+  return body?.data || [];
+}
+
+export async function updateCoupon(id, payload) {
+  const body = await couponCall(`/api/internal/coupons/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(payload) });
+  return body?.data || null;
+}
+
+export async function deleteCoupon(id) {
+  await couponCall(`/api/internal/coupons/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+export default {
+  listCoupons,
+  createCoupons,
+  updateCoupon,
+  deleteCoupon, publishCourseToStudents, unpublishCourseFromStudents };

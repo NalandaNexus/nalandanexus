@@ -2,6 +2,7 @@ import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   Layers,
+  Ticket,
   LayoutDashboard,
   Users,
   GraduationCap,
@@ -35,6 +36,7 @@ const NAV_SECTIONS = [
       { name: 'Teachers', path: '/teachers', icon: GraduationCap },
       { name: 'Courses', path: '/courses', icon: BookOpen },
       { name: 'Batches', path: '/batches', icon: Layers },
+      { name: 'Coupons', path: '/coupons', icon: Ticket },
       { name: 'Resources', path: '/resources', icon: Image },
     ],
   },

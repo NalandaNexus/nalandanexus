@@ -191,7 +191,63 @@ export const gradeBridgedTaskSubmissionSchema = z.object({
   }),
 });
 
+const objectId = z.string().trim().regex(/^[a-f\d]{24}$/i, 'Invalid identifier');
+
+/**
+ * Admin coupon administration.
+ *
+ * `count` is capped so a mistyped figure cannot mint thousands of free places in
+ * one click, and `maxUses` is capped because a "single-use" giveaway with an
+ * accidental 10000 is the same mistake wearing a different hat.
+ */
+/**
+ * Courses are addressed by SLUG across this boundary, never by _id.
+ *
+ * The admin portal keeps its own course collection in its own database, so an
+ * admin-side course _id is a meaningless string here - it resolved to nothing,
+ * which made the course filter return an empty table and coupon creation fail
+ * with COURSE_NOT_FOUND. The slug is the identifier both databases agree on, and
+ * the one every other cross-service call already uses.
+ */
+export const adminListCouponsSchema = z.object({
+  query: z.object({
+    status: z.enum(['ALL', 'AVAILABLE', 'USED', 'EXPIRED', 'INACTIVE']).optional(),
+    courseSlug: z.string().trim().max(120).optional(),
+    search: z.string().trim().max(64).optional(),
+  }),
+});
+
+export const adminCreateCouponsSchema = z.object({
+  body: z.object({
+    // Slug, not _id - see the note on adminListCouponsSchema.
+    courseSlug: z.string().trim().min(1).max(120),
+    count: z.coerce.number().int().min(1, 'Create at least one').max(500, 'No more than 500 at a time'),
+    discountType: z.enum(['FULL', 'PERCENT', 'FIXED']).optional().default('FULL'),
+    discountValue: z.coerce.number().min(0).max(100000000).optional().default(100),
+    maxUses: z.coerce.number().int().min(1).max(1000).optional().default(1),
+    expiresAt: z.coerce.date().nullish(),
+    batchLabel: z.string().trim().max(120).nullish(),
+  }),
+});
+
+export const adminUpdateCouponSchema = z.object({
+  params: z.object({ id: objectId }),
+  // Only these two. Code, course, discount and usage are history once issued.
+  body: z.object({
+    isActive: z.boolean().optional(),
+    expiresAt: z.coerce.date().nullish(),
+  }),
+});
+
+export const adminCouponIdSchema = z.object({
+  params: z.object({ id: objectId }),
+});
+
 export default {
+  adminListCouponsSchema,
+  adminCreateCouponsSchema,
+  adminUpdateCouponSchema,
+  adminCouponIdSchema,
   createBridgedAnnouncementSchema,
   updateBridgedAnnouncementSchema,
   createBridgedMaterialSchema,
