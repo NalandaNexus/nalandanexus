@@ -7,7 +7,11 @@ import { withIds } from '../utils/serialize.js';
 import { recordAuditLog } from './auditLog.service.js';
 import { notifyAllAdmins } from './notification.service.js';
 import { emitEvent } from '../sockets/index.js';
-import { publishCourseToStudents, unpublishCourseFromStudents } from './studentCourseBridge.service.js';
+import {
+  publishCourseToStudents,
+  unpublishCourseFromStudents,
+  fetchStudentCourseCatalog,
+} from './studentCourseBridge.service.js';
 import { pushCourseAssignment, removeCourseAssignment } from './teacherBridge.service.js';
 
 const SORTABLE_FIELDS = ['title', 'code', 'department', 'status', 'rating', 'completionRate', 'createdAt'];
@@ -77,8 +81,28 @@ async function syncToAssignedTeacher(course) {
   });
 }
 
+/**
+ * Courses this portal owns, plus the ones the student service owns.
+ *
+ * Native student courses - Prarambh among them - have never had a record here:
+ * the catalogue bridge only runs admin -> student, so a course seeded on the
+ * student side is invisible to every admin screen that reads this collection.
+ * That is the whole reason the course list, the course pickers and the coupon
+ * campaign dropdown showed nothing but this portal's own courses.
+ *
+ * They are merged in live rather than copied, so the student service remains the
+ * single definition of a native course's price. They are marked readOnly, since
+ * this portal has no record to edit and editing the projection would be a lie.
+ *
+ * Merging happens before pagination, which means the owned set is read up to a
+ * cap rather than a page at a time. At this deployment's scale (single-digit
+ * courses) that is the honest trade; the cap is here so it degrades rather than
+ * unbounded-reads if that ever stops being true.
+ */
+const MERGE_SCAN_CAP = 500;
+
 export async function listCourses(query) {
-  const { page, limit, skip } = parsePagination(query);
+  const { page, limit } = parsePagination(query);
   const sort = parseSort(query.sort, SORTABLE_FIELDS);
 
   const filter = { deletedAt: null };
@@ -87,19 +111,101 @@ export async function listCourses(query) {
   if (query.instructor) filter.instructor = query.instructor;
   if (query.search) filter.$text = { $search: query.search };
 
-  const [items, total] = await Promise.all([
-    Course.find(filter).sort(sort).skip(skip).limit(limit).populate('instructor', 'name email').lean(),
-    Course.countDocuments(filter),
+  const [owned, catalog] = await Promise.all([
+    Course.find(filter).sort(sort).limit(MERGE_SCAN_CAP).populate('instructor', 'name email').lean(),
+    fetchStudentCourseCatalog(),
   ]);
 
-  return { items: withIds(items), meta: buildPaginationMeta({ page, limit, total }) };
+  const ownedItems = withIds(owned).map((c) => ({ ...c, origin: 'admin-portal', readOnly: false }));
+
+  // A slug this portal already owns is its own course; the student entry is that
+  // course's projection, not a second course.
+  const ownedSlugs = new Set(ownedItems.map((c) => c.slug).filter(Boolean));
+
+  const isFiltered = Boolean(query.status || query.department || query.instructor);
+  const search = String(query.search || '').trim().toLowerCase();
+
+  const catalogItems = (catalog.courses || [])
+    .filter((c) => !ownedSlugs.has(c.slug))
+    // A status/department/instructor filter is asking about this portal's own
+    // workflow fields, which a student-owned course does not have. Rather than
+    // inventing values for it, it drops out of those filtered views.
+    .filter(() => !isFiltered)
+    .filter((c) => !search || `${c.title} ${c.slug}`.toLowerCase().includes(search))
+    .map((c) => ({
+      // Addressed by slug: this portal has no _id for it, and the slug is the
+      // identifier both services already agree on.
+      id: `student:${c.slug}`,
+      _id: `student:${c.slug}`,
+      code: c.slug.toUpperCase().slice(0, 24),
+      title: c.title,
+      slug: c.slug,
+      category: c.category,
+      description: c.description,
+      priceInPaise: c.priceInPaise,
+      image: c.image,
+      status: c.isPurchasable ? 'APPROVED' : 'ARCHIVED',
+      instructor: c.instructorName ? { name: c.instructorName, email: null } : null,
+      studentCourseId: c.studentCourseId,
+      origin: 'student-catalog',
+      readOnly: true,
+      deletedAt: null,
+    }));
+
+  const merged = [...ownedItems, ...catalogItems];
+  const total = merged.length;
+  const start = (page - 1) * limit;
+
+  return {
+    items: merged.slice(start, start + limit),
+    meta: {
+      ...buildPaginationMeta({ page, limit, total }),
+      // Says plainly that part of the list is missing rather than letting a
+      // student-service outage look like "there are no other courses".
+      catalogAvailable: catalog.ok !== false,
+      catalogError: catalog.ok === false ? catalog.reason : undefined,
+    },
+  };
 }
 
 function escapeRegex(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/** Slug-addressed id for a course this portal does not own - see listCourses. */
+const STUDENT_ID_PREFIX = 'student:';
+
 export async function getCourseById(id) {
+  // A merged catalogue entry has no document here, so it is resolved from the
+  // student service instead of 404ing the details page it appears on.
+  if (String(id).startsWith(STUDENT_ID_PREFIX)) {
+    const slug = String(id).slice(STUDENT_ID_PREFIX.length);
+    const catalog = await fetchStudentCourseCatalog();
+    if (!catalog.ok) {
+      throw ApiError.serviceUnavailable(
+        'The student course catalogue is unavailable right now, so this course cannot be loaded. Please try again in a moment.',
+        'COURSE_CATALOG_UNAVAILABLE'
+      );
+    }
+    const found = (catalog.courses || []).find((c) => c.slug === slug);
+    if (!found) throw ApiError.notFound('Course not found', 'COURSE_NOT_FOUND');
+    return {
+      id, _id: id,
+      code: found.slug.toUpperCase().slice(0, 24),
+      title: found.title,
+      slug: found.slug,
+      category: found.category,
+      description: found.description,
+      priceInPaise: found.priceInPaise,
+      image: found.image,
+      status: found.isPurchasable ? 'APPROVED' : 'ARCHIVED',
+      instructor: found.instructorName ? { name: found.instructorName, email: null } : null,
+      studentCourseId: found.studentCourseId,
+      origin: 'student-catalog',
+      readOnly: true,
+    };
+  }
+
   const course = await Course.findOne({ _id: id, deletedAt: null }).populate('instructor', 'name email department');
   if (!course) throw ApiError.notFound('Course not found', 'COURSE_NOT_FOUND');
   return course;
@@ -157,7 +263,24 @@ export async function createCourse(data, actor, req) {
   return { course, teacherAssignment };
 }
 
+/**
+ * Refuses a write aimed at a course this portal does not own.
+ *
+ * These appear in the list so they can be seen and selected; they are not
+ * editable here because there is no record to edit. Accepting the write and
+ * silently doing nothing would be worse than saying so.
+ */
+function assertOwnedCourse(id) {
+  if (String(id).startsWith(STUDENT_ID_PREFIX)) {
+    throw ApiError.badRequest(
+      'This course is defined in the student catalogue and cannot be edited from the admin portal.',
+      'COURSE_NOT_EDITABLE_HERE'
+    );
+  }
+}
+
 export async function updateCourse(id, data, actor, req) {
+  assertOwnedCourse(id);
   const course = await Course.findOne({ _id: id, deletedAt: null });
   if (!course) throw ApiError.notFound('Course not found', 'COURSE_NOT_FOUND');
 
@@ -223,6 +346,7 @@ export async function updateCourse(id, data, actor, req) {
 }
 
 export async function setCourseStatus(id, { status, notes }, actor, req) {
+  assertOwnedCourse(id);
   const course = await Course.findOne({ _id: id, deletedAt: null });
   if (!course) throw ApiError.notFound('Course not found', 'COURSE_NOT_FOUND');
 
@@ -264,6 +388,7 @@ export async function setCourseStatus(id, { status, notes }, actor, req) {
 }
 
 export async function deleteCourse(id, actor, req) {
+  assertOwnedCourse(id);
   const course = await Course.findOne({ _id: id, deletedAt: null });
   if (!course) throw ApiError.notFound('Course not found', 'COURSE_NOT_FOUND');
 

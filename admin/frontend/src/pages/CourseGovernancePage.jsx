@@ -148,11 +148,25 @@ export default function CourseGovernancePage() {
                   </span>
                   <h3 className="text-sm font-bold text-[#22355E] truncate">{course.title}</h3>
                   <StatusBadge status={course.status} size="xs" />
+                  {/* Says why this course has no review actions: it is defined in
+                      the student catalogue, so this portal has no record to act
+                      on. Without the badge it just looks like a broken card. */}
+                  {course.readOnly && (
+                    <span
+                      className="text-[10px] font-semibold uppercase tracking-wider bg-[#22355E]/8 text-[#22355E] border border-[#22355E]/20 px-2 py-0.5 rounded"
+                      title="Defined in the student catalogue — managed there, shown here for reference and selection"
+                    >
+                      Student catalogue
+                    </span>
+                  )}
                 </div>
 
                 <p className="text-xs text-[#9B9690]">
-                  Lead Instructor: <strong className="text-[#2B2B28]">{course.instructor?.name || 'Unassigned'}</strong> • Department of{' '}
-                  {course.department}
+                  Lead Instructor: <strong className="text-[#2B2B28]">{course.instructor?.name || 'Unassigned'}</strong>
+                  {course.department ? <> • Department of {course.department}</> : null}
+                  {typeof course.priceInPaise === 'number' && (
+                    <> • <strong className="text-[#2B2B28]">₹{(course.priceInPaise / 100).toLocaleString('en-IN')}</strong></>
+                  )}
                 </p>
 
                 {course.notes && (
@@ -162,9 +176,16 @@ export default function CourseGovernancePage() {
                 )}
 
                 <div className="flex items-center gap-4 text-[11px] text-[#9B9690] pt-1">
-                  <span><strong>{course.credits}</strong> Academic Credits</span>
-                  <span>•</span>
-                  <span><strong>{course.modulesCount || 0}</strong> Modules</span>
+                  {/* Credits and module counts are this portal's own bookkeeping;
+                      a catalogue entry has neither, and printing "undefined
+                      Academic Credits" would be worse than omitting them. */}
+                  {!course.readOnly && (
+                    <>
+                      <span><strong>{course.credits}</strong> Academic Credits</span>
+                      <span>•</span>
+                      <span><strong>{course.modulesCount || 0}</strong> Modules</span>
+                    </>
+                  )}
                   {course.status === 'APPROVED' && (
                     <>
                       <span>•</span>

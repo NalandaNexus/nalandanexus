@@ -4,7 +4,13 @@ import { authenticate, requirePermission } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { uploaderFor } from '../middleware/upload.js';
 import { objectIdParam } from '../validators/common.js';
-import { listCoursesQuery, createCourseSchema, updateCourseSchema, statusSchema } from '../validators/course.validator.js';
+import {
+  listCoursesQuery,
+  readableCourseIdParam,
+  createCourseSchema,
+  updateCourseSchema,
+  statusSchema,
+} from '../validators/course.validator.js';
 
 const router = Router();
 const uploadCourseImage = uploaderFor('courses').single('image');
@@ -12,7 +18,7 @@ const uploadCourseImage = uploaderFor('courses').single('image');
 router.use(authenticate);
 
 router.get('/', requirePermission('courses.manage'), validate(listCoursesQuery), courseController.list);
-router.get('/:id', requirePermission('courses.manage'), validate({ params: objectIdParam() }), courseController.getById);
+router.get('/:id', requirePermission('courses.manage'), validate(readableCourseIdParam), courseController.getById);
 router.post('/', requirePermission('courses.manage'), uploadCourseImage, validate(createCourseSchema), courseController.create);
 router.put('/:id', requirePermission('courses.manage'), uploadCourseImage, validate({ params: objectIdParam(), ...updateCourseSchema }), courseController.update);
 router.patch('/:id/status', requirePermission('courses.manage'), validate({ params: objectIdParam(), ...statusSchema }), courseController.setStatus);

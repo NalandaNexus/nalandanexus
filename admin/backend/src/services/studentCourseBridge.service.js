@@ -16,9 +16,40 @@ function isConfigured() {
   return Boolean(env.studentBridge.url && env.studentBridge.serviceKey);
 }
 
-async function call(path, options) {
+/**
+ * Bounded retry with escalating timeouts.
+ *
+ * The student service sleeps on Render, and a first request after idle spends
+ * 30-60s waking up. A flat 8s budget therefore turned every cold start into
+ * "the Student service is unavailable" - for coupon campaign creation, the
+ * campaign and coupon lists, the CSV export and course publishing alike - even
+ * when the operation went on to succeed.
+ *
+ * This is the same shape teacherBridge.service.js already uses for the same
+ * reason: three attempts, never a loop, first one short so a genuinely dead
+ * peer fails fast and the later two long enough to outlast a cold start.
+ *
+ * Only transport failures and 5xx are retried. A 4xx is the peer answering
+ * clearly - CAMPAIGN_EXISTS, COURSE_NOT_FOUND - and repeating it would just be
+ * slower. That is also what keeps a retry safe after an attempt that actually
+ * succeeded: the retry hits the unique index, comes back 409 CAMPAIGN_EXISTS,
+ * and is returned as-is rather than being retried into a third state.
+ */
+const ATTEMPT_TIMEOUTS_MS = [8000, 35000, 35000];
+const RETRY_BACKOFF_MS = [1000, 3000];
+
+class BridgeError extends Error {
+  constructor(message, { status = 0, retryable = false } = {}) {
+    super(message);
+    this.name = 'BridgeError';
+    this.status = status;
+    this.retryable = retryable;
+  }
+}
+
+async function attempt(path, options, timeoutMs) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(`${env.studentBridge.url}${path}`, {
       ...options,
@@ -27,11 +58,85 @@ async function call(path, options) {
     });
     if (!res.ok) {
       const body = await res.text().catch(() => '');
-      throw new Error(`Student backend returned ${res.status}: ${body.slice(0, 200)}`);
+      throw new BridgeError(`Student backend returned ${res.status}: ${body.slice(0, 200)}`, {
+        status: res.status,
+        // 5xx and 429 are the peer struggling; 4xx is the peer answering.
+        retryable: res.status >= 500 || res.status === 429,
+      });
     }
     return res.json();
+  } catch (err) {
+    if (err instanceof BridgeError) throw err;
+    // Abort (cold start outran the budget) or a network-level failure.
+    throw new BridgeError(err.name === 'AbortError' ? `Timed out after ${timeoutMs}ms` : err.message, { retryable: true });
   } finally {
-    clearTimeout(timeout);
+    clearTimeout(timer);
+  }
+}
+
+async function call(path, options) {
+  let last;
+  for (let i = 0; i < ATTEMPT_TIMEOUTS_MS.length; i += 1) {
+    try {
+      return await attempt(path, options, ATTEMPT_TIMEOUTS_MS[i]);
+    } catch (err) {
+      last = err;
+      const more = i < ATTEMPT_TIMEOUTS_MS.length - 1;
+      if (!err.retryable || !more) break;
+      console.warn(`[studentCourseBridge] ${path} attempt ${i + 1} failed (${err.message}); retrying`);
+      await new Promise((resolve) => setTimeout(resolve, RETRY_BACKOFF_MS[i]));
+    }
+  }
+  throw last;
+}
+
+
+/**
+ * The live student course catalogue, read-only.
+ *
+ * Courses seeded natively in the student service (Prarambh among them) have no
+ * record in this portal's own database - the bridge only ever runs the other
+ * way, admin -> student. That is why the admin course list came back holding
+ * nothing but this portal's own courses while students could see six.
+ *
+ * They are read here rather than copied in, so the student service stays the one
+ * place a native course's price is defined. A mirrored copy would be a second
+ * price to drift, and the figure the coupon screen quotes has to be the figure
+ * checkout actually charges.
+ *
+ * Uses the public catalogue endpoint, exactly as teacher/backend does for its
+ * own course picker. Never throws: an unreachable catalogue means the admin sees
+ * their own courses and a flag saying the rest could not be loaded, which is
+ * better than a course list that fails to render at all.
+ */
+export async function fetchStudentCourseCatalog() {
+  if (!env.studentBridge.url) return { ok: false, reason: 'NOT_CONFIGURED', courses: [] };
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    try {
+      const res = await fetch(`${env.studentBridge.url}/api/public/courses`, { signal: controller.signal });
+      if (!res.ok) return { ok: false, reason: 'UPSTREAM_ERROR', status: res.status, courses: [] };
+      const body = await res.json();
+      const courses = (body?.data || [])
+        .filter((c) => c && typeof c.slug === 'string' && c.slug)
+        .map((c) => ({
+          studentCourseId: String(c.id || ''),
+          slug: c.slug,
+          title: c.title,
+          category: c.category || null,
+          description: c.description || '',
+          priceInPaise: typeof c.priceInPaise === 'number' ? c.priceInPaise : 0,
+          image: c.bannerImage || null,
+          isPurchasable: Boolean(c.isPurchasable),
+          instructorName: c.instructor?.name || null,
+        }));
+      return { ok: true, courses };
+    } finally {
+      clearTimeout(timer);
+    }
+  } catch (err) {
+    return { ok: false, reason: 'REQUEST_FAILED', error: err.message, courses: [] };
   }
 }
 
@@ -157,6 +262,7 @@ export async function deleteCoupon(id) {
 }
 
 export default {
+  fetchStudentCourseCatalog,
   listCoupons,
   createCampaign,
   listCampaigns,
