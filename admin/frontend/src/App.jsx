@@ -14,6 +14,7 @@ import CourseGovernancePage from './pages/CourseGovernancePage';
 import BatchesPage from './pages/BatchesPage';
 import CouponsPage from './pages/CouponsPage';
 import CourseSubjectsPage from './pages/CourseSubjectsPage';
+import ProgressionPage from './pages/ProgressionPage';
 import ResourcesPage from './pages/ResourcesPage';
 import AcademicsPage from './pages/AcademicsPage';
 import AnalyticsPage from './pages/AnalyticsPage';
@@ -49,6 +50,7 @@ export default function App() {
             <Route path="batches" element={<BatchesPage />} />
             <Route path="coupons" element={<CouponsPage />} />
             <Route path="course-subjects" element={<CourseSubjectsPage />} />
+            <Route path="progression" element={<ProgressionPage />} />
             <Route path="resources" element={<ResourcesPage />} />
             <Route path="academics" element={<AcademicsPage />} />
             <Route path="analytics" element={<AnalyticsPage />} />

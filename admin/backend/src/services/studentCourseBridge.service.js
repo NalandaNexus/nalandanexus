@@ -254,6 +254,49 @@ async function couponCall(path, options) {
  * modules and lessons cannot be edited through the ordinary course routes -
  * which is precisely why tagging needs its own leg across the bridge.
  */
+/**
+ * Progression configuration, proxied to the service that owns the engine.
+ *
+ * The rules live beside the data they are applied to rather than in this
+ * portal's database, so there is exactly one definition of what a level or a
+ * rank threshold means.
+ */
+export async function getProgressionRules() {
+  const body = await couponCall('/api/internal/progression/rules', { method: 'GET' });
+  return body?.data || null;
+}
+
+export async function updateProgressionRules(payload) {
+  const body = await couponCall('/api/internal/progression/rules', { method: 'PUT', body: JSON.stringify(payload) });
+  return body?.data || null;
+}
+
+export async function updateStage(code, payload) {
+  const body = await couponCall(`/api/internal/progression/stages/${encodeURIComponent(code)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+  return body?.data || null;
+}
+
+export async function updateAchievement(code, payload) {
+  const body = await couponCall(`/api/internal/progression/achievements/${encodeURIComponent(code)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+  return body?.data || null;
+}
+
+export async function recalculateProgression(payload) {
+  const body = await couponCall('/api/internal/progression/recalculate', { method: 'POST', body: JSON.stringify(payload) });
+  return body?.data || null;
+}
+
+export async function getProgressionAnalytics() {
+  const body = await couponCall('/api/internal/progression/analytics', { method: 'GET' });
+  return body?.data || null;
+}
+
 export async function getCourseContent(slug) {
   const body = await couponCall(`/api/internal/courses/${encodeURIComponent(slug)}/content`, { method: 'GET' });
   return body?.data || null;
@@ -309,6 +352,12 @@ export async function deleteCoupon(id) {
 
 export default {
   fetchStudentCourseCatalog,
+  getProgressionRules,
+  updateProgressionRules,
+  updateStage,
+  updateAchievement,
+  recalculateProgression,
+  getProgressionAnalytics,
   getCourseContent,
   setContentSubjects,
   listSubjects,

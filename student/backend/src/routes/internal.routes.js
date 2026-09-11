@@ -19,6 +19,10 @@ import {
   gradeBridgedTaskSubmissionSchema,
   adminListCouponsSchema,
   adminCreateCampaignSchema,
+  adminProgressionRulesSchema,
+  adminStageUpdateSchema,
+  adminAchievementUpdateSchema,
+  adminRecalculateSchema,
   adminStudentProgressSchema,
   adminStudentActivitySchema,
   adminRecordAttendanceSchema,
@@ -82,6 +86,16 @@ router.patch(
 // Progression, read-only, for the teacher and admin portals. Neither can write
 // a score through here - seeing progression and authoring it are different
 // permissions, and only one of them exists.
+// Progression configuration. Every number the engine consults is editable
+// here and nowhere else, which is what keeps a disputed score answerable by
+// reading one document.
+router.get('/progression/rules', internalController.adminGetProgressionRules);
+router.put('/progression/rules', validate(adminProgressionRulesSchema), internalController.adminUpdateProgressionRules);
+router.patch('/progression/stages/:code', validate(adminStageUpdateSchema), internalController.adminUpdateStage);
+router.patch('/progression/achievements/:code', validate(adminAchievementUpdateSchema), internalController.adminUpdateAchievement);
+router.post('/progression/recalculate', validate(adminRecalculateSchema), internalController.adminRecalculateProgression);
+router.get('/progression/analytics', internalController.adminProgressionAnalytics);
+
 router.post('/progression/students', validate(adminStudentProgressSchema), internalController.adminGetStudentProgress);
 router.get('/progression/students/:userId/activity', validate(adminStudentActivitySchema), internalController.adminGetStudentActivity);
 

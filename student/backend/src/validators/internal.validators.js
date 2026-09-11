@@ -222,6 +222,48 @@ const subjectAssignment = z.object({
   subject: z.string().trim().max(32).nullish(),
 });
 
+export const adminProgressionRulesSchema = z.object({
+  // Passthrough on the nested rule shapes: the Mongoose schema validates them
+  // with runValidators, and duplicating those constraints here would give two
+  // definitions of a valid rule that could disagree.
+  body: z.object({
+    xpRules: z.array(z.record(z.any())).max(200).optional(),
+    levels: z.record(z.any()).optional(),
+    ranks: z.array(z.record(z.any())).max(50).optional(),
+    skillWeights: z.record(z.any()).optional(),
+    knowledgeWeights: z.record(z.any()).optional(),
+    consistency: z.record(z.any()).optional(),
+    overallPower: z.record(z.any()).optional(),
+    attendance: z.record(z.any()).optional(),
+    updatedByEmail: z.string().trim().email().max(160).nullish(),
+  }),
+});
+
+export const adminStageUpdateSchema = z.object({
+  params: z.object({ code: z.string().trim().min(1).max(32) }),
+  body: z.object({
+    name: z.string().trim().max(120).optional(),
+    tagline: z.string().trim().max(200).optional(),
+    description: z.string().trim().max(1000).optional(),
+    courseSlug: z.string().trim().max(120).nullish(),
+    nextStageCode: z.string().trim().max(32).nullish(),
+    enabled: z.boolean().optional(),
+    requirements: z.record(z.any()).optional(),
+  }),
+});
+
+export const adminAchievementUpdateSchema = z.object({
+  params: z.object({ code: z.string().trim().min(1).max(64) }),
+  body: z.record(z.any()),
+});
+
+export const adminRecalculateSchema = z.object({
+  body: z.object({
+    userId: objectId.optional(),
+    limit: z.coerce.number().int().min(1).max(500).optional(),
+  }),
+});
+
 export const adminStudentProgressSchema = z.object({
   // Batched: a roster page is one request, not one per student.
   body: z.object({ userIds: z.array(objectId).min(1).max(500) }),
@@ -310,6 +352,10 @@ export const adminCouponIdSchema = z.object({
 export default {
   adminListCouponsSchema,
   adminCreateCampaignSchema,
+  adminProgressionRulesSchema,
+  adminStageUpdateSchema,
+  adminAchievementUpdateSchema,
+  adminRecalculateSchema,
   adminStudentProgressSchema,
   adminStudentActivitySchema,
   adminRecordAttendanceSchema,

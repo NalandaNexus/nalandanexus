@@ -3,6 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import {
   Layers,
   Tags,
+  SlidersHorizontal,
   Ticket,
   LayoutDashboard,
   Users,
@@ -39,6 +40,7 @@ const NAV_SECTIONS = [
       { name: 'Batches', path: '/batches', icon: Layers },
       { name: 'Coupons', path: '/coupons', icon: Ticket },
       { name: 'Course Subjects', path: '/course-subjects', icon: Tags },
+      { name: 'Progression', path: '/progression', icon: SlidersHorizontal },
       { name: 'Resources', path: '/resources', icon: Image },
     ],
   },

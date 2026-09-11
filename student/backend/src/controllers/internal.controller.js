@@ -1239,7 +1239,182 @@ export const adminGetStudentActivity = asyncHandler(async (req, res) => {
   });
 });
 
+// --- Progression configuration (admin portal) -------------------------------
+
+/**
+ * Everything an administrator can tune, in one response.
+ *
+ * Returned together because these rules only make sense beside each other: a
+ * rank threshold is meaningless without the level curve, and a stage
+ * requirement without the subjects it names. Fetching them separately would
+ * invite a screen showing a consistent-looking mixture of two versions.
+ */
+export const adminGetProgressionRules = asyncHandler(async (req, res) => {
+  const { getRules } = await import('../services/progression/rules.service.js');
+  const { Stage } = await import('../models/Stage.js');
+  const { Subject } = await import('../models/Subject.js');
+  const { Achievement } = await import('../models/Achievement.js');
+
+  const [rules, stages, subjects, achievements] = await Promise.all([
+    getRules({ fresh: true }),
+    Stage.find({}).sort({ order: 1 }).lean(),
+    Subject.find({}).sort({ order: 1 }).lean(),
+    Achievement.find({}).sort({ order: 1 }).lean(),
+  ]);
+
+  return sendSuccess(res, { data: { rules, stages, subjects, achievements } });
+});
+
+/**
+ * Replaces the tunable parts of the rules document.
+ *
+ * Only the sections an administrator owns are writable - the singleton key and
+ * its timestamps are not, so a malformed body cannot orphan the document every
+ * calculation depends on.
+ *
+ * Existing snapshots are deliberately NOT recalculated here. Changing a rule can
+ * move thousands of students' scores, and doing that as a side effect of saving
+ * a form is how an administrator finds out about the consequence afterwards.
+ * Recalculation is its own explicit action.
+ */
+export const adminUpdateProgressionRules = asyncHandler(async (req, res) => {
+  const { ProgressionRules } = await import('../models/ProgressionRules.js');
+  const { invalidateRulesCache, ensureRules } = await import('../services/progression/rules.service.js');
+
+  await ensureRules();
+  const WRITABLE = ['xpRules', 'levels', 'ranks', 'skillWeights', 'knowledgeWeights', 'consistency', 'overallPower', 'attendance'];
+  const updates = {};
+  for (const key of WRITABLE) if (req.body[key] !== undefined) updates[key] = req.body[key];
+  updates.updatedByEmail = req.body.updatedByEmail || null;
+
+  const saved = await ProgressionRules.findOneAndUpdate(
+    { key: 'GLOBAL' },
+    { $set: updates },
+    { new: true, runValidators: true }
+  );
+  invalidateRulesCache();
+
+  return sendSuccess(res, { message: 'Progression rules updated.', data: saved });
+});
+
+/** Updates one stage's completion requirements. */
+export const adminUpdateStage = asyncHandler(async (req, res) => {
+  const { Stage } = await import('../models/Stage.js');
+  const updates = {};
+  for (const key of ['name', 'tagline', 'description', 'courseSlug', 'nextStageCode', 'enabled', 'requirements']) {
+    if (req.body[key] !== undefined) updates[key] = req.body[key];
+  }
+
+  const stage = await Stage.findOneAndUpdate(
+    { code: String(req.params.code).toUpperCase() },
+    { $set: updates },
+    { new: true, runValidators: true }
+  );
+  if (!stage) throw AppError.notFound('Stage not found', 'STAGE_NOT_FOUND');
+  return sendSuccess(res, { message: 'Stage updated.', data: stage });
+});
+
+/** Updates one achievement definition. */
+export const adminUpdateAchievement = asyncHandler(async (req, res) => {
+  const { Achievement } = await import('../models/Achievement.js');
+  const updates = {};
+  for (const key of ['name', 'description', 'icon', 'criteriaType', 'criteriaValue', 'subjectCode', 'activityType', 'stageCode', 'xpReward', 'enabled']) {
+    if (req.body[key] !== undefined) updates[key] = req.body[key];
+  }
+
+  const achievement = await Achievement.findOneAndUpdate(
+    { code: String(req.params.code).toUpperCase() },
+    { $set: updates },
+    { new: true, runValidators: true }
+  );
+  if (!achievement) throw AppError.notFound('Achievement not found', 'ACHIEVEMENT_NOT_FOUND');
+  return sendSuccess(res, { message: 'Achievement updated.', data: achievement });
+});
+
+/**
+ * Rebuilds snapshots from the event ledger.
+ *
+ * The counterpart to not recalculating on every rule change: an administrator
+ * decides when thousands of scores move, and this is the action that does it.
+ * Bounded per call, so a recalculation cannot become an unbounded job that times
+ * out halfway and leaves a cohort half-updated - the response says how many
+ * remain, and repeated calls sweep the rest.
+ */
+export const adminRecalculateProgression = asyncHandler(async (req, res) => {
+  const { rebuildSnapshot } = await import('../services/progression/engine.service.js');
+  const { StudentProfile } = await import('../models/StudentProfile.js');
+
+  if (req.body.userId) {
+    await rebuildSnapshot(req.body.userId);
+    return sendSuccess(res, { message: 'Recalculated.', data: { recalculated: 1, remaining: 0 } });
+  }
+
+  const limit = Math.min(500, Math.max(1, Number(req.body.limit) || 100));
+
+  // Oldest snapshot first, so repeated calls sweep the whole cohort instead of
+  // recomputing the same students each time.
+  const profiles = await StudentProfile.find({})
+    .sort({ 'progression.recalculatedAt': 1 })
+    .limit(limit)
+    .select('userId')
+    .lean();
+
+  for (const profile of profiles) await rebuildSnapshot(profile.userId);
+
+  const total = await StudentProfile.countDocuments({});
+  return sendSuccess(res, {
+    message: `${profiles.length} student(s) recalculated.`,
+    data: { recalculated: profiles.length, remaining: Math.max(0, total - profiles.length) },
+  });
+});
+
+/** Platform-wide progression analytics. */
+export const adminProgressionAnalytics = asyncHandler(async (req, res) => {
+  const { StudentProfile } = await import('../models/StudentProfile.js');
+
+  const rows = await StudentProfile.aggregate([
+    {
+      $group: {
+        _id: '$progression.currentStageCode',
+        students: { $sum: 1 },
+        avgXP: { $avg: '$xp' },
+        avgPower: { $avg: '$progression.overallPower' },
+        avgAttendance: { $avg: '$progression.attendanceScore' },
+        avgStageProgress: { $avg: '$progression.stageProgress' },
+      },
+    },
+    { $sort: { _id: 1 } },
+  ]);
+
+  const inactiveSince = new Date(Date.now() - 7 * 86400000);
+  const [total, active, eligible] = await Promise.all([
+    StudentProfile.countDocuments({}),
+    StudentProfile.countDocuments({ 'progression.lastActivityAt': { $gte: inactiveSince } }),
+    StudentProfile.countDocuments({ 'progression.eligibility': { $elemMatch: { eligible: true } } }),
+  ]);
+
+  return sendSuccess(res, {
+    data: {
+      totals: { students: total, activeLast7Days: active, eligibleForNextStage: eligible },
+      byStage: rows.map((r) => ({
+        stageCode: r._id || 'UNASSIGNED',
+        students: r.students,
+        avgXP: Math.round(r.avgXP || 0),
+        avgOverallPower: Math.round((r.avgPower || 0) * 10) / 10,
+        avgAttendance: Math.round((r.avgAttendance || 0) * 10) / 10,
+        avgStageProgress: Math.round((r.avgStageProgress || 0) * 10) / 10,
+      })),
+    },
+  });
+});
+
 export default {
+  adminGetProgressionRules,
+  adminUpdateProgressionRules,
+  adminUpdateStage,
+  adminUpdateAchievement,
+  adminRecalculateProgression,
+  adminProgressionAnalytics,
   adminGetStudentProgress,
   adminGetStudentActivity,
   adminRecordAttendance,

@@ -136,3 +136,44 @@ test('SUPER_ADMIN passes the gate and reaches the proxy', async () => {
   assert.notEqual(res.status, 401, 'SUPER_ADMIN is authenticated');
   assert.notEqual(res.status, 403, 'SUPER_ADMIN holds courses.manage');
 });
+
+/**
+ * The progression control centre is a narrower permission than course
+ * administration: these rules decide who becomes eligible to buy the next
+ * stage, so they sit behind `settings.manage`, which ADMIN does not hold by
+ * default and STAFF certainly does not.
+ */
+const PROGRESSION_ROUTES = [
+  { name: 'read rules', method: 'GET', path: '/api/admin/progression/rules' },
+  { name: 'write rules', method: 'PUT', path: '/api/admin/progression/rules', body: { levels: { xpPerLevel: 1 } } },
+  { name: 'edit stage', method: 'PATCH', path: '/api/admin/progression/stages/PRARAMBH', body: { requirements: { minXP: 0 } } },
+  { name: 'edit achievement', method: 'PATCH', path: '/api/admin/progression/achievements/CONSISTENCY', body: { criteriaValue: 1 } },
+  { name: 'recalculate', method: 'POST', path: '/api/admin/progression/recalculate', body: {} },
+];
+
+test('progression configuration answers nobody without a session', async () => {
+  for (const route of PROGRESSION_ROUTES) {
+    const res = await call(route.path, { method: route.method, body: route.body });
+    assert.equal(res.status, 401, `${route.name} must demand authentication`);
+  }
+});
+
+test('a signed-in STAFF admin cannot read or change progression rules', async () => {
+  const { cookie, status } = await login('staff@test.local');
+  assert.equal(status, 200, 'the STAFF account must genuinely log in, or this proves nothing');
+
+  for (const route of PROGRESSION_ROUTES) {
+    const res = await call(route.path, { method: route.method, body: route.body, cookie });
+    assert.equal(res.status, 403, `${route.name} must be forbidden for STAFF`);
+  }
+});
+
+test('SUPER_ADMIN holds settings.manage and passes the gate', async () => {
+  const { cookie } = await login('super@test.local');
+  const res = await call('/api/admin/progression/rules', { cookie });
+
+  // The student service is unreachable in this suite by design, so anything
+  // other than 401/403 means the permission check let it through.
+  assert.notEqual(res.status, 401);
+  assert.notEqual(res.status, 403);
+});

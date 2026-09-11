@@ -7,6 +7,7 @@ import courseRoutes from './course.routes.js';
 import batchRoutes from './batch.routes.js';
 import couponRoutes from './coupon.routes.js';
 import courseSubjectRoutes from './courseSubject.routes.js';
+import progressionRoutes from './progression.routes.js';
 import resourceRoutes from './resource.routes.js';
 import enrollmentRoutes from './enrollment.routes.js';
 import announcementRoutes from './announcement.routes.js';
@@ -34,6 +35,9 @@ router.use('/coupons', couponRoutes);
 // Subject tagging lives beside courses but proxies to the student service,
 // which is the only place a native course's modules and lessons exist.
 router.use('/course-content', courseSubjectRoutes);
+// The progression control centre: every configurable number the engine
+// consults, edited in one place rather than scattered across controllers.
+router.use('/progression', progressionRoutes);
 router.use('/resources', resourceRoutes);
 router.use('/enrollments', enrollmentRoutes);
 router.use('/announcements', announcementRoutes);

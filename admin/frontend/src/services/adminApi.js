@@ -325,6 +325,39 @@ export const adminApi = {
     return json.data || { campaign: null, coupons: [] };
   },
 
+  // ── Progression control centre ────────────────────────────────────────
+  // The rules the engine applies. Read and written here; never calculated on
+  // this side.
+  async getProgressionRules() {
+    const json = await request('/progression/rules');
+    return json.data || null;
+  },
+
+  async updateProgressionRules(payload) {
+    const json = await request('/progression/rules', { method: 'PUT', body: payload });
+    return json.data;
+  },
+
+  async updateProgressionStage(code, payload) {
+    const json = await request(`/progression/stages/${encodeURIComponent(code)}`, { method: 'PATCH', body: payload });
+    return json.data;
+  },
+
+  async updateProgressionAchievement(code, payload) {
+    const json = await request(`/progression/achievements/${encodeURIComponent(code)}`, { method: 'PATCH', body: payload });
+    return json.data;
+  },
+
+  async recalculateProgression(payload = {}) {
+    const json = await request('/progression/recalculate', { method: 'POST', body: payload });
+    return json.data;
+  },
+
+  async getProgressionAnalytics() {
+    const json = await request('/progression/analytics');
+    return json.data || null;
+  },
+
   // ── Subject tagging ───────────────────────────────────────────────────
   // What an activity teaches decides which skill score it feeds, so these read
   // and write progression configuration, not cosmetic labels.
