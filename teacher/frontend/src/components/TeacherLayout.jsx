@@ -1,6 +1,7 @@
 ﻿import React, { useState } from 'react';
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
+  Activity,
   LayoutDashboard,
   Layers,
   BookOpen,
@@ -37,6 +38,7 @@ const NAV_ITEMS = [
   { name: 'Courses', path: '/courses', icon: BookOpen },
   { name: 'Assignments', path: '/grading', icon: FileCheck2 },
   { name: 'Students', path: '/students', icon: Users },
+  { name: 'Progress', path: '/student-progress', icon: Activity },
   { name: 'Attendance', path: '/attendance', icon: CalendarCheck },
   { name: 'Exams & Quizzes', path: '/exams', icon: Award },
   { name: 'Grades', path: '/grades', icon: GraduationCap },

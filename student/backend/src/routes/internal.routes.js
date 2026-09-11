@@ -19,6 +19,8 @@ import {
   gradeBridgedTaskSubmissionSchema,
   adminListCouponsSchema,
   adminCreateCampaignSchema,
+  adminStudentProgressSchema,
+  adminStudentActivitySchema,
   adminRecordAttendanceSchema,
   adminCourseSlugSchema,
   adminSetSubjectsSchema,
@@ -77,6 +79,12 @@ router.patch(
 // engine credits. Guarded by the same service key as the rest of this router.
 // Attendance is recorded in the teacher service and scored here, so it crosses
 // as events rather than being duplicated as a second source of truth.
+// Progression, read-only, for the teacher and admin portals. Neither can write
+// a score through here - seeing progression and authoring it are different
+// permissions, and only one of them exists.
+router.post('/progression/students', validate(adminStudentProgressSchema), internalController.adminGetStudentProgress);
+router.get('/progression/students/:userId/activity', validate(adminStudentActivitySchema), internalController.adminGetStudentActivity);
+
 router.post('/attendance', validate(adminRecordAttendanceSchema), internalController.adminRecordAttendance);
 
 router.get('/subjects', internalController.adminListSubjects);

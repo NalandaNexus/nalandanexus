@@ -74,6 +74,9 @@ async function startFakeStudentPortal() {
     enrolledStatus: 200,
     enrolledBySlug: {},
     requireServiceKey: true,
+    // Progression the student service would report, keyed by portal user id.
+    progressByUser: {},
+    activityByUser: {},
     calls: [],
   };
 
@@ -112,6 +115,23 @@ async function startFakeStudentPortal() {
       return send(200, { success: true, data });
     }
 
+    const activity = url.pathname.match(/^\/api\/internal\/progression\/students\/([^/]+)\/activity$/);
+    if (activity) {
+      return send(200, { success: true, data: state.activityByUser[decodeURIComponent(activity[1])] || [] });
+    }
+
+    if (url.pathname === '/api/internal/progression/students') {
+      // Answers only for the ids it was asked about, like the real endpoint -
+      // so a test that forgets to seed a student gets nothing rather than
+      // everything.
+      let body = '';
+      req.on('data', (c) => (body += c));
+      return req.on('end', () => {
+        const ids = (body ? JSON.parse(body).userIds : []) || [];
+        send(200, { success: true, data: ids.map((id) => state.progressByUser[id]).filter(Boolean) });
+      });
+    }
+
     // Every other bridge call (announcements, materials, ...) is a best-effort
     // side channel that must never fail the action that triggered it.
     return send(200, { success: true, data: null });
@@ -128,6 +148,8 @@ async function startFakeStudentPortal() {
       state.courses = [];
       state.enrolledStatus = 200;
       state.enrolledBySlug = {};
+      state.progressByUser = {};
+      state.activityByUser = {};
       state.calls = [];
     },
     close: () => new Promise((resolve) => server.close(resolve)),

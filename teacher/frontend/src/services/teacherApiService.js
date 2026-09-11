@@ -167,6 +167,19 @@ class TeacherApiService {
   getStudents(filters = {}) {
     return get('/students', filters).then((r) => r);
   }
+
+  /**
+   * Student progression. Read-only: this portal can see every figure and
+   * author none of them - XP, rank, skills and eligibility are produced by the
+   * student service's engine from recorded activity.
+   */
+  getStudentProgress(params = {}) {
+    return get('/students/progress', params).then((r) => r);
+  }
+
+  getStudentProgressDetail(studentId, params = {}) {
+    return get(`/students/progress/${studentId}`, params).then((r) => r.data);
+  }
   getStudentById(studentId) {
     return get(`/students/${studentId}`).then((r) => r.data);
   }

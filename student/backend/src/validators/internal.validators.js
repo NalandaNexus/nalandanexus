@@ -222,6 +222,16 @@ const subjectAssignment = z.object({
   subject: z.string().trim().max(32).nullish(),
 });
 
+export const adminStudentProgressSchema = z.object({
+  // Batched: a roster page is one request, not one per student.
+  body: z.object({ userIds: z.array(objectId).min(1).max(500) }),
+});
+
+export const adminStudentActivitySchema = z.object({
+  params: z.object({ userId: objectId }),
+  query: z.object({ limit: z.coerce.number().int().min(1).max(200).optional() }),
+});
+
 export const adminRecordAttendanceSchema = z.object({
   body: z.object({
     records: z
@@ -300,6 +310,8 @@ export const adminCouponIdSchema = z.object({
 export default {
   adminListCouponsSchema,
   adminCreateCampaignSchema,
+  adminStudentProgressSchema,
+  adminStudentActivitySchema,
   adminRecordAttendanceSchema,
   adminCourseSlugSchema,
   adminSetSubjectsSchema,

@@ -11,6 +11,7 @@ import ClassesPage from './pages/ClassesPage';
 import CoursesPage from './pages/CoursesPage';
 import GradingPage from './pages/GradingPage';
 import StudentsPage from './pages/StudentsPage';
+import StudentProgressPage from './pages/StudentProgressPage';
 import AttendancePage from './pages/AttendancePage';
 import ExamsPage from './pages/ExamsPage';
 import GradesPage from './pages/GradesPage';
@@ -57,6 +58,7 @@ export default function App() {
               <Route path="grading" element={<GradingPage />} />
               <Route path="assignments" element={<GradingPage />} />
               <Route path="students" element={<StudentsPage />} />
+              <Route path="student-progress" element={<StudentProgressPage />} />
               <Route path="attendance" element={<AttendancePage />} />
               <Route path="exams" element={<ExamsPage />} />
               <Route path="grades" element={<GradesPage />} />

@@ -87,6 +87,38 @@ async function resolveCourseSlugs(announcement) {
  * so a failed push costs a delayed score, not a lost record - and the student
  * service is idempotent, so a later replay cannot double-count.
  */
+/**
+ * Progression snapshots for a roster, in one call.
+ *
+ * Read-only: this service can see a student's progression and has no way to
+ * author it. Returns an empty list rather than throwing when the peer is
+ * unreachable, so a sleeping student service costs a teacher the progression
+ * columns rather than the whole roster page.
+ */
+export async function fetchStudentProgress(userIds) {
+  if (!isConfigured() || !userIds.length) return { ok: false, students: [] };
+  try {
+    const body = await call('/api/internal/progression/students', {
+      method: 'POST',
+      body: JSON.stringify({ userIds }),
+    });
+    return { ok: true, students: body?.data || [] };
+  } catch (err) {
+    console.error('[studentBridge] Progression fetch failed:', err.message);
+    return { ok: false, students: [], error: err.message };
+  }
+}
+
+export async function fetchStudentActivity(userId, limit = 50) {
+  if (!isConfigured()) return { ok: false, events: [] };
+  try {
+    const body = await call(`/api/internal/progression/students/${encodeURIComponent(userId)}/activity?limit=${limit}`, { method: 'GET' });
+    return { ok: true, events: body?.data || [] };
+  } catch (err) {
+    return { ok: false, events: [], error: err.message };
+  }
+}
+
 export async function pushAttendanceToStudents(records) {
   if (!isConfigured() || !records.length) return { synced: false, reason: 'NOT_CONFIGURED' };
   try {

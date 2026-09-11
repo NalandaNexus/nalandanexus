@@ -18,6 +18,7 @@ import { Task } from '../models/Task.js';
 import { LiveClass } from '../models/LiveClass.js';
 import { Message } from '../models/Message.js';
 import { User } from '../models/User.js';
+import { ProgressionEvent } from '../models/ProgressionEvent.js';
 import { Quiz } from '../models/Quiz.js';
 import { Enrollment } from '../models/Enrollment.js';
 import { Notification } from '../models/Notification.js';
@@ -1155,7 +1156,92 @@ export const adminRecordAttendance = asyncHandler(async (req, res) => {
   return sendSuccess(res, { message: `${results.recorded} attendance event(s) recorded.`, data: results });
 });
 
+/**
+ * Progression snapshots for a set of students, in one request.
+ *
+ * Batched deliberately: a teacher's roster page needs a row per student, and a
+ * call per student would make a class of forty into forty cross-service
+ * round trips against a service that sleeps. The caller sends the portal user
+ * ids it already holds and gets back only those that exist.
+ *
+ * Read-only. Nothing here lets another service write a score - a teacher can
+ * see progression and cannot author it, which is the permission boundary the
+ * whole feature rests on.
+ */
+export const adminGetStudentProgress = asyncHandler(async (req, res) => {
+  const { StudentProfile } = await import('../models/StudentProfile.js');
+  const { StudentAchievement } = await import('../models/StudentAchievement.js');
+  const ids = [...new Set((req.body.userIds || []).map(String))];
+
+  const [profiles, users, achievementCounts] = await Promise.all([
+    StudentProfile.find({ userId: { $in: ids } }).lean(),
+    User.find({ _id: { $in: ids } }).select('name email').lean(),
+    StudentAchievement.aggregate([
+      { $match: { userId: { $in: ids.map((id) => new mongoose.Types.ObjectId(id)) } } },
+      { $group: { _id: '$userId', count: { $sum: 1 } } },
+    ]),
+  ]);
+
+  const userById = new Map(users.map((u) => [String(u._id), u]));
+  const achievementsById = new Map(achievementCounts.map((a) => [String(a._id), a.count]));
+
+  return sendSuccess(res, {
+    data: profiles.map((profile) => {
+      const p = profile.progression || {};
+      const user = userById.get(String(profile.userId));
+      return {
+        userId: String(profile.userId),
+        name: user?.name || null,
+        email: user?.email || null,
+        stageCode: p.currentStageCode || null,
+        stageProgress: p.stageProgress || 0,
+        level: profile.level || 1,
+        rankCode: p.rankCode || null,
+        xp: profile.xp || 0,
+        skills: (p.skills || []).map((s) => ({ subjectCode: s.subjectCode, score: s.score, activityCount: s.activityCount })),
+        attendanceScore: p.attendanceScore || 0,
+        classesAttended: p.classesAttended || 0,
+        classesConducted: p.classesConducted || 0,
+        knowledgeScore: p.knowledgeScore || 0,
+        consistencyScore: p.consistencyScore || 0,
+        overallPower: p.overallPower || 0,
+        currentStreak: profile.streak?.current || 0,
+        achievementsUnlocked: achievementsById.get(String(profile.userId)) || 0,
+        lessonsCompleted: profile.stats?.lessonsCompleted || 0,
+        quizzesCompleted: profile.stats?.quizzesCompleted || 0,
+        lastActivityAt: p.lastActivityAt || null,
+        // Whether the student may move on, and why not. Computed here so a
+        // teacher sees the same verdict the student does.
+        eligibility: (p.eligibility || []).map((e) => ({ stageCode: e.stageCode, eligible: e.eligible })),
+      };
+    }),
+  });
+});
+
+/** One student's activity timeline, for a teacher's detail view. */
+export const adminGetStudentActivity = asyncHandler(async (req, res) => {
+  const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
+  const events = await ProgressionEvent.find({ userId: req.params.userId })
+    .sort({ occurredAt: -1 })
+    .limit(limit)
+    .lean();
+
+  return sendSuccess(res, {
+    data: events.map((e) => ({
+      activityType: e.activityType,
+      status: e.status,
+      subjectCode: e.subjectCode,
+      score: e.score,
+      xpAwarded: e.xpAwarded,
+      refId: e.refId,
+      occurredAt: e.occurredAt,
+    })),
+  });
+});
+
 export default {
+  adminGetStudentProgress,
+  adminGetStudentActivity,
   adminRecordAttendance,
   adminGetCourseContent,
   adminSetContentSubjects,
