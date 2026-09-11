@@ -4,7 +4,8 @@ import { AppError } from '../utils/AppError.js';
 import { Course } from '../models/Course.js';
 import { Enrollment } from '../models/Enrollment.js';
 import { LessonProgress } from '../models/LessonProgress.js';
-import { awardXp } from '../services/xp.service.js';
+import { recordActivity } from '../services/progression/engine.service.js';
+import { resolveLessonSubject } from '../services/progression/subject.service.js';
 
 /**
  * GET /api/student/courses - courses the authenticated student is enrolled in,
@@ -136,9 +137,22 @@ export const markLessonComplete = asyncHandler(async (req, res) => {
     { upsert: true, new: true }
   );
 
-  let profile = null;
-  if (!alreadyCompleted) {
-    profile = await awardXp(req.user._id, { amount: 10, source: 'lesson', refId: lessonId, courseId: course._id });
+  // Routed through the progression engine rather than awarding XP directly:
+  // the engine owns the XP rule, the duplicate check and every derived score.
+  // It is idempotent, so it is called unconditionally and its own verdict -
+  // not a prior read - decides whether this counts.
+  const subjectCode = await resolveLessonSubject(course, lessonId);
+  const outcome = await recordActivity({
+    userId: req.user._id,
+    activityType: 'LECTURE_COMPLETED',
+    status: 'COMPLETED',
+    refId: lessonId,
+    courseId: course._id,
+    subjectCode,
+  });
+
+  let profile = outcome.profile;
+  if (!outcome.duplicate && !alreadyCompleted && profile) {
     profile.stats.lessonsCompleted += 1;
     await profile.save();
   }

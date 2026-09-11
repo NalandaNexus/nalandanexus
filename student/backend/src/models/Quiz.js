@@ -17,6 +17,11 @@ const quizSchema = new Schema(
   {
     quizId: { type: String, required: true, unique: true, index: true },
     courseId: { type: Schema.Types.ObjectId, ref: 'Course', required: true, index: true },
+    // What this actually teaches. Null means "not explicitly set", which the
+    // subject resolver fills in from the course pillar - see
+    // progression/subject.service.js. Null is meaningfully different from
+    // UNASSIGNED: one has not been decided, the other could not be.
+    subject: { type: String, default: null, uppercase: true, trim: true, index: true },
     title: { type: String, required: true },
     moduleTitle: { type: String, default: '' },
     pointsReward: { type: Number, default: 50 },

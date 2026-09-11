@@ -57,7 +57,7 @@ function applyStreak(profile) {
  * course-scoped, so every XP-earning event must record which course it
  * belongs to (see XPEvent.courseId / leaderboard.service.js).
  */
-export async function awardXp(userId, { amount, source, refId, courseId }) {
+export async function awardXp(userId, { amount, source, refId, courseId, subjectCode = null, stageCode = null, eventKey = null }) {
   const profile = await StudentProfile.findOne({ userId });
   if (!profile) return null;
 
@@ -65,7 +65,10 @@ export async function awardXp(userId, { amount, source, refId, courseId }) {
     if (!courseId) throw new Error('awardXp: courseId is required when amount > 0 (leaderboard is course-scoped)');
     profile.xp += amount;
     profile.level = levelForXp(profile.xp);
-    await XPEvent.create({ userId, courseId, amount, source, refId });
+    // subjectCode/stageCode/eventKey are carried through for the progression
+    // engine, which needs XP broken down per subject and reconcilable against
+    // its own event ledger. Null for awards made before that engine existed.
+    await XPEvent.create({ userId, courseId, amount, source, refId, subjectCode, stageCode, eventKey });
   }
 
   applyStreak(profile);

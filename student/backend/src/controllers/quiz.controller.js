@@ -4,7 +4,8 @@ import { AppError } from '../utils/AppError.js';
 import { Quiz } from '../models/Quiz.js';
 import { QuizAttempt } from '../models/QuizAttempt.js';
 import { Enrollment } from '../models/Enrollment.js';
-import { awardXp, recalculateAverages } from '../services/xp.service.js';
+import { recalculateAverages } from '../services/xp.service.js';
+import { recordActivity } from '../services/progression/engine.service.js';
 import { pushQuizResult } from '../services/teacherBridge.service.js';
 
 export const listMyQuizzes = asyncHandler(async (req, res) => {
@@ -142,9 +143,23 @@ export const submitQuiz = asyncHandler(async (req, res) => {
   attempt.submittedAt = new Date();
   await attempt.save();
 
-  let profile = null;
-  if (pointsAwarded > 0) {
-    profile = await awardXp(req.user._id, { amount: pointsAwarded, source: 'quiz', refId: quiz.quizId, courseId: quiz.courseId });
+  // The engine decides the XP from the configured rule and the pass/fail
+  // status; `attempt.isFirstAttempt` still decides whether this submission is
+  // eligible at all, so retake behaviour is unchanged.
+  const passed = scorePercentage >= (quiz.passingScore ?? 50);
+  const outcome = await recordActivity({
+    userId: req.user._id,
+    activityType: passed ? 'QUIZ_PASSED' : 'QUIZ_FAILED',
+    status: passed ? 'PASSED' : 'FAILED',
+    refId: quiz.quizId,
+    courseId: quiz.courseId,
+    subjectCode: quiz.subject || null,
+    score: scorePercentage,
+    attemptId: String(attempt._id),
+  });
+
+  let profile = outcome.profile;
+  if (!outcome.duplicate && attempt.isFirstAttempt && profile) {
     profile.stats.quizzesCompleted += 1;
     await recalculateAverages(profile, { quizScore: scorePercentage });
     await profile.save();

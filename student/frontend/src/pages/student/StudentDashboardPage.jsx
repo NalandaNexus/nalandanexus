@@ -12,10 +12,15 @@ import PerformanceChart from '../../components/student/PerformanceChart';
 import LeaderboardSection from '../../components/student/LeaderboardSection';
 import ParambhJourney from '../../components/student/ParambhJourney';
 import MyEnrollmentCard from '../../components/student/MyEnrollmentCard';
+import LearnerProfileCard from '../../components/student/LearnerProfileCard';
+import { useProgression } from '../../hooks/useProgression';
 
 export default function StudentDashboardPage() {
   const navigate = useNavigate();
   const { student, hasCompletedOnboarding, isLoadingDashboard, dashboardError, refreshData } = useStudent();
+  // Refreshes itself when the server reports a progression change, so the card
+  // reflects what the backend computed rather than a locally-guessed total.
+  const { progression, isLoading: isLoadingProgression } = useProgression();
 
   if (isLoadingDashboard && !student) {
     return (
@@ -70,7 +75,13 @@ export default function StudentDashboardPage() {
         transition={{ duration: 0.35, ease: 'easeOut' }}
         className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6"
       >
-        {/* Section 1: Continue where you left off */}
+        {/* Section 1: where the learner stands - stage, level, rank, the three
+            skill scores, and what the next stage still requires. Placed first
+            because it answers "where am I?" before the dashboard asks them to
+            do anything. */}
+        <LearnerProfileCard data={progression} loading={isLoadingProgression} />
+
+        {/* Section 2: Continue where you left off */}
         <ContinueCard />
 
         {/* Section 2: Due today / this week */}

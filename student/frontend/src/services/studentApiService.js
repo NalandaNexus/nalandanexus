@@ -17,6 +17,23 @@ export const studentApiService = {
     return res.data;
   },
 
+  /**
+   * The Digital Learner Profile.
+   *
+   * Every figure here - XP, level, rank, the three skill scores, overall power,
+   * eligibility - is computed by the backend from recorded activity. Nothing on
+   * this side recalculates any of it; the card renders what it is given.
+   */
+  async getProgression() {
+    const res = await apiClient.get('/student/progression');
+    return res.data;
+  },
+
+  async getProgressionActivity(limit = 25) {
+    const res = await apiClient.get(`/student/progression/activity?limit=${limit}`);
+    return res.data;
+  },
+
   async getProfile() {
     const res = await apiClient.get('/student/profile');
     return res.data;

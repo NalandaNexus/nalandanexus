@@ -18,10 +18,28 @@ const xpEventSchema = new Schema(
     amount: { type: Number, required: true },
     source: {
       type: String,
-      enum: ['lesson', 'task', 'quiz', 'streak_bonus', 'achievement'],
+      enum: ['lesson', 'task', 'quiz', 'streak_bonus', 'achievement', 'attendance', 'assessment'],
       required: true,
     },
     refId: { type: String, default: null }, // lessonId / taskId / quizId
+
+    /**
+     * Which subject and stage this XP belongs to, recorded at award time.
+     *
+     * Lets total XP be broken down per subject later without replaying history,
+     * and - like ProgressionEvent.subjectCode - deliberately snapshots the
+     * classification as it stood, so re-tagging content does not silently
+     * rewrite what a student was credited with.
+     *
+     * Nullable because rows written before the progression engine existed have
+     * no subject, and backfilling a guess would be worse than an honest null.
+     */
+    subjectCode: { type: String, default: null, uppercase: true, trim: true, index: true },
+    stageCode: { type: String, default: null, uppercase: true, trim: true },
+
+    // Ties this award to the ProgressionEvent that caused it, so the ledger can
+    // be reconciled against the activity history in both directions.
+    eventKey: { type: String, default: null, trim: true, index: true },
   },
   { timestamps: true }
 );

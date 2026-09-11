@@ -4,7 +4,8 @@ import { AppError } from '../utils/AppError.js';
 import { Task } from '../models/Task.js';
 import { TaskSubmission } from '../models/TaskSubmission.js';
 import { Enrollment } from '../models/Enrollment.js';
-import { awardXp, recalculateAverages } from '../services/xp.service.js';
+import { recalculateAverages } from '../services/xp.service.js';
+import { recordActivity } from '../services/progression/engine.service.js';
 // recalculateAverages is used below when a real teacher grade arrives
 // (gradeBridgedTaskSubmission), not at submission time - see that function.
 import { pushTaskSubmission } from '../services/teacherBridge.service.js';
@@ -103,7 +104,15 @@ export const submitTask = asyncHandler(async (req, res) => {
     { upsert: true, new: true }
   );
 
-  const profile = await awardXp(req.user._id, { amount: task.pointsReward, source: 'task', refId: task.taskId, courseId: task.courseId });
+  const outcome = await recordActivity({
+    userId: req.user._id,
+    activityType: 'ASSIGNMENT_SUBMITTED',
+    status: 'SUBMITTED',
+    refId: task.taskId,
+    courseId: task.courseId,
+    subjectCode: task.subject || null,
+  });
+  const profile = outcome.profile;
   profile.stats.tasksCompleted += 1;
   // No real score exists yet at submission time - tasks aren't auto-graded.
   // A bridged task's real score arrives later from the teacher's actual

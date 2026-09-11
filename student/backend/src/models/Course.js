@@ -11,6 +11,9 @@ const lessonSchema = new Schema(
     videoUrl: { type: String, default: '' },
     isPublished: { type: Boolean, default: true },
     isLocked: { type: Boolean, default: false },
+    // Set per lesson so one purchased course can teach - and score - all three
+    // subjects. Falls back to the module's, then the course pillar's default.
+    subject: { type: String, default: null, uppercase: true, trim: true },
   },
   { _id: false }
 );
@@ -20,6 +23,9 @@ const moduleSchema = new Schema(
     moduleId: { type: String, required: true }, // e.g. "mod-2"
     title: { type: String, required: true },
     order: { type: Number, required: true },
+    // A module-level default, so tagging a whole unit does not mean editing
+    // every lesson in it. An individual lesson still overrides this.
+    subject: { type: String, default: null, uppercase: true, trim: true },
     lessons: [lessonSchema],
   },
   { _id: false }

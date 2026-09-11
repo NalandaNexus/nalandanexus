@@ -13,7 +13,8 @@
     "seed": "node src/seed/seed.js",
     "test": "node --test --test-concurrency=4 tests/*.test.js",
     "seed:coupons": "node src/scripts/seedCoupons.js",
-    "backfill:enrollment-ids": "node src/scripts/backfillEnrollmentIds.js"
+    "backfill:enrollment-ids": "node src/scripts/backfillEnrollmentIds.js",
+    "seed:progression": "node src/scripts/seedProgression.js"
   },
   "keywords": [
     "nalanda",

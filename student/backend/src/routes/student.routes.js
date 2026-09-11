@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import * as studentController from '../controllers/student.controller.js';
+import * as progressionController from '../controllers/progression.controller.js';
 import * as noteController from '../controllers/note.controller.js';
 import * as materialController from '../controllers/material.controller.js';
 import * as notificationController from '../controllers/notification.controller.js';
@@ -23,6 +24,11 @@ const router = Router();
 router.use(authenticate, requireRole('student'));
 
 router.get('/profile', studentController.getProfile);
+
+// The Digital Learner Profile. Read-only and always scoped to the caller -
+// there is deliberately no route that writes XP, rank or eligibility.
+router.get('/progression', progressionController.getMyProgression);
+router.get('/progression/activity', progressionController.getMyActivity);
 router.patch('/profile', validate(updateProfileSchema), studentController.updateProfile);
 router.post('/profile/avatar', avatarUpload.single('avatar'), studentController.uploadAvatar);
 router.post('/onboarding/complete', studentController.completeOnboarding);
