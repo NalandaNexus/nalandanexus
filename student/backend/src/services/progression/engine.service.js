@@ -184,9 +184,19 @@ async function stageCodeForCourse(courseId) {
 /**
  * How many published lessons exist per subject, across the student's courses.
  *
- * This is the denominator for lesson-based skill progress, and it has to be
- * resolved through the same precedence as the events themselves - otherwise a
- * student could complete every English lesson and still not reach 100%.
+ * The denominator for lesson-based skill progress, resolved through the same
+ * precedence as the events themselves - otherwise a student could complete
+ * every English lesson and still not reach 100%.
+ *
+ * Deliberately reflects the syllabus AS IT IS NOW, while the numerator comes
+ * from what the student actually did. So reclassifying a lesson out of English
+ * does move existing English percentages: the remaining English syllabus is
+ * genuinely smaller, and a student who finished what is left has finished it.
+ *
+ * That is a different thing from rewriting history, which does not happen - the
+ * ProgressionEvent keeps the subject it was credited under and no XP is
+ * restated. What shifts is a ratio against a changed denominator, which is the
+ * honest answer to "how much of this subject have you covered".
  */
 async function lessonsAvailableBySubject(courseIds) {
   const courses = await Course.find({ _id: { $in: courseIds } }).select('pillar modules').lean();
@@ -284,10 +294,27 @@ export async function rebuildSnapshot(userId) {
   );
 
   // --- attendance, from the events the teacher service pushes ----------------
-  const attended = events.filter((e) => e.activityType === 'CLASS_ATTENDED');
-  const present = attended.filter((e) => e.status === 'ATTENDED').length;
-  const missed = events.filter((e) => e.activityType === 'CLASS_MISSED').length;
-  const attendance = calc.attendanceScore({ present, late: 0, total: present + missed }, rules.attendance);
+  //
+  // A teacher correcting a mark appends a new event rather than editing the old
+  // one, so a session can carry several. The latest wins, and both remain
+  // visible - which is what lets a disputed record be explained rather than
+  // just overwritten.
+  const attendanceBySession = new Map();
+  // Ordered by when the mark was RECORDED, not by the session date - both marks
+  // for one session share a date, so `occurredAt` cannot separate an original
+  // from its correction. `createdAt` can, and is what "latest" has to mean here.
+  const recordedAt = (e) => new Date(e.createdAt || e.occurredAt).getTime();
+  for (const e of events) {
+    if (e.activityType !== 'CLASS_ATTENDED' && e.activityType !== 'CLASS_MISSED') continue;
+    const key = e.refId || String(e._id);
+    const seen = attendanceBySession.get(key);
+    if (!seen || recordedAt(e) >= recordedAt(seen)) attendanceBySession.set(key, e);
+  }
+  const latestMarks = [...attendanceBySession.values()];
+  const present = latestMarks.filter((e) => e.status === 'ATTENDED').length;
+  const late = latestMarks.filter((e) => e.status === 'LATE').length;
+  const missed = latestMarks.filter((e) => e.status === 'MISSED').length;
+  const attendance = calc.attendanceScore({ present, late, total: present + late + missed }, rules.attendance);
 
   // --- consistency, from when activity actually happened ---------------------
   const windowDays = rules.consistency?.windowDays ?? 30;

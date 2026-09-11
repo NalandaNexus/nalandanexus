@@ -247,6 +247,31 @@ async function couponCall(path, options) {
   }
 }
 
+/**
+ * Subject tagging, proxied to the service that owns the content.
+ *
+ * Native student courses have no record in this portal's database, so their
+ * modules and lessons cannot be edited through the ordinary course routes -
+ * which is precisely why tagging needs its own leg across the bridge.
+ */
+export async function getCourseContent(slug) {
+  const body = await couponCall(`/api/internal/courses/${encodeURIComponent(slug)}/content`, { method: 'GET' });
+  return body?.data || null;
+}
+
+export async function setContentSubjects(slug, payload) {
+  const body = await couponCall(`/api/internal/courses/${encodeURIComponent(slug)}/subjects`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+  return body?.data || null;
+}
+
+export async function listSubjects() {
+  const body = await couponCall('/api/internal/subjects', { method: 'GET' });
+  return body?.data || [];
+}
+
 export async function listCoupons(query = {}) {
   const params = new URLSearchParams();
   for (const [k, v] of Object.entries(query)) if (v !== undefined && v !== null && v !== '' && v !== 'ALL') params.set(k, v);
@@ -284,6 +309,9 @@ export async function deleteCoupon(id) {
 
 export default {
   fetchStudentCourseCatalog,
+  getCourseContent,
+  setContentSubjects,
+  listSubjects,
   listCoupons,
   createCampaign,
   listCampaigns,

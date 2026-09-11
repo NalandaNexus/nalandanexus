@@ -19,6 +19,9 @@ import {
   gradeBridgedTaskSubmissionSchema,
   adminListCouponsSchema,
   adminCreateCampaignSchema,
+  adminRecordAttendanceSchema,
+  adminCourseSlugSchema,
+  adminSetSubjectsSchema,
   adminListCampaignsSchema,
   adminCampaignIdSchema,
   adminUpdateCouponSchema,
@@ -70,6 +73,16 @@ router.patch(
 // Coupon administration for the Admin portal. Coupons live in this database
 // beside Course and Enrollment, so Admin reaches them here rather than keeping a
 // second copy - the same arrangement batches use.
+// Subject tagging: what an activity teaches, which is what the progression
+// engine credits. Guarded by the same service key as the rest of this router.
+// Attendance is recorded in the teacher service and scored here, so it crosses
+// as events rather than being duplicated as a second source of truth.
+router.post('/attendance', validate(adminRecordAttendanceSchema), internalController.adminRecordAttendance);
+
+router.get('/subjects', internalController.adminListSubjects);
+router.get('/courses/:slug/content', validate(adminCourseSlugSchema), internalController.adminGetCourseContent);
+router.patch('/courses/:slug/subjects', validate(adminSetSubjectsSchema), internalController.adminSetContentSubjects);
+
 router.get('/coupon-campaigns', validate(adminListCampaignsSchema), internalController.adminListCampaigns);
 router.post('/coupon-campaigns', validate(adminCreateCampaignSchema), internalController.adminCreateCampaign);
 router.get('/coupon-campaigns/:id/export', validate(adminCampaignIdSchema), internalController.adminExportCampaign);

@@ -13,6 +13,7 @@ import StudentsPage from './pages/StudentsPage';
 import CourseGovernancePage from './pages/CourseGovernancePage';
 import BatchesPage from './pages/BatchesPage';
 import CouponsPage from './pages/CouponsPage';
+import CourseSubjectsPage from './pages/CourseSubjectsPage';
 import ResourcesPage from './pages/ResourcesPage';
 import AcademicsPage from './pages/AcademicsPage';
 import AnalyticsPage from './pages/AnalyticsPage';
@@ -47,6 +48,7 @@ export default function App() {
             <Route path="courses" element={<CourseGovernancePage />} />
             <Route path="batches" element={<BatchesPage />} />
             <Route path="coupons" element={<CouponsPage />} />
+            <Route path="course-subjects" element={<CourseSubjectsPage />} />
             <Route path="resources" element={<ResourcesPage />} />
             <Route path="academics" element={<AcademicsPage />} />
             <Route path="analytics" element={<AnalyticsPage />} />

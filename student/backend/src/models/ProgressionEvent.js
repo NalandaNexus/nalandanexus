@@ -46,7 +46,7 @@ const progressionEventSchema = new Schema(
 
     status: {
       type: String,
-      enum: ['STARTED', 'SUBMITTED', 'PASSED', 'FAILED', 'COMPLETED', 'ATTENDED', 'MISSED', 'UNLOCKED'],
+      enum: ['STARTED', 'SUBMITTED', 'PASSED', 'FAILED', 'COMPLETED', 'ATTENDED', 'LATE', 'MISSED', 'UNLOCKED'],
       required: true,
     },
 

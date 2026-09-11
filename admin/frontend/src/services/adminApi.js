@@ -325,6 +325,24 @@ export const adminApi = {
     return json.data || { campaign: null, coupons: [] };
   },
 
+  // ── Subject tagging ───────────────────────────────────────────────────
+  // What an activity teaches decides which skill score it feeds, so these read
+  // and write progression configuration, not cosmetic labels.
+  async getCourseSubjects() {
+    const json = await request('/course-content/subjects');
+    return json.data || [];
+  },
+
+  async getCourseContent(slug) {
+    const json = await request(`/course-content/${encodeURIComponent(slug)}/content`);
+    return json.data || null;
+  },
+
+  async setCourseSubjects(slug, payload) {
+    const json = await request(`/course-content/${encodeURIComponent(slug)}/subjects`, { method: 'PATCH', body: payload });
+    return json.data;
+  },
+
   async getCampaigns(params = {}) {
     const json = await request('/coupons/campaigns', { query: params });
     return json.data || [];

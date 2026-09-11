@@ -76,6 +76,28 @@ async function resolveCourseSlugs(announcement) {
 }
 
 /** Pushes a just-published announcement to the student portal. Best-effort — never throws. */
+/**
+ * Pushes attendance marks to the student service, which scores them.
+ *
+ * Attendance is recorded here and consumed there; sending it as events keeps a
+ * single source of truth rather than having each service keep its own tally.
+ *
+ * Best-effort by design: a teacher marking a register must not be blocked
+ * because the student service is asleep. The marks are already saved locally,
+ * so a failed push costs a delayed score, not a lost record - and the student
+ * service is idempotent, so a later replay cannot double-count.
+ */
+export async function pushAttendanceToStudents(records) {
+  if (!isConfigured() || !records.length) return { synced: false, reason: 'NOT_CONFIGURED' };
+  try {
+    const body = await call('/api/internal/attendance', { method: 'POST', body: JSON.stringify({ records }) });
+    return { synced: true, ...(body?.data || {}) };
+  } catch (err) {
+    console.error('[studentBridge] Attendance push failed:', err.message);
+    return { synced: false, reason: 'REQUEST_FAILED', error: err.message };
+  }
+}
+
 export async function pushAnnouncementToStudents(announcement, authorName) {
   if (!isConfigured()) return { delivered: false, reason: 'NOT_CONFIGURED' };
   try {

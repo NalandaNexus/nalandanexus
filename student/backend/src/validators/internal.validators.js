@@ -218,6 +218,45 @@ export const adminListCouponsSchema = z.object({
   }),
 });
 
+const subjectAssignment = z.object({
+  subject: z.string().trim().max(32).nullish(),
+});
+
+export const adminRecordAttendanceSchema = z.object({
+  body: z.object({
+    records: z
+      .array(
+        z.object({
+          userId: objectId,
+          classId: z.string().trim().min(1).max(64),
+          date: z.coerce.date(),
+          status: z.enum(['present', 'absent', 'late']),
+          courseId: objectId.nullish(),
+          subjectCode: z.string().trim().max(32).nullish(),
+          markedBy: z.string().trim().max(120).nullish(),
+        })
+      )
+      .min(1)
+      .max(500),
+  }),
+});
+
+export const adminCourseSlugSchema = z.object({
+  params: z.object({ slug: z.string().trim().min(1).max(120) }),
+});
+
+export const adminSetSubjectsSchema = z.object({
+  params: z.object({ slug: z.string().trim().min(1).max(120) }),
+  // Targeted changes only - never the whole course document - so two editors
+  // working on different modules cannot clobber one another.
+  body: z.object({
+    modules: z.array(subjectAssignment.extend({ moduleId: z.string().trim().min(1) })).max(200).optional(),
+    lessons: z.array(subjectAssignment.extend({ lessonId: z.string().trim().min(1) })).max(500).optional(),
+    quizzes: z.array(subjectAssignment.extend({ quizId: z.string().trim().min(1) })).max(500).optional(),
+    tasks: z.array(subjectAssignment.extend({ taskId: z.string().trim().min(1) })).max(500).optional(),
+  }),
+});
+
 export const adminListCampaignsSchema = z.object({
   query: z.object({
     courseSlug: z.string().trim().max(120).optional(),
@@ -261,6 +300,9 @@ export const adminCouponIdSchema = z.object({
 export default {
   adminListCouponsSchema,
   adminCreateCampaignSchema,
+  adminRecordAttendanceSchema,
+  adminCourseSlugSchema,
+  adminSetSubjectsSchema,
   adminListCampaignsSchema,
   adminCampaignIdSchema,
   adminUpdateCouponSchema,

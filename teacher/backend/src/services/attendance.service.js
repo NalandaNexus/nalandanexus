@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { pushAttendanceToStudents } from './studentBridge.service.js';
 import { Attendance } from '../models/Attendance.js';
 import { Student } from '../models/Student.js';
 import { SchoolClass } from '../models/SchoolClass.js';
@@ -56,6 +57,26 @@ export async function markAttendance(teacherId, { classId, date, records }, ip) 
     metadata: { date: normalizedDate, count: records.length },
     ip,
   });
+
+  // Cross to the student service, which turns these into progression events and
+  // scores them. Best-effort: the marks above are already saved, so a sleeping
+  // peer delays a score rather than losing a register.
+  const linkable = await Student.find({ _id: { $in: studentIds }, linkedUserId: { $ne: null } })
+    .select('_id linkedUserId')
+    .lean();
+  const linkedUserByStudent = new Map(linkable.map((s) => [String(s._id), String(s.linkedUserId)]));
+
+  await pushAttendanceToStudents(
+    records
+      .filter((r) => linkedUserByStudent.has(String(r.studentId)))
+      .map((r) => ({
+        userId: linkedUserByStudent.get(String(r.studentId)),
+        classId: String(classId),
+        date: normalizedDate,
+        status: r.status,
+        markedBy: String(teacherId),
+      }))
+  );
 
   for (const r of records) {
     await recalculateStudentMetrics(r.studentId);

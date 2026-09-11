@@ -543,3 +543,192 @@ test('unauthenticated callers get nothing', async () => {
     assert.equal(res.status, 401, path);
   }
 });
+
+// --- Subject tagging across the service boundary ---------------------------
+
+const asService = (req) => req.set('x-internal-service-key', process.env.INTERNAL_SERVICE_KEY || 'test_internal_key');
+
+test('course content reports chosen and inherited subjects apart', async () => {
+  const res = await asService(request.get('/api/internal/courses/prarambh/content'));
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+
+  const mods = res.body.data.modules;
+  const englishLesson = mods[0].lessons.find((l) => l.lessonId === 'l-eng-1');
+  assert.equal(englishLesson.subject, 'ENGLISH', 'explicitly chosen');
+  assert.equal(englishLesson.inherited, false);
+
+  // mod-2 carries a module-level subject and its lessons name none, so they
+  // resolve to COMPUTER without having chosen it.
+  const inheritedLesson = mods[1].lessons.find((l) => l.lessonId === 'l-comp-1');
+  assert.equal(inheritedLesson.subject, null, 'nothing chosen on the lesson');
+  assert.equal(inheritedLesson.resolvedSubject, 'COMPUTER', 'but it resolves via the module');
+  assert.equal(inheritedLesson.inherited, true, 'and says so');
+});
+
+test('retagging changes what future activity credits, not the past', async () => {
+  const learner = await newLearner('retag');
+
+  await engine.recordActivity({
+    userId: learner.userId, activityType: 'LECTURE_COMPLETED', status: 'COMPLETED',
+    refId: 'l-eng-2', courseId: course._id, subjectCode: 'ENGLISH',
+  });
+
+  const before = await StudentProfile.findOne({ userId: learner.userId });
+  const englishBefore = skill(before, 'ENGLISH');
+  assert.ok(englishBefore > 0);
+
+  // An administrator reclassifies that lesson.
+  const patch = await asService(
+    request.patch('/api/internal/courses/prarambh/subjects')
+  ).send({ lessons: [{ lessonId: 'l-eng-2', subject: 'CYBERSECURITY' }] });
+  assert.equal(patch.status, 200, JSON.stringify(patch.body));
+
+  // The recorded event keeps the subject it was credited under.
+  const event = await ProgressionEvent.findOne({ userId: learner.userId, refId: 'l-eng-2' });
+  assert.equal(event.subjectCode, 'ENGLISH', 'history is not rewritten');
+
+  const after = await engine.rebuildSnapshot(learner.userId);
+
+  // Nothing already awarded is taken back or paid twice. That is the guarantee
+  // the ledger makes; it is not the stronger "no derived number may change".
+  const { XPEvent } = await import('../src/models/XPEvent.js');
+  assert.equal(
+    await XPEvent.countDocuments({ userId: learner.userId, refId: 'l-eng-2' }),
+    1,
+    'the original award is intact and unduplicated'
+  );
+  assert.ok(after.profile.xp >= before.xp, 'XP is never clawed back');
+
+  // The English percentage DOES move, and correctly: one of its two lessons is
+  // no longer an English lesson, so the subject's syllabus is smaller and the
+  // student has covered all of what remains.
+  assert.equal(skill(after.profile, 'ENGLISH'), 100, 'measured against the syllabus as it now stands');
+
+  // And that can cross an achievement threshold, which then unlocks and pays.
+  // Worth pinning: it means retagging content has a real, forward consequence
+  // for students, rather than being a purely cosmetic relabel.
+  const unlockedByRetag = await StudentAchievement.findOne({
+    userId: learner.userId,
+    achievementCode: 'VOICE_OF_CONFIDENCE',
+  });
+  assert.ok(unlockedByRetag, 'the student now genuinely meets the criterion');
+
+  // Restore for the fixtures other tests rely on.
+  await asService(request.patch('/api/internal/courses/prarambh/subjects')).send({
+    lessons: [{ lessonId: 'l-eng-2', subject: 'ENGLISH' }],
+  });
+});
+
+test('a subject can be cleared back to inheriting', async () => {
+  const res = await asService(request.patch('/api/internal/courses/prarambh/subjects')).send({
+    lessons: [{ lessonId: 'l-cyb-2', subject: null }],
+  });
+  assert.equal(res.status, 200);
+
+  const content = await asService(request.get('/api/internal/courses/prarambh/content'));
+  const lesson = content.body.data.modules[2].lessons.find((l) => l.lessonId === 'l-cyb-2');
+  assert.equal(lesson.subject, null, 'cleared');
+  // mod-3 names no subject either, so it now falls through to the course pillar.
+  assert.equal(lesson.resolvedSubject, 'ENGLISH', 'falls back to the communicate pillar');
+  assert.equal(lesson.inherited, true);
+
+  await asService(request.patch('/api/internal/courses/prarambh/subjects')).send({
+    lessons: [{ lessonId: 'l-cyb-2', subject: 'CYBERSECURITY' }],
+  });
+});
+
+test('tagging routes are unreachable without the service key', async () => {
+  for (const [method, path] of [
+    ['get', '/api/internal/subjects'],
+    ['get', '/api/internal/courses/prarambh/content'],
+    ['patch', '/api/internal/courses/prarambh/subjects'],
+  ]) {
+    const res = await request[method](path).send({});
+    assert.ok(res.status === 401 || res.status === 403, `${method} ${path} must be guarded (got ${res.status})`);
+  }
+});
+
+// --- Attendance, bridged from the service that records it -------------------
+
+test('bridged attendance produces a real attendance score', async () => {
+  const learner = await newLearner('attendance');
+
+  const marks = [
+    { date: '2026-09-01', status: 'present' },
+    { date: '2026-09-02', status: 'present' },
+    { date: '2026-09-03', status: 'absent' },
+    { date: '2026-09-04', status: 'late' },
+  ];
+
+  for (const m of marks) {
+    const res = await asService(request.post('/api/internal/attendance')).send({
+      records: [{ userId: String(learner.userId), classId: 'cls-1', date: m.date, status: m.status }],
+    });
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+  }
+
+  const { profile } = await engine.rebuildSnapshot(learner.userId);
+  const p = profile.progression;
+
+  assert.equal(p.classesConducted, 4, 'every session counted once');
+  assert.equal(p.classesAttended, 3, 'present and late both count as turning up');
+  // 2 present + 1 late at the configured 50% credit, over 4 sessions = 62.5.
+  assert.equal(p.attendanceScore, 62.5, 'late earns the configured partial credit, not full');
+  assert.ok(p.overallPower > 0, 'and attendance now contributes to overall power');
+});
+
+test('a corrected mark replaces the original rather than adding to it', async () => {
+  const learner = await newLearner('correction');
+
+  await asService(request.post('/api/internal/attendance')).send({
+    records: [{ userId: String(learner.userId), classId: 'cls-2', date: '2026-09-05', status: 'absent' }],
+  });
+  let snap = await engine.rebuildSnapshot(learner.userId);
+  assert.equal(snap.profile.progression.classesConducted, 1);
+  assert.equal(snap.profile.progression.classesAttended, 0);
+
+  // The teacher corrects it.
+  await asService(request.post('/api/internal/attendance')).send({
+    records: [{ userId: String(learner.userId), classId: 'cls-2', date: '2026-09-05', status: 'present' }],
+  });
+  snap = await engine.rebuildSnapshot(learner.userId);
+
+  assert.equal(snap.profile.progression.classesConducted, 1, 'still one session, not two');
+  assert.equal(snap.profile.progression.classesAttended, 1, 'the correction won');
+  assert.equal(snap.profile.progression.attendanceScore, 100);
+
+  // Both facts survive, which is what makes a disputed record explainable.
+  const events = await ProgressionEvent.find({ userId: learner.userId, refId: 'cls-2:2026-09-05' }).lean();
+  assert.equal(events.length, 2, 'the original mark and the correction are both on record');
+});
+
+test('re-sending the identical mark changes nothing', async () => {
+  const learner = await newLearner('attendance-replay');
+
+  const send = () =>
+    asService(request.post('/api/internal/attendance')).send({
+      records: [{ userId: String(learner.userId), classId: 'cls-3', date: '2026-09-06', status: 'present' }],
+    });
+
+  const first = await send();
+  const second = await send();
+
+  assert.equal(first.body.data.recorded, 1);
+  assert.equal(second.body.data.duplicate, 1, 'a replayed push is recognised, not re-counted');
+  assert.equal(await ProgressionEvent.countDocuments({ userId: learner.userId, refId: 'cls-3:2026-09-06' }), 1);
+});
+
+test('a roster row with no portal account is skipped, never guessed at', async () => {
+  const res = await asService(request.post('/api/internal/attendance')).send({
+    records: [{ userId: '0123456789abcdef01234567', classId: 'cls-4', date: '2026-09-07', status: 'present' }],
+  });
+
+  assert.equal(res.status, 200, 'the rest of a register still goes through');
+  assert.equal(res.body.data.skipped, 1);
+  assert.equal(res.body.data.recorded, 0, 'no student was credited on a guess');
+});
+
+test('attendance intake is unreachable without the service key', async () => {
+  const res = await request.post('/api/internal/attendance').send({ records: [] });
+  assert.ok(res.status === 401 || res.status === 403, `got ${res.status}`);
+});

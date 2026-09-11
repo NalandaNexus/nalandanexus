@@ -974,7 +974,192 @@ export const adminDeleteCoupon = asyncHandler(async (req, res) => {
   return sendSuccess(res, { message: 'Coupon removed.', data: { id: String(coupon._id) } });
 });
 
+// --- Subject tagging (admin/teacher portal -> this catalogue) ----------------
+
+/**
+ * A course's content with the subject each activity currently resolves to.
+ *
+ * Returns both `subject` (what was explicitly set, possibly null) and
+ * `resolvedSubject` (what the engine would actually credit). Showing only the
+ * resolved value would hide whether a lesson is deliberately classified or
+ * merely inheriting its course's pillar - which is the exact difference an
+ * administrator is here to act on.
+ */
+export const adminGetCourseContent = asyncHandler(async (req, res) => {
+  const { resolveSubject } = await import('../services/progression/subject.service.js');
+  const course = await Course.findOne({ slug: req.params.slug }).lean();
+  if (!course) throw AppError.notFound('Course not found', 'COURSE_NOT_FOUND');
+
+  const modules = [];
+  for (const mod of course.modules || []) {
+    const lessons = [];
+    for (const lesson of mod.lessons || []) {
+      lessons.push({
+        lessonId: lesson.lessonId,
+        title: lesson.title,
+        order: lesson.order,
+        isPublished: lesson.isPublished !== false,
+        subject: lesson.subject || null,
+        resolvedSubject: await resolveSubject({
+          activitySubject: lesson.subject,
+          moduleSubject: mod.subject,
+          coursePillar: course.pillar,
+        }),
+        // Says where the resolved value came from, so "inherited" is visibly
+        // different from "chosen".
+        inherited: !lesson.subject,
+      });
+    }
+    modules.push({
+      moduleId: mod.moduleId,
+      title: mod.title,
+      order: mod.order,
+      subject: mod.subject || null,
+      lessons,
+    });
+  }
+
+  const [quizzes, tasks] = await Promise.all([
+    Quiz.find({ courseId: course._id }).select('quizId title subject').lean(),
+    Task.find({ courseId: course._id }).select('taskId title subject').lean(),
+  ]);
+
+  return sendSuccess(res, {
+    data: {
+      slug: course.slug,
+      title: course.title,
+      pillar: course.pillar,
+      modules,
+      quizzes: quizzes.map((q) => ({ quizId: q.quizId, title: q.title, subject: q.subject || null })),
+      tasks: tasks.map((t) => ({ taskId: t.taskId, title: t.title, subject: t.subject || null })),
+    },
+  });
+});
+
+/**
+ * Sets the subject on specific activities.
+ *
+ * Takes a list of targeted changes rather than the whole course, so two
+ * administrators editing different modules cannot overwrite each other by both
+ * submitting a full document.
+ *
+ * Changing a subject affects what FUTURE activity is credited to. Existing
+ * ProgressionEvents keep the subject they were recorded with - see that model's
+ * comment - so this cannot silently restate a student's past scores.
+ */
+export const adminSetContentSubjects = asyncHandler(async (req, res) => {
+  const { lessons = [], modules = [], quizzes = [], tasks = [] } = req.body;
+
+  const course = await Course.findOne({ slug: req.params.slug });
+  if (!course) throw AppError.notFound('Course not found', 'COURSE_NOT_FOUND');
+
+  const clean = (v) => (v === null || v === '' ? null : String(v).trim().toUpperCase());
+  let changed = 0;
+
+  for (const m of modules) {
+    const mod = course.modules.find((x) => x.moduleId === m.moduleId);
+    if (!mod) continue;
+    mod.subject = clean(m.subject);
+    changed += 1;
+  }
+
+  for (const l of lessons) {
+    for (const mod of course.modules) {
+      const lesson = (mod.lessons || []).find((x) => x.lessonId === l.lessonId);
+      if (lesson) {
+        lesson.subject = clean(l.subject);
+        changed += 1;
+        break;
+      }
+    }
+  }
+
+  if (modules.length || lessons.length) await course.save();
+
+  for (const q of quizzes) {
+    const r = await Quiz.updateOne({ quizId: q.quizId, courseId: course._id }, { $set: { subject: clean(q.subject) } });
+    changed += r.modifiedCount || 0;
+  }
+  for (const t of tasks) {
+    const r = await Task.updateOne({ taskId: t.taskId, courseId: course._id }, { $set: { subject: clean(t.subject) } });
+    changed += r.modifiedCount || 0;
+  }
+
+  return sendSuccess(res, { message: `${changed} item(s) updated.`, data: { slug: course.slug, changed } });
+});
+
+/** The subjects an administrator may choose from. */
+export const adminListSubjects = asyncHandler(async (req, res) => {
+  const { Subject } = await import('../models/Subject.js');
+  const subjects = await Subject.find({ enabled: true }).sort({ order: 1 }).lean();
+  return sendSuccess(res, {
+    data: subjects.map((s) => ({ code: s.code, name: s.name, color: s.color, icon: s.icon })),
+  });
+});
+
+/**
+ * Attendance, pushed from the service that records it.
+ *
+ * Attendance lives in the teacher database and skill/consistency scoring lives
+ * here, so it crosses as events like every other activity rather than as a
+ * second source of truth. Students are matched on the teacher service's
+ * `linkedUserId`, which is the portal account it already holds - never on a
+ * name, and never on an id the caller supplies without one.
+ *
+ * A correction is a NEW event, not an edit. The ledger is append-only, so
+ * marking a student present and later absent for the same session leaves both
+ * facts visible and the engine takes the latest as authoritative - which is
+ * what makes a disputed attendance record answerable.
+ */
+export const adminRecordAttendance = asyncHandler(async (req, res) => {
+  const { recordActivity } = await import('../services/progression/engine.service.js');
+  const { records = [] } = req.body;
+
+  const results = { recorded: 0, duplicate: 0, skipped: 0 };
+
+  for (const r of records) {
+    const user = await User.findById(r.userId).select('_id').lean();
+    if (!user) {
+      // A roster row whose portal account does not exist here is skipped rather
+      // than guessed at; inventing a match would credit the wrong student.
+      results.skipped += 1;
+      continue;
+    }
+
+    const attended = r.status === 'present' || r.status === 'late';
+    const dateKey = new Date(r.date).toISOString().slice(0, 10);
+    // Late is carried as its own status so the configured partial credit
+    // actually applies, rather than being rounded up to full attendance.
+    const eventStatus = r.status === 'present' ? 'ATTENDED' : r.status === 'late' ? 'LATE' : 'MISSED';
+
+    const outcome = await recordActivity({
+      userId: user._id,
+      activityType: attended ? 'CLASS_ATTENDED' : 'CLASS_MISSED',
+      status: eventStatus,
+      // One session, identified the same way on both sides.
+      refId: `${r.classId}:${dateKey}`,
+      courseId: r.courseId || null,
+      subjectCode: r.subjectCode || null,
+      source: 'teacher-bridge',
+      createdBy: r.markedBy || null,
+      occurredAt: new Date(r.date),
+      // The status is part of the key, so a correction is a distinct event
+      // rather than a duplicate that gets silently dropped.
+      attemptId: r.status,
+    });
+
+    if (outcome.duplicate) results.duplicate += 1;
+    else results.recorded += 1;
+  }
+
+  return sendSuccess(res, { message: `${results.recorded} attendance event(s) recorded.`, data: results });
+});
+
 export default {
+  adminRecordAttendance,
+  adminGetCourseContent,
+  adminSetContentSubjects,
+  adminListSubjects,
   adminListCoupons,
   adminCreateCampaign,
   adminListCampaigns,
