@@ -144,7 +144,11 @@ export async function listCourses(query) {
       description: c.description,
       priceInPaise: c.priceInPaise,
       image: c.image,
-      status: c.isPurchasable ? 'APPROVED' : 'ARCHIVED',
+      // Review state and sale state are different axes. A course can be fully
+      // approved and simply not open for enrolment yet - which is exactly what
+      // GARUD and YODDHA are - and calling that ARCHIVED reads as "retired".
+      status: 'APPROVED',
+      isPurchasable: c.isPurchasable,
       instructor: c.instructorName ? { name: c.instructorName, email: null } : null,
       studentCourseId: c.studentCourseId,
       origin: 'student-catalog',
@@ -198,7 +202,8 @@ export async function getCourseById(id) {
       description: found.description,
       priceInPaise: found.priceInPaise,
       image: found.image,
-      status: found.isPurchasable ? 'APPROVED' : 'ARCHIVED',
+      status: 'APPROVED',
+      isPurchasable: found.isPurchasable,
       instructor: found.instructorName ? { name: found.instructorName, email: null } : null,
       studentCourseId: found.studentCourseId,
       origin: 'student-catalog',

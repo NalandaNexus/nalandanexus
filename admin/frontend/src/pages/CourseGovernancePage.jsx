@@ -159,6 +159,16 @@ export default function CourseGovernancePage() {
                       Student catalogue
                     </span>
                   )}
+                  {/* A course can be fully approved and simply not open for
+                      enrolment yet. Saying so beats letting it read as retired. */}
+                  {course.isPurchasable === false && (
+                    <span
+                      className="text-[10px] font-semibold uppercase tracking-wider bg-[#C99A2E]/15 text-[#8a6a1c] border border-[#C99A2E]/30 px-2 py-0.5 rounded"
+                      title="Published, but not yet open for enrolment"
+                    >
+                      Not open yet
+                    </span>
+                  )}
                 </div>
 
                 <p className="text-xs text-[#9B9690]">

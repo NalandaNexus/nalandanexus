@@ -190,6 +190,33 @@ test('an unreachable catalogue degrades rather than emptying the page', async ()
   }
 });
 
+test('a course not yet open for enrolment is approved, not archived', async () => {
+  const { cookie } = await login();
+  const previous = catalogState.body.data;
+  catalogState.body = {
+    success: true,
+    data: [
+      ...previous,
+      { id: '6a84b83a72e6b674a085fa50', slug: 'garud', title: 'GARUD — The Rise', priceInPaise: 0, isPurchasable: false },
+    ],
+  };
+  try {
+    const res = await call('/api/admin/courses', { cookie });
+    const garud = res.body.data.find((c) => c.slug === 'garud');
+
+    // Review state and sale state are different things. Calling an upcoming
+    // stage ARCHIVED reads as retired, which is the opposite of what it is.
+    assert.equal(garud.status, 'APPROVED', 'published content is approved');
+    assert.equal(garud.isPurchasable, false, 'and its sale state is reported separately');
+
+    const detail = await call('/api/admin/courses/student:garud', { cookie });
+    assert.equal(detail.body.data.status, 'APPROVED');
+    assert.equal(detail.body.data.isPurchasable, false);
+  } finally {
+    catalogState.body = { success: true, data: previous };
+  }
+});
+
 test('a soft-deleted course stays out of the merged list', async () => {
   const { cookie } = await login();
   const { Course } = await import('../src/models/Course.js');
