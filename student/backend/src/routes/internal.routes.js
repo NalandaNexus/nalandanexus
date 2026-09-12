@@ -95,6 +95,8 @@ router.patch('/progression/stages/:code', validate(adminStageUpdateSchema), inte
 router.patch('/progression/achievements/:code', validate(adminAchievementUpdateSchema), internalController.adminUpdateAchievement);
 router.post('/progression/recalculate', validate(adminRecalculateSchema), internalController.adminRecalculateProgression);
 router.get('/progression/analytics', internalController.adminProgressionAnalytics);
+// Brings GARUD and YODDHA into existence. Dry run unless { apply: true }.
+router.post('/progression/journey/setup', internalController.adminSetupJourney);
 
 router.post('/progression/students', validate(adminStudentProgressSchema), internalController.adminGetStudentProgress);
 router.get('/progression/students/:userId/activity', validate(adminStudentActivitySchema), internalController.adminGetStudentActivity);

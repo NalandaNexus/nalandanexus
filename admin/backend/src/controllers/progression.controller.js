@@ -96,8 +96,33 @@ export const recalculate = catchAsync(async (req, res) => {
   sendSuccess(res, { message: 'Recalculation complete', data: result });
 });
 
+/**
+ * Brings the GARUD and YODDHA courses into existence.
+ *
+ * Dry run unless explicitly applied, and audit-logged when it is: creating a
+ * course puts something in the public catalogue, which is a decision worth
+ * being able to attribute later.
+ */
+export const setupJourney = catchAsync(async (req, res) => {
+  const apply = req.body?.apply === true;
+  const result = await studentBridge.setupJourney({ apply });
+
+  if (apply) {
+    await recordAuditLog({
+      actor: req.admin,
+      action: 'progression.journey.setup',
+      entityType: 'Course',
+      entityId: 'JOURNEY',
+      metadata: { courses: result?.courses || [], links: result?.links || [] },
+      req,
+    });
+  }
+
+  sendSuccess(res, { message: apply ? 'Journey courses set up' : 'Dry run', data: result });
+});
+
 export const getAnalytics = catchAsync(async (req, res) => {
   sendSuccess(res, { data: await studentBridge.getProgressionAnalytics() });
 });
 
-export default { getRules, updateRules, updateStage, updateAchievement, recalculate, getAnalytics };
+export default { getRules, updateRules, updateStage, updateAchievement, recalculate, setupJourney, getAnalytics };

@@ -1414,7 +1414,29 @@ export const adminProgressionAnalytics = asyncHandler(async (req, res) => {
   });
 });
 
+/**
+ * Creates the journey courses, or reports what it would create.
+ *
+ * Deliberately an explicit action rather than something that happens on first
+ * read like the progression config does. Configuration is invisible until
+ * somebody looks at it; a course appears in the public catalogue, so bringing
+ * one into existence should be a decision an administrator makes and an audit
+ * entry records.
+ *
+ * Defaults to a dry run for the same reason.
+ */
+export const adminSetupJourney = asyncHandler(async (req, res) => {
+  const { setupJourney } = await import('../services/progression/journey.service.js');
+  const result = await setupJourney({ apply: req.body?.apply === true });
+
+  return sendSuccess(res, {
+    message: result.applied ? 'Journey courses are set up.' : 'Dry run - nothing was written.',
+    data: result,
+  });
+});
+
 export default {
+  adminSetupJourney,
   adminGetProgressionRules,
   adminUpdateProgressionRules,
   adminUpdateStage,

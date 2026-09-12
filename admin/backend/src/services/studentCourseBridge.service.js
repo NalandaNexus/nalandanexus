@@ -292,6 +292,14 @@ export async function recalculateProgression(payload) {
   return body?.data || null;
 }
 
+export async function setupJourney(payload) {
+  const body = await couponCall('/api/internal/progression/journey/setup', {
+    method: 'POST',
+    body: JSON.stringify(payload || {}),
+  });
+  return body?.data || null;
+}
+
 export async function getProgressionAnalytics() {
   const body = await couponCall('/api/internal/progression/analytics', { method: 'GET' });
   return body?.data || null;
@@ -358,6 +366,7 @@ export default {
   updateAchievement,
   recalculateProgression,
   getProgressionAnalytics,
+  setupJourney,
   getCourseContent,
   setContentSubjects,
   listSubjects,

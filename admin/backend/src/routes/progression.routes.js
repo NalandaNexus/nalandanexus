@@ -22,6 +22,7 @@ router.put('/rules', requirePermission('settings.manage'), validate({ body: z.re
 router.patch('/stages/:code', requirePermission('settings.manage'), validate({ ...codeParam('code'), body: z.record(z.any()) }), controller.updateStage);
 router.patch('/achievements/:code', requirePermission('settings.manage'), validate({ ...codeParam('code'), body: z.record(z.any()) }), controller.updateAchievement);
 router.post('/recalculate', requirePermission('settings.manage'), validate({ body: z.record(z.any()) }), controller.recalculate);
+router.post('/journey/setup', requirePermission('settings.manage'), validate({ body: z.record(z.any()) }), controller.setupJourney);
 router.get('/analytics', requirePermission('analytics.view'), controller.getAnalytics);
 
 export default router;

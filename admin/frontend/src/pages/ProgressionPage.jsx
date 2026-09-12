@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { SlidersHorizontal, Save, RefreshCw, Info, AlertTriangle } from 'lucide-react';
+import { SlidersHorizontal, Save, RefreshCw, Info, AlertTriangle, Route } from 'lucide-react';
 import { adminApi } from '../services/adminApi';
 
 /**
@@ -45,6 +45,7 @@ export default function ProgressionPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isRecalculating, setIsRecalculating] = useState(false);
+  const [isSettingUpJourney, setIsSettingUpJourney] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
@@ -105,6 +106,32 @@ export default function ProgressionPage() {
       setError(err.message || 'Could not recalculate.');
     } finally {
       setIsRecalculating(false);
+    }
+  };
+
+  /**
+   * Creates the GARUD and YODDHA courses.
+   *
+   * Two steps on purpose: the dry run reports exactly what it would do, and
+   * only a second, deliberate press writes anything. Creating a course puts it
+   * in the public catalogue, which is not something to do by mis-click.
+   */
+  const setupJourney = async (apply) => {
+    setIsSettingUpJourney(true);
+    setError('');
+    setNotice('');
+    try {
+      const result = await adminApi.setupJourney(apply);
+      const lines = [
+        ...(result?.courses || []).map((c) => `${c.slug}: ${c.action} — ${c.detail}`),
+        ...(result?.links || []).map((l) => `${l.stage}: ${l.action} — ${l.detail}`),
+      ];
+      setNotice(`${apply ? 'Applied' : 'Dry run'} — ${lines.join(' · ')}`);
+      if (apply) await load();
+    } catch (err) {
+      setError(err.message || 'Could not set up the journey courses.');
+    } finally {
+      setIsSettingUpJourney(false);
     }
   };
 
@@ -354,6 +381,38 @@ export default function ProgressionPage() {
 
       {tab === 'Stages' && (
         <div className="space-y-4">
+          {/* The stages exist as configuration whether or not their courses do.
+              This is what turns GARUD and YODDHA into real, visible courses. */}
+          <div className="p-4 rounded-xl bg-white border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="min-w-0">
+              <h2 className="text-sm font-bold text-[#22355E] flex items-center gap-1.5">
+                <Route className="w-4 h-4" /> Journey courses
+              </h2>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Creates GARUD and YODDHA as real courses and sets all three to nine months. PRARAMBH is updated in
+                place — its content, price and enrolments are never touched. New courses start not purchasable.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setupJourney(false)}
+                disabled={isSettingUpJourney}
+                className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-sm font-semibold disabled:opacity-50"
+              >
+                Preview
+              </button>
+              <button
+                type="button"
+                onClick={() => setupJourney(true)}
+                disabled={isSettingUpJourney}
+                className="px-4 py-2 rounded-xl bg-[#22355E] hover:bg-[#16233F] text-white text-sm font-semibold disabled:opacity-60"
+              >
+                {isSettingUpJourney ? 'Working…' : 'Apply'}
+              </button>
+            </div>
+          </div>
+
           {(data.stages || []).map((stage) => (
             <StageCard key={stage.code} stage={stage} subjects={subjects} onSave={saveStage} disabled={isSaving} />
           ))}

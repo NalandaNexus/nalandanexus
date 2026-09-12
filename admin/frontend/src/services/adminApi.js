@@ -353,6 +353,11 @@ export const adminApi = {
     return json.data;
   },
 
+  async setupJourney(apply = false) {
+    const json = await request('/progression/journey/setup', { method: 'POST', body: { apply } });
+    return json.data;
+  },
+
   async getProgressionAnalytics() {
     const json = await request('/progression/analytics');
     return json.data || null;
