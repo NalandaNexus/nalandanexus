@@ -7,15 +7,27 @@ import { emitEvent } from '../sockets/index.js';
  * request/response flow — a logging failure must not fail the underlying
  * admin action. Never pass passwords/tokens/secrets in `metadata`.
  */
-export async function recordAuditLog({ actor, action, entityType, entityId, metadata, result = 'SUCCESS', req }) {
+/** True for the 24-hex form Mongoose can cast; false for a slug or a code. */
+function isObjectId(value) {
+  return typeof value === 'string' ? /^[0-9a-fA-F]{24}$/.test(value) : Boolean(value?._bsontype || value?.toHexString);
+}
+
+export async function recordAuditLog({ actor, action, entityType, entityId, entityRef, metadata, result = 'SUCCESS', req }) {
   try {
+    // Callers pass whatever identifies the thing they changed. Routing a
+    // non-ObjectId to entityRef means a slug or a stage code is recorded rather
+    // than failing the cast and being swallowed by the catch below.
+    const id = isObjectId(entityId) ? entityId : undefined;
+    const ref = entityRef || (id ? undefined : entityId != null ? String(entityId) : undefined);
+
     const entry = await AuditLog.create({
       actor: actor?._id || actor?.id,
       actorName: actor?.name,
       actorRole: actor?.role,
       action,
       entityType,
-      entityId,
+      entityId: id,
+      entityRef: ref,
       metadata,
       result,
       ip: req?.ip,
