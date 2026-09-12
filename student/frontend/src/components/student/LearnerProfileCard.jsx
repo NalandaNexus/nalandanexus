@@ -1,5 +1,6 @@
 import React from 'react';
-import { Flame, Trophy, Lock, CheckCircle2, Award } from 'lucide-react';
+import { Flame, Trophy, Lock, Award } from 'lucide-react';
+import RequirementList from './RequirementList';
 
 /**
  * The Digital Learner Profile.
@@ -182,34 +183,24 @@ export default function LearnerProfileCard({ data, loading = false }) {
             </h3>
             <span
               className={`text-[10px] font-heading font-bold px-2 py-0.5 rounded ${
-                nextStage.eligible ? 'bg-[#5C7A5E]/12 text-[#5C7A5E]' : 'bg-[#2B2B28]/8 text-[#2B2B28]/60'
+                nextStage.eligible
+                  ? 'bg-[#5C7A5E]/12 text-[#5C7A5E]'
+                  : nextStage.status === 'NOT_CONFIGURED'
+                    ? 'bg-[#B8860B]/12 text-[#B8860B]'
+                    : 'bg-[#2B2B28]/8 text-[#2B2B28]/60'
               }`}
             >
-              {nextStage.eligible ? 'UNLOCKED' : 'LOCKED'}
+              {nextStage.eligible ? 'UNLOCKED' : nextStage.status === 'NOT_CONFIGURED' ? 'NOT OPEN YET' : 'LOCKED'}
             </span>
           </div>
 
-          {nextStage.checks?.length ? (
-            // The requirement list, met and unmet alike. A locked stage that
-            // cannot say what it wants is just a wall.
-            <ul className="space-y-1.5">
-              {nextStage.checks.map((c) => (
-                <li key={c.key} className="flex items-center gap-2 text-xs">
-                  {c.met ? (
-                    <CheckCircle2 className="w-3.5 h-3.5 text-[#5C7A5E] shrink-0" />
-                  ) : (
-                    <span className="w-3.5 h-3.5 rounded-full border-2 border-[#2B2B28]/20 shrink-0" />
-                  )}
-                  <span className={`min-w-0 truncate ${c.met ? 'text-[#2B2B28]/60' : 'text-[#2B2B28]'}`}>{c.label}</span>
-                  <span className="ml-auto font-data tabular-nums text-[11px] text-[#2B2B28]/60 shrink-0">
-                    {Math.round(c.actual)} / {Math.round(c.required)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-xs text-[#2B2B28]/50">Requirements for this stage have not been set yet.</p>
-          )}
+          {/* The criteria, met and unmet alike. A locked stage that cannot say
+              what it wants is just a wall. */}
+          <RequirementList
+            requirements={nextStage.requirements}
+            status={nextStage.status}
+            emptyHint="No criteria to show for this stage."
+          />
         </div>
       )}
     </section>

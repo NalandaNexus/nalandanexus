@@ -100,15 +100,28 @@ const studentProfileSchema = new Schema(
             {
               stageCode: { type: String, required: true, uppercase: true, trim: true },
               eligible: { type: Boolean, default: false },
-              checks: {
+              // NOT_CONFIGURED is meaningfully different from NOT_ELIGIBLE: one
+              // means nobody has published criteria, the other that the student
+              // has not met them.
+              status: { type: String, default: 'NOT_CONFIGURED' },
+              // Which published rule produced this verdict, so a dispute can be
+              // traced to the criteria that were live at the time.
+              version: { type: Number, default: null },
+              requirements: {
                 type: [
                   new Schema(
                     {
                       key: { type: String, required: true },
-                      label: { type: String, required: true },
+                      metric: { type: String, default: null },
+                      name: { type: String, required: true },
+                      operator: { type: String, default: '>=' },
                       required: { type: Number, default: 0 },
-                      actual: { type: Number, default: 0 },
-                      met: { type: Boolean, default: false },
+                      // Null where the platform has no authoritative figure -
+                      // attendance with no recorded classes, for instance.
+                      actual: { type: Number, default: null },
+                      unit: { type: String, default: '' },
+                      passed: { type: Boolean, default: false },
+                      status: { type: String, default: 'FAILED' },
                     },
                     { _id: false }
                   ),

@@ -73,21 +73,23 @@ export async function evaluateStageAccess(userId, course) {
 
   await rebuildSnapshot(userId);
   const profile = await StudentProfile.findOne({ userId }).lean();
-  const verdict = (profile?.progression?.eligibility || []).find((e) => e.stageCode === previous.code);
+  // This stage's own verdict - produced by the published rule that targets it.
+  const verdict = (profile?.progression?.eligibility || []).find((e) => e.stageCode === stage.code);
 
   if (verdict?.eligible) {
-    return { allowed: true, reason: 'PRIOR_STAGE_COMPLETE', stage, previousStage: previous };
+    return { allowed: true, reason: 'ELIGIBLE', stage, previousStage: previous };
   }
 
   return {
     allowed: false,
-    reason: 'PRIOR_STAGE_INCOMPLETE',
+    // An unconfigured transition is refused for a different reason than an
+    // unmet one, and the message a student sees should say which.
+    reason: verdict?.status === 'NOT_CONFIGURED' ? 'NOT_CONFIGURED' : 'REQUIREMENTS_NOT_MET',
     stage,
     previousStage: previous,
-    // The individual checks, so a refusal can say what is outstanding rather
-    // than only that the answer is no.
-    unmet: (verdict?.checks || []).filter((c) => !c.met),
-    checks: verdict?.checks || [],
+    status: verdict?.status || 'NOT_CONFIGURED',
+    unmet: (verdict?.requirements || []).filter((r) => !r.passed),
+    requirements: verdict?.requirements || [],
   };
 }
 
@@ -96,11 +98,22 @@ export async function assertStageAccessible(userId, course) {
   const result = await evaluateStageAccess(userId, course);
   if (result.allowed) return result;
 
-  const outstanding = result.unmet.map((c) => `${c.label} (${Math.round(c.actual)}/${Math.round(c.required)})`);
+  if (result.reason === 'NOT_CONFIGURED') {
+    throw AppError.forbidden(
+      `${result.stage.name} is not open yet - its entry requirements have not been published.`,
+      'STAGE_NOT_CONFIGURED'
+    );
+  }
+
+  const outstanding = result.unmet.map((r) =>
+    r.status === 'DATA_REQUIRED'
+      ? `${r.name} (no data yet)`
+      : `${r.name} (${Math.round(r.actual ?? 0)}/${Math.round(r.required)}${r.unit || ''})`
+  );
   throw AppError.forbidden(
     outstanding.length
-      ? `${result.stage.name} unlocks when you finish ${result.previousStage.name}. Still needed: ${outstanding.join(', ')}.`
-      : `${result.stage.name} unlocks when you finish ${result.previousStage.name}.`,
+      ? `${result.stage.name} unlocks when you meet its requirements. Still needed: ${outstanding.join(', ')}.`
+      : `${result.stage.name} is not unlocked yet.`,
     'STAGE_LOCKED'
   );
 }

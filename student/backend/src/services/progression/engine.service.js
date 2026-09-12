@@ -369,7 +369,12 @@ export async function rebuildSnapshot(userId) {
   // verdict is computed from a profile re-read after that.
   const fresh = unlocked.length ? await StudentProfile.findOne({ userId }) : profile;
   fresh.progression.achievementsUnlocked = await StudentAchievement.countDocuments({ userId });
-  fresh.progression.eligibility = await evaluateEligibility(userId, fresh, stages, stageLessons);
+  fresh.progression.eligibility = await evaluateEligibility(userId, fresh, stages, {
+    ...stageLessons,
+    // The current stage's progress, keyed so a rule about the PREVIOUS stage
+    // can read it whichever stage the student is standing on.
+    progressByStage: { [currentStage?.code || '']: stageProgressPercent },
+  });
   await fresh.save();
 
   return { profile: fresh, achievementsUnlocked: unlocked };
@@ -487,58 +492,71 @@ function meetsCriterion(def, { snapshot, profile, events, subjectCodes, skillFor
 /**
  * Works out, per stage, whether the student may move on - and if not, why.
  *
- * Returns every check with its required and actual value, met or not. The
- * student screen renders that list directly, which is the difference between
- * "GARUD is locked" and "your Cybersecurity score is 61, you need 70".
+ * The criteria come from the PUBLISHED eligibility rule for each transition,
+ * built by an administrator. A transition with no published rule is reported as
+ * NOT_CONFIGURED and is not passable: silence is not consent, and inventing
+ * thresholds would be worse than saying nobody has set any.
  *
- * Only the stage AFTER the student's current one is meaningful to evaluate, but
- * all are returned so an administrator can see the whole ladder.
+ * Read-only. Evaluating eligibility awards no XP, unlocks no achievement and
+ * moves no score - which is what makes it safe to run on every snapshot rebuild
+ * and in an administrator's preview against a real student.
  */
 export async function evaluateEligibility(userId, profile, stages, stageLessons) {
-  const snapshot = profile.progression || {};
-  const skillFor = (code) => (snapshot.skills || []).find((s) => s.subjectCode === code)?.score ?? 0;
-  const unlockedCodes = new Set(
-    (await StudentAchievement.find({ userId }).select('achievementCode').lean()).map((a) => a.achievementCode)
+  const { getPublishedRule, evaluateStageEligibility, buildEvaluationContext, buildStudentContext } = await import(
+    './eligibility.service.js'
   );
 
+  const ordered = [...stages].sort((a, b) => a.order - b.order);
+  const snapshot = profile.progression || {};
+
+  const [referenceContext, studentContext] = await Promise.all([
+    buildEvaluationContext(),
+    buildStudentContext(userId, await courseIdForStage(ordered.find((s) => s.code === snapshot.currentStageCode))),
+  ]);
+  const context = { ...referenceContext, ...studentContext };
+
   const results = [];
-  for (const stage of stages) {
-    const req = stage.requirements || {};
-    const checks = [];
-    const add = (key, label, required, actual) =>
-      checks.push({ key, label, required, actual, met: actual >= required });
+  for (const [index, stage] of ordered.entries()) {
+    const previous = index > 0 ? ordered[index - 1] : null;
 
-    if (req.minStageProgress > 0) add('stageProgress', 'Stage progress', req.minStageProgress, snapshot.stageProgress || 0);
-    if (req.minXP > 0) add('xp', 'Total XP', req.minXP, profile.xp || 0);
-    if (req.minAttendance > 0) add('attendance', 'Attendance', req.minAttendance, snapshot.attendanceScore || 0);
-    if (req.minKnowledge > 0) add('knowledge', 'Knowledge score', req.minKnowledge, snapshot.knowledgeScore || 0);
-    if (req.minConsistency > 0) add('consistency', 'Consistency', req.minConsistency, snapshot.consistencyScore || 0);
-    if (req.minOverallPower > 0) add('overallPower', 'Overall power', req.minOverallPower, snapshot.overallPower || 0);
-
-    for (const s of req.subjects || []) {
-      if (!s.required) continue;
-      add(`subject:${s.subjectCode}`, `${s.subjectCode} score`, s.minScore, skillFor(s.subjectCode));
+    // The first stage has nothing before it, so there is nothing to evaluate -
+    // it is where everyone starts.
+    if (!previous) {
+      results.push({ stageCode: stage.code, eligible: true, status: 'STARTING_STAGE', version: null, requirements: [], evaluatedAt: new Date() });
+      continue;
     }
 
-    for (const code of req.requiredAchievements || []) {
-      checks.push({ key: `achievement:${code}`, label: `Achievement: ${code}`, required: 1, actual: unlockedCodes.has(code) ? 1 : 0, met: unlockedCodes.has(code) });
-    }
-
-    if (req.requireAllLessons && stageLessons?.lessonsAvailable > 0) {
-      add('lessons', 'Lessons completed', stageLessons.lessonsAvailable, stageLessons.lessonsCompleted);
-    }
+    const rule = await getPublishedRule(stage.code);
+    const verdict = await evaluateStageEligibility({
+      profile,
+      previousStage: {
+        code: previous.code,
+        name: previous.name,
+        // How far through the stage being left the student actually is.
+        progress: previous.code === snapshot.currentStageCode ? snapshot.stageProgress || 0 : stageLessons?.progressByStage?.[previous.code] ?? 0,
+      },
+      targetStageCode: stage.code,
+      rule,
+      context,
+    });
 
     results.push({
       stageCode: stage.code,
-      // A stage with no configured requirements is not "automatically passed" -
-      // it is unevaluated, and treating that as eligible would hand out the next
-      // stage for free the moment an administrator cleared a field.
-      eligible: checks.length > 0 && checks.every((c) => c.met),
-      checks,
+      eligible: verdict.eligible,
+      status: verdict.status,
+      version: verdict.version,
+      requirements: verdict.requirements,
       evaluatedAt: new Date(),
     });
   }
   return results;
+}
+
+/** The course a stage teaches, used to scope activity-based metrics. */
+async function courseIdForStage(stage) {
+  if (!stage?.courseSlug) return null;
+  const course = await Course.findOne({ slug: stage.courseSlug }).select('_id').lean();
+  return course?._id || null;
 }
 
 /** Admin-triggered full rebuild. Students can never reach this. */

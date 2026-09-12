@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import * as internalController from '../controllers/internal.controller.js';
+import * as eligibilityController from '../controllers/eligibilityAdmin.controller.js';
 import { requireInternalServiceKey } from '../middleware/internalService.js';
 import { validate } from '../middleware/validate.js';
 import {
@@ -95,6 +96,17 @@ router.patch('/progression/stages/:code', validate(adminStageUpdateSchema), inte
 router.patch('/progression/achievements/:code', validate(adminAchievementUpdateSchema), internalController.adminUpdateAchievement);
 router.post('/progression/recalculate', validate(adminRecalculateSchema), internalController.adminRecalculateProgression);
 router.get('/progression/analytics', internalController.adminProgressionAnalytics);
+
+// Stage eligibility: the criteria an administrator publishes for each
+// transition. A draft affects nobody; only a published rule decides anything.
+router.get('/progression/eligibility', eligibilityController.listEligibility);
+router.get('/progression/eligibility/:stage', eligibilityController.getEligibility);
+router.put('/progression/eligibility/:stage/draft', eligibilityController.saveDraft);
+router.post('/progression/eligibility/:stage/validate', eligibilityController.validateDraft);
+router.post('/progression/eligibility/:stage/publish', eligibilityController.publishRule);
+router.post('/progression/eligibility/:stage/disable', eligibilityController.disableRule);
+router.post('/progression/eligibility/preview', eligibilityController.previewEligibility);
+router.get('/progression/student-eligibility', eligibilityController.studentEligibilityOverview);
 // Brings GARUD and YODDHA into existence. Dry run unless { apply: true }.
 router.post('/progression/journey/setup', internalController.adminSetupJourney);
 

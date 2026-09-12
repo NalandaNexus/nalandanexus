@@ -177,3 +177,51 @@ test('SUPER_ADMIN holds settings.manage and passes the gate', async () => {
   assert.notEqual(res.status, 401);
   assert.notEqual(res.status, 403);
 });
+
+/**
+ * Stage eligibility decides who may buy the next course, so configuring it sits
+ * behind settings.manage like the rest of the progression control centre.
+ */
+const ELIGIBILITY_ROUTES = [
+  { name: 'list', method: 'GET', path: '/api/admin/progression/eligibility' },
+  { name: 'read one', method: 'GET', path: '/api/admin/progression/eligibility/GARUD' },
+  { name: 'save draft', method: 'PUT', path: '/api/admin/progression/eligibility/GARUD/draft', body: { rootGroup: { logic: 'ALL', requirements: [] } } },
+  { name: 'validate', method: 'POST', path: '/api/admin/progression/eligibility/GARUD/validate', body: {} },
+  { name: 'publish', method: 'POST', path: '/api/admin/progression/eligibility/GARUD/publish', body: {} },
+  { name: 'disable', method: 'POST', path: '/api/admin/progression/eligibility/GARUD/disable', body: {} },
+  { name: 'preview', method: 'POST', path: '/api/admin/progression/eligibility/preview', body: {} },
+];
+
+test('eligibility configuration answers nobody without a session', async () => {
+  for (const route of ELIGIBILITY_ROUTES) {
+    const res = await call(route.path, { method: route.method, body: route.body });
+    assert.equal(res.status, 401, `${route.name} must demand authentication`);
+  }
+});
+
+test('a signed-in STAFF admin cannot read or change eligibility rules', async () => {
+  const { cookie, status } = await login('staff@test.local');
+  assert.equal(status, 200, 'the STAFF account must genuinely log in, or this proves nothing');
+
+  for (const route of ELIGIBILITY_ROUTES) {
+    const res = await call(route.path, { method: route.method, body: route.body, cookie });
+    assert.equal(res.status, 403, `${route.name} must be forbidden for STAFF`);
+  }
+
+  // The student overview is deliberately a different permission. It is a
+  // reporting view behind analytics.view, which STAFF DOES hold alongside
+  // students.read - seeing who is progressing is part of that role, while
+  // deciding the criteria is not.
+  const overview = await call('/api/admin/progression/student-eligibility', { cookie });
+  assert.notEqual(overview.status, 403, 'STAFF may read the overview');
+  assert.notEqual(overview.status, 401);
+});
+
+test('SUPER_ADMIN holds both permissions and passes both gates', async () => {
+  const { cookie } = await login('super@test.local');
+  for (const path of ['/api/admin/progression/eligibility', '/api/admin/progression/student-eligibility']) {
+    const res = await call(path, { cookie });
+    assert.notEqual(res.status, 401, path);
+    assert.notEqual(res.status, 403, path);
+  }
+});

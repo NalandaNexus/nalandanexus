@@ -119,6 +119,39 @@ async function newLearner(label) {
   return { ...student, userId };
 }
 
+let StageEligibilityRule;
+
+/**
+ * Publishes a rule the way an administrator would, so the tests exercise the
+ * same path production does rather than writing a verdict directly.
+ */
+async function publishEligibilityRule(targetStageCode, previousStageCode, requirements, { logic = 'ALL', groups = [] } = {}) {
+  if (!StageEligibilityRule) ({ StageEligibilityRule } = await import('../src/models/StageEligibilityRule.js'));
+  await StageEligibilityRule.deleteMany({ targetStageCode });
+  return StageEligibilityRule.create({
+    targetStageCode,
+    previousStageCode,
+    version: 1,
+    status: 'PUBLISHED',
+    publishedAt: new Date(),
+    rootGroup: { logic, requirements: requirements.map((r, i) => ({ key: `r${i}`, enabled: true, ...r })) },
+    groups,
+  });
+}
+
+async function clearEligibilityRulesFor(targetStageCode) {
+  if (!StageEligibilityRule) ({ StageEligibilityRule } = await import('../src/models/StageEligibilityRule.js'));
+  await StageEligibilityRule.deleteMany({ targetStageCode });
+}
+
+async function clearEligibilityRules() {
+  if (!StageEligibilityRule) ({ StageEligibilityRule } = await import('../src/models/StageEligibilityRule.js'));
+  await StageEligibilityRule.deleteMany({});
+}
+
+const requirementFor = (verdict, metric, subjectCode = null) =>
+  (verdict?.requirements || []).find((r) => r.metric === metric && (!subjectCode || r.name));
+
 const skill = (profile, code) => (profile.progression.skills || []).find((s) => s.subjectCode === code)?.score ?? 0;
 
 // --- The scenario the subject-tagging decision specifies --------------------
@@ -336,45 +369,38 @@ test('an achievement unlocks once, however many times its criterion is met', asy
 test('eligibility reports each unmet requirement rather than a bare no', async () => {
   const learner = await newLearner('eligibility');
 
-  await Stage.updateOne(
-    { code: 'PRARAMBH' },
-    {
-      $set: {
-        'requirements.minXP': 5000,
-        'requirements.minStageProgress': 100,
-        'requirements.subjects': [
-          { subjectCode: 'ENGLISH', minScore: 70, required: true },
-          { subjectCode: 'CYBERSECURITY', minScore: 70, required: true },
-        ],
-      },
-    }
-  );
+  await publishEligibilityRule('GARUD', 'PRARAMBH', [
+    { metric: 'XP', operator: 'GTE', value: 5000 },
+    { metric: 'SUBJECT_SCORE', operator: 'GTE', value: 70, subjectCode: 'ENGLISH' },
+    { metric: 'SUBJECT_SCORE', operator: 'GTE', value: 70, subjectCode: 'CYBERSECURITY' },
+  ]);
 
   const { profile } = await engine.recordActivity({
     userId: learner.userId, activityType: 'LECTURE_COMPLETED', status: 'COMPLETED',
     refId: 'l-eng-1', courseId: course._id, subjectCode: 'ENGLISH',
   });
 
-  const verdict = profile.progression.eligibility.find((e) => e.stageCode === 'PRARAMBH');
+  const verdict = profile.progression.eligibility.find((e) => e.stageCode === 'GARUD');
   assert.equal(verdict.eligible, false);
+  assert.equal(verdict.status, 'NOT_ELIGIBLE');
+  assert.equal(verdict.version, 1, 'the verdict records which rule produced it');
 
-  const xpCheck = verdict.checks.find((c) => c.key === 'xp');
-  assert.equal(xpCheck.required, 5000);
-  assert.ok(xpCheck.actual < 5000);
-  assert.equal(xpCheck.met, false);
+  const xp = verdict.requirements.find((r) => r.metric === 'XP');
+  assert.equal(xp.required, 5000);
+  assert.ok(xp.actual < 5000);
+  assert.equal(xp.passed, false);
+  assert.equal(xp.operator, '>=', 'the operator is reported, not assumed by the UI');
 
-  const cyber = verdict.checks.find((c) => c.key === 'subject:CYBERSECURITY');
+  const cyber = verdict.requirements.filter((r) => r.metric === 'SUBJECT_SCORE').find((r) => r.name.match(/Cyber/i));
   assert.equal(cyber.required, 70, 'the student can be told exactly what is missing');
-  assert.equal(cyber.met, false);
+  assert.equal(cyber.passed, false);
 });
 
-test('a stage with no configured requirements is not silently passed', async () => {
-  const learner = await newLearner('no-reqs');
-
-  await Stage.updateOne(
-    { code: 'GARUD' },
-    { $set: { requirements: { minStageProgress: 0, minXP: 0, minAttendance: 0, minKnowledge: 0, minConsistency: 0, minOverallPower: 0, subjects: [], requiredAchievements: [], requireAllLessons: false } } }
-  );
+test('a transition with no published rule is not passable', async () => {
+  // The safety property: silence is not consent. An administrator who has not
+  // configured a stage has not thereby opened it.
+  const learner = await newLearner('unconfigured');
+  await clearEligibilityRules();
 
   const { profile } = await engine.recordActivity({
     userId: learner.userId, activityType: 'LECTURE_COMPLETED', status: 'COMPLETED',
@@ -382,7 +408,37 @@ test('a stage with no configured requirements is not silently passed', async () 
   });
 
   const garud = profile.progression.eligibility.find((e) => e.stageCode === 'GARUD');
-  assert.equal(garud.eligible, false, 'clearing every field must not hand out the next stage for free');
+  assert.equal(garud.eligible, false);
+  assert.equal(garud.status, 'NOT_CONFIGURED', 'and says why, rather than looking like a failed check');
+  assert.deepEqual(garud.requirements, []);
+});
+
+test('a draft rule changes nothing for a live student', async () => {
+  const learner = await newLearner('draft-inert');
+  if (!StageEligibilityRule) ({ StageEligibilityRule } = await import('../src/models/StageEligibilityRule.js'));
+
+  await publishEligibilityRule('GARUD', 'PRARAMBH', [{ metric: 'XP', operator: 'GTE', value: 5 }]);
+  await engine.recordActivity({
+    userId: learner.userId, activityType: 'LECTURE_COMPLETED', status: 'COMPLETED',
+    refId: 'l-eng-1', courseId: course._id, subjectCode: 'ENGLISH',
+  });
+
+  let snap = await engine.rebuildSnapshot(learner.userId);
+  let garud = snap.profile.progression.eligibility.find((e) => e.stageCode === 'GARUD');
+  assert.equal(garud.eligible, true, 'the published rule is satisfied');
+
+  // A draft demanding far more sits alongside it and must not bite.
+  await StageEligibilityRule.create({
+    targetStageCode: 'GARUD', previousStageCode: 'PRARAMBH', version: 2, status: 'DRAFT',
+    rootGroup: { logic: 'ALL', requirements: [{ key: 'r0', metric: 'XP', operator: 'GTE', value: 999999, enabled: true }] },
+  });
+
+  snap = await engine.rebuildSnapshot(learner.userId);
+  garud = snap.profile.progression.eligibility.find((e) => e.stageCode === 'GARUD');
+  assert.equal(garud.eligible, true, 'a draft affects nobody until it is published');
+  assert.equal(garud.version, 1, 'the published version is still the one in force');
+
+  await StageEligibilityRule.deleteMany({ targetStageCode: 'GARUD', status: 'DRAFT' });
 });
 
 // --- The snapshot is a cache, and says so ----------------------------------
@@ -791,16 +847,19 @@ test('the journey courses exist and carry a real duration', async () => {
   assert.equal(endsAt.toISOString().slice(0, 10), '2026-10-15', 'nine months after the start');
 });
 
-test('a stage beyond the first is refused until the one before it is complete', async () => {
+test('a stage beyond the first is refused until its requirements are met', async () => {
   const learner = await newLearner('locked');
   const { assertStageAccessible, evaluateStageAccess } = await import('../src/services/progression/access.service.js');
 
-  await Stage.updateOne({ code: 'PRARAMBH' }, { $set: { 'requirements.minStageProgress': 100, 'requirements.minXP': 5000 } });
+  await publishEligibilityRule('GARUD', 'PRARAMBH', [
+    { metric: 'PREVIOUS_STAGE_COMPLETION', operator: 'GTE', value: 100 },
+    { metric: 'XP', operator: 'GTE', value: 5000 },
+  ]);
   await engine.rebuildSnapshot(learner.userId);
 
   const verdict = await evaluateStageAccess(learner.userId, garud);
   assert.equal(verdict.allowed, false);
-  assert.equal(verdict.reason, 'PRIOR_STAGE_INCOMPLETE');
+  assert.equal(verdict.reason, 'REQUIREMENTS_NOT_MET');
   assert.ok(verdict.unmet.length > 0, 'and it can say what is outstanding');
 
   await assert.rejects(
@@ -808,6 +867,25 @@ test('a stage beyond the first is refused until the one before it is complete', 
     (err) => {
       assert.equal(err.code, 'STAGE_LOCKED');
       assert.match(err.message, /GARUD/);
+      return true;
+    }
+  );
+});
+
+test('a stage with no published rule is refused for a different, stated reason', async () => {
+  const learner = await newLearner('unconfigured-access');
+  const { assertStageAccessible, evaluateStageAccess } = await import('../src/services/progression/access.service.js');
+  await clearEligibilityRules();
+  await engine.rebuildSnapshot(learner.userId);
+
+  const verdict = await evaluateStageAccess(learner.userId, garud);
+  assert.equal(verdict.allowed, false);
+  assert.equal(verdict.reason, 'NOT_CONFIGURED', 'not the same as failing a requirement');
+
+  await assert.rejects(
+    () => assertStageAccessible(learner.userId, garud),
+    (err) => {
+      assert.equal(err.code, 'STAGE_NOT_CONFIGURED');
       return true;
     }
   );
@@ -842,6 +920,11 @@ test('a locked stage cannot be reached by enrolling directly', async () => {
   const learner = await newLearner('bypass');
   const { createEnrollment } = await import('../src/services/enrollment.service.js');
 
+  // A published rule this student cannot meet - so the refusal under test is a
+  // locked stage, not an unconfigured one.
+  await publishEligibilityRule('GARUD', 'PRARAMBH', [{ metric: 'XP', operator: 'GTE', value: 999999 }]);
+  await engine.rebuildSnapshot(learner.userId);
+
   await assert.rejects(
     () => createEnrollment({ userId: learner.userId, courseId: garud._id, course: garud }),
     (err) => {
@@ -852,38 +935,39 @@ test('a locked stage cannot be reached by enrolling directly', async () => {
   assert.equal(await Enrollment.countDocuments({ userId: learner.userId, courseId: garud._id }), 0);
 });
 
-test('completing a stage unlocks the next one and no further', async () => {
+test('meeting a published rule unlocks that stage and no further', async () => {
   const learner = await newLearner('chain');
   const { createEnrollment } = await import('../src/services/enrollment.service.js');
   const { evaluateStageAccess } = await import('../src/services/progression/access.service.js');
 
-  // A requirement the test can actually satisfy, set the way an administrator
-  // would rather than by writing the verdict directly.
-  await Stage.updateOne({ code: 'PRARAMBH' }, { $set: { 'requirements.minStageProgress': 0, 'requirements.minXP': 10, 'requirements.subjects': [] } });
-  await Stage.updateOne({ code: 'GARUD' }, { $set: { 'requirements.minStageProgress': 0, 'requirements.minXP': 100000, 'requirements.subjects': [] } });
+  // Reachable for GARUD, deliberately out of reach for YODDHA.
+  await publishEligibilityRule('GARUD', 'PRARAMBH', [{ metric: 'XP', operator: 'GTE', value: 5 }]);
+  await publishEligibilityRule('YODDHA', 'GARUD', [{ metric: 'XP', operator: 'GTE', value: 100000 }]);
 
   await engine.recordActivity({
     userId: learner.userId, activityType: 'LECTURE_COMPLETED', status: 'COMPLETED',
     refId: 'l-eng-1', courseId: course._id, subjectCode: 'ENGLISH',
   });
 
-  // PRARAMBH is now satisfied, so GARUD opens.
   const toGarud = await evaluateStageAccess(learner.userId, garud);
-  assert.equal(toGarud.allowed, true, 'GARUD unlocked by finishing PRARAMBH');
+  assert.equal(toGarud.allowed, true, 'GARUD unlocked by meeting its published rule');
 
   const enrolment = await createEnrollment({ userId: learner.userId, courseId: garud._id, course: garud });
   assert.ok(enrolment, 'and the enrolment goes through');
   assert.ok(enrolment.endsAt, 'with a computed end date');
 
-  // YODDHA must stay shut - the GARUD requirement is deliberately out of reach.
   const toYoddha = await evaluateStageAccess(learner.userId, yoddha);
   assert.equal(toYoddha.allowed, false, 'YODDHA is not unlocked by reaching GARUD');
-  assert.equal(toYoddha.reason, 'PRIOR_STAGE_INCOMPLETE');
+  assert.equal(toYoddha.reason, 'REQUIREMENTS_NOT_MET');
 });
 
-test('the journey reports a state for every stage', async () => {
+test('the journey reports a state and a reason for every stage', async () => {
   const learner = await newLearner('journey-view');
-  await Stage.updateOne({ code: 'PRARAMBH' }, { $set: { 'requirements.minStageProgress': 100, 'requirements.minXP': 5000 } });
+  await publishEligibilityRule('GARUD', 'PRARAMBH', [
+    { metric: 'PREVIOUS_STAGE_COMPLETION', operator: 'GTE', value: 100 },
+    { metric: 'XP', operator: 'GTE', value: 5000 },
+  ]);
+  await clearEligibilityRulesFor('YODDHA');
 
   await engine.recordActivity({
     userId: learner.userId, activityType: 'LECTURE_COMPLETED', status: 'COMPLETED',
@@ -904,10 +988,13 @@ test('the journey reports a state for every stage', async () => {
 
   const garudView = journey[1];
   assert.equal(garudView.state, 'LOCKED');
+  assert.equal(garudView.eligibilityStatus, 'NOT_ELIGIBLE');
   assert.ok(garudView.requirements.length > 0, 'and says what would unlock it');
-  assert.equal(garudView.unlocksAfter.code, 'PRARAMBH');
+  assert.ok(garudView.requirements.some((r) => !r.passed));
 
+  // YODDHA has no published rule, which is a different kind of locked.
   assert.equal(journey[2].state, 'LOCKED');
+  assert.equal(journey[2].eligibilityStatus, 'NOT_CONFIGURED');
 });
 
 test('existing enrolments are untouched by a course duration change', async () => {

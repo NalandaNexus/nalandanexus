@@ -325,6 +325,49 @@ export const adminApi = {
     return json.data || { campaign: null, coupons: [] };
   },
 
+  // ── Stage eligibility ─────────────────────────────────────────────────
+  // The criteria that gate each stage. Nothing is evaluated on this side - the
+  // builder posts a rule and the backend answers with a verdict.
+  async listStageEligibility() {
+    const json = await request('/progression/eligibility');
+    return json.data || [];
+  },
+
+  async getStageEligibility(stage) {
+    const json = await request(`/progression/eligibility/${encodeURIComponent(stage)}`);
+    return json.data || null;
+  },
+
+  async saveStageEligibilityDraft(stage, payload) {
+    const json = await request(`/progression/eligibility/${encodeURIComponent(stage)}/draft`, { method: 'PUT', body: payload });
+    return json.data;
+  },
+
+  async validateStageEligibility(stage, payload) {
+    const json = await request(`/progression/eligibility/${encodeURIComponent(stage)}/validate`, { method: 'POST', body: payload });
+    return json.data;
+  },
+
+  async publishStageEligibility(stage) {
+    const json = await request(`/progression/eligibility/${encodeURIComponent(stage)}/publish`, { method: 'POST', body: {} });
+    return json.data;
+  },
+
+  async disableStageEligibility(stage) {
+    const json = await request(`/progression/eligibility/${encodeURIComponent(stage)}/disable`, { method: 'POST', body: {} });
+    return json.data;
+  },
+
+  async previewStageEligibility(payload) {
+    const json = await request('/progression/eligibility/preview', { method: 'POST', body: payload });
+    return json.data;
+  },
+
+  async getStudentEligibility(params = {}) {
+    const json = await request('/progression/student-eligibility', { query: params });
+    return { rows: json.data || [], meta: json.meta || {} };
+  },
+
   // ── Progression control centre ────────────────────────────────────────
   // The rules the engine applies. Read and written here; never calculated on
   // this side.

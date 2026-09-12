@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Activity, AlertTriangle, TrendingUp, Clock, CheckCircle2, ChevronRight, X } from 'lucide-react';
+import { Activity, AlertTriangle, TrendingUp, Clock, CheckCircle2, ChevronRight, X, Lock, HelpCircle, CircleDashed } from 'lucide-react';
 import { teacherApiService } from '../services/teacherApiService';
 
 /**
@@ -62,6 +62,81 @@ function FlagChips({ flags }) {
         <span key={label} className={`text-[10px] px-1.5 py-0.5 rounded ${cls}`}>
           {label}
         </span>
+      ))}
+    </div>
+  );
+}
+
+/** Null means the platform holds no figure, which is never the same as zero. */
+function reqValue(value, unit) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return '—';
+  return `${Math.round(Number(value) * 10) / 10}${unit || ''}`;
+}
+
+/**
+ * What a stage is still waiting on, exactly as the engine decided it.
+ *
+ * Read-only in the strongest sense: nothing here recomputes a verdict, and
+ * there is no route on this portal that writes one. A teacher who could see a
+ * different answer from the student would be worse than a teacher who sees
+ * nothing, because both would act on it.
+ */
+function EligibilityPanel({ eligibility }) {
+  if (!eligibility) return null;
+  const { earnedNextStage, blocked = [] } = eligibility;
+  if (!earnedNextStage && !blocked.length) return null;
+
+  return (
+    <div>
+      <h3 className="text-xs font-bold text-slate-600 mb-2">Stage eligibility</h3>
+
+      {earnedNextStage && (
+        <p className="text-sm text-emerald-700 bg-emerald-50 rounded-lg px-3 py-2 mb-2 flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 shrink-0" />
+          Has met every requirement for {earnedNextStage.stageCode}.
+        </p>
+      )}
+
+      {blocked.map((stage) => (
+        <div key={stage.stageCode} className="mb-3 last:mb-0">
+          <p className="text-xs font-semibold text-slate-500 flex items-center gap-1.5 mb-1">
+            <Lock className="w-3 h-3" /> {stage.stageCode}
+          </p>
+
+          {stage.status === 'NOT_CONFIGURED' ? (
+            // Nothing the student can work towards, and nothing the teacher can
+            // coach them on - an administrator has simply not published the
+            // criteria yet, and saying so is more use than an empty list.
+            <p className="text-xs text-amber-700 bg-amber-50 rounded px-2 py-1.5">
+              No entry criteria published for this stage yet.
+            </p>
+          ) : stage.outstanding.length ? (
+            <ul className="space-y-1">
+              {stage.outstanding.map((r) => (
+                <li key={r.key} className="flex items-center gap-2 text-xs">
+                  {r.status === 'DATA_REQUIRED' ? (
+                    <HelpCircle className="w-3 h-3 text-amber-600 shrink-0" />
+                  ) : (
+                    <CircleDashed className="w-3 h-3 text-slate-300 shrink-0" />
+                  )}
+                  <span className="text-slate-700 min-w-0 truncate">{r.name}</span>
+                  <span className="ml-auto tabular-nums text-slate-500 shrink-0">
+                    {r.status === 'DATA_REQUIRED' ? (
+                      <span className="text-amber-700">Not recorded yet</span>
+                    ) : (
+                      <>
+                        {reqValue(r.actual, r.unit)}
+                        <span className="text-slate-300"> / {r.operator} {reqValue(r.required, r.unit)}</span>
+                      </>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-xs text-slate-400">Nothing outstanding.</p>
+          )}
+        </div>
       ))}
     </div>
   );
@@ -146,6 +221,8 @@ function DetailDrawer({ studentId, onClose }) {
                   : 'No classes recorded yet'}
               </p>
             </div>
+
+            <EligibilityPanel eligibility={detail.eligibility} />
 
             <div>
               <h3 className="text-xs font-bold text-slate-600 mb-2">Recent activity</h3>

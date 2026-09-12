@@ -1,5 +1,6 @@
 import React from 'react';
 import { Lock, CheckCircle2, PlayCircle, Sparkles } from 'lucide-react';
+import { RequirementLine } from './RequirementList';
 
 /**
  * The three-stage Nalanda Nexus journey.
@@ -47,7 +48,9 @@ export default function JourneyCard({ journey = [], onContinue }) {
         {journey.map((stage) => {
           const style = STATE_STYLE[stage.state] || STATE_STYLE.LOCKED;
           const { Icon } = style;
-          const unmet = (stage.requirements || []).filter((c) => !c.met);
+          // Outstanding criteria only - a locked stage is asking what is left,
+          // not reciting what is already done.
+          const unmet = (stage.requirements || []).filter((c) => !c.passed);
           const duration = durationLabel(stage.duration);
 
           return (
@@ -110,21 +113,28 @@ export default function JourneyCard({ journey = [], onContinue }) {
 
               {stage.state === 'LOCKED' && (
                 <div className="mt-3">
-                  <p className="text-[11px] text-[#2B2B28]/55">
-                    {stage.unlocksAfter ? `Unlocks when you finish ${stage.unlocksAfter.name}.` : 'Not yet available.'}
-                  </p>
-                  {unmet.length > 0 && (
-                    <ul className="mt-2 space-y-1">
-                      {unmet.map((c) => (
-                        <li key={c.key} className="flex items-center gap-2 text-[11px]">
-                          <span className="w-3 h-3 rounded-full border-2 border-[#2B2B28]/20 shrink-0" />
-                          <span className="text-[#2B2B28]/70 min-w-0 truncate">{c.label}</span>
-                          <span className="ml-auto font-data tabular-nums text-[#2B2B28]/50 shrink-0">
-                            {Math.round(c.actual)} / {Math.round(c.required)}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
+                  {/* Two different reasons a stage is shut, and they call for
+                      different things from the student. Unpublished criteria are
+                      nothing they can work towards; unmet ones are. */}
+                  {stage.eligibilityStatus === 'NOT_CONFIGURED' ? (
+                    <p className="text-[11px] text-[#2B2B28]/55">
+                      Entry criteria for {stage.name} have not been published yet. Nobody is admitted until they are.
+                    </p>
+                  ) : (
+                    <>
+                      <p className="text-[11px] text-[#2B2B28]/55">
+                        {stage.unlocksAfter
+                          ? `Still to do before ${stage.name} opens for you:`
+                          : 'Not yet available.'}
+                      </p>
+                      {unmet.length > 0 && (
+                        <ul className="mt-2 space-y-1">
+                          {unmet.map((c) => (
+                            <RequirementLine key={c.key} requirement={c} />
+                          ))}
+                        </ul>
+                      )}
+                    </>
                   )}
                 </div>
               )}

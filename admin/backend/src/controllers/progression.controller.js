@@ -121,8 +121,94 @@ export const setupJourney = catchAsync(async (req, res) => {
   sendSuccess(res, { message: apply ? 'Journey courses set up' : 'Dry run', data: result });
 });
 
+// --- Stage eligibility -------------------------------------------------------
+
+/**
+ * The criteria that gate each stage.
+ *
+ * A draft is edited freely and decides nothing; publishing is the moment it
+ * starts deciding who may progress. Only publish and disable are audited -
+ * saving a draft changes nobody's standing, and logging every keystroke of a
+ * work in progress would bury the entries that matter.
+ */
+export const listEligibility = catchAsync(async (req, res) => {
+  sendSuccess(res, { data: await studentBridge.listEligibility() });
+});
+
+export const getEligibility = catchAsync(async (req, res) => {
+  sendSuccess(res, { data: await studentBridge.getEligibility(req.params.stage) });
+});
+
+export const saveEligibilityDraft = catchAsync(async (req, res) => {
+  const saved = await studentBridge.saveEligibilityDraft(req.params.stage, {
+    ...req.body,
+    // From the session, never the body - otherwise the record of who wrote a
+    // rule is whatever the caller typed.
+    updatedByEmail: req.admin?.email || null,
+  });
+  sendSuccess(res, { message: 'Draft saved', data: saved });
+});
+
+export const validateEligibility = catchAsync(async (req, res) => {
+  sendSuccess(res, { data: await studentBridge.validateEligibility(req.params.stage, req.body) });
+});
+
+export const publishEligibility = catchAsync(async (req, res) => {
+  const result = await studentBridge.publishEligibility(req.params.stage, {
+    publishedByEmail: req.admin?.email || null,
+  });
+
+  await recordAuditLog({
+    actor: req.admin,
+    action: 'eligibility.rules.published',
+    entityType: 'StageEligibilityRule',
+    entityId: req.params.stage,
+    metadata: {
+      targetStage: req.params.stage,
+      previousStage: result?.rule?.previousStageCode || null,
+      version: result?.rule?.version || null,
+      // Published warnings are recorded too: an administrator who knowingly
+      // required a subject the curriculum does not teach should be able to
+      // point at the moment they were told.
+      warnings: result?.warnings || [],
+    },
+    req,
+  });
+
+  sendSuccess(res, { message: 'Eligibility rule published', data: result });
+});
+
+export const disableEligibility = catchAsync(async (req, res) => {
+  const result = await studentBridge.disableEligibility(req.params.stage);
+
+  await recordAuditLog({
+    actor: req.admin,
+    action: 'eligibility.rules.disabled',
+    entityType: 'StageEligibilityRule',
+    entityId: req.params.stage,
+    metadata: { targetStage: req.params.stage, version: result?.version || null },
+    req,
+  });
+
+  sendSuccess(res, { message: 'Eligibility rule disabled', data: result });
+});
+
+/** Evaluates one real student. Read-only - previewing never alters them. */
+export const previewEligibility = catchAsync(async (req, res) => {
+  sendSuccess(res, { data: await studentBridge.previewEligibility(req.body) });
+});
+
+export const studentEligibilityOverview = catchAsync(async (req, res) => {
+  const { rows, meta } = await studentBridge.studentEligibilityOverview(req.query);
+  sendSuccess(res, { data: rows, meta });
+});
+
 export const getAnalytics = catchAsync(async (req, res) => {
   sendSuccess(res, { data: await studentBridge.getProgressionAnalytics() });
 });
 
-export default { getRules, updateRules, updateStage, updateAchievement, recalculate, setupJourney, getAnalytics };
+export default {
+  getRules, updateRules, updateStage, updateAchievement, recalculate, setupJourney, getAnalytics,
+  listEligibility, getEligibility, saveEligibilityDraft, validateEligibility,
+  publishEligibility, disableEligibility, previewEligibility, studentEligibilityOverview,
+};

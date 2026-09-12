@@ -191,3 +191,114 @@ test('filters narrow the roster by the configured thresholds', async () => {
   const near = await api('GET', '/api/teacher/students/progress?filter=near-completion', { cookie });
   assert.deepEqual(near.body.data.map((r) => r.name), ['Busy One']);
 });
+
+
+// --- Eligibility ------------------------------------------------------------
+
+test('the eligible flag means a stage was earned, not that one exists', async () => {
+  // Every student's FIRST stage is recorded as eligible - there is nothing
+  // before it to qualify for - so `.some(e => e.eligible)` was true for the
+  // entire roster. A filter that matches everyone is the same as a filter that
+  // matches nobody, and a teacher looking for who to move up saw the whole
+  // class.
+  const { cookie, students } = await makeTeacherWithStudents('eligible-flag', [
+    { name: 'Only Starting' }, { name: 'Truly Earned' }, { name: 'Already There' },
+  ]);
+
+  seedProgress([
+    {
+      userId: String(students[0].linkedUserId),
+      stageCode: 'PRARAMBH', level: 1, skills: [],
+      // The starting stage, and nothing else earned.
+      eligibility: [
+        { stageCode: 'PRARAMBH', eligible: true, status: 'STARTING_STAGE', requirements: [] },
+        { stageCode: 'GARUD', eligible: false, status: 'NOT_ELIGIBLE', requirements: [] },
+      ],
+    },
+    {
+      userId: String(students[1].linkedUserId),
+      stageCode: 'PRARAMBH', level: 1, skills: [],
+      eligibility: [
+        { stageCode: 'PRARAMBH', eligible: true, status: 'STARTING_STAGE', requirements: [] },
+        { stageCode: 'GARUD', eligible: true, status: 'ELIGIBLE', requirements: [] },
+      ],
+    },
+    {
+      userId: String(students[2].linkedUserId),
+      // Standing on GARUD already: qualified for it, but not waiting to be moved.
+      stageCode: 'GARUD', level: 1, skills: [],
+      eligibility: [
+        { stageCode: 'PRARAMBH', eligible: true, status: 'STARTING_STAGE', requirements: [] },
+        { stageCode: 'GARUD', eligible: true, status: 'ELIGIBLE', requirements: [] },
+      ],
+    },
+  ]);
+
+  const res = await api('GET', '/api/teacher/students/progress', { cookie });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+
+  const byName = new Map(res.body.data.map((r) => [r.name, r]));
+  assert.equal(byName.get('Only Starting').flags.eligibleForNextStage, false, 'a starting stage is not an earned one');
+  assert.equal(byName.get('Truly Earned').flags.eligibleForNextStage, true, 'a passed published rule is');
+  assert.equal(
+    byName.get('Already There').flags.eligibleForNextStage,
+    false,
+    'and a student already standing on the stage does not need moving to it'
+  );
+
+  const filtered = await api('GET', '/api/teacher/students/progress?filter=eligible', { cookie });
+  assert.equal(filtered.status, 200);
+  assert.deepEqual(
+    filtered.body.data.map((r) => r.name),
+    ['Truly Earned'],
+    'the filter narrows to the one student it is about'
+  );
+});
+
+test('a teacher can see why a stage is still shut, in the same terms the student sees', async () => {
+  const { cookie, students } = await makeTeacherWithStudents('eligible-detail', [{ name: 'Blocked Student' }]);
+
+  seedProgress([
+    {
+      userId: String(students[0].linkedUserId),
+      stageCode: 'PRARAMBH', level: 3, skills: [],
+      eligibility: [
+        { stageCode: 'PRARAMBH', eligible: true, status: 'STARTING_STAGE', requirements: [] },
+        {
+          stageCode: 'GARUD',
+          eligible: false,
+          status: 'NOT_ELIGIBLE',
+          requirements: [
+            { key: 'r0', metric: 'XP', name: 'Total XP', operator: '≥', required: 5000, actual: 340, unit: 'XP', passed: false, status: 'FAILED' },
+            { key: 'r1', metric: 'SUBJECT_SCORE', name: 'English', operator: '≥', required: 60, actual: 72, unit: '%', passed: true, status: 'PASSED' },
+            { key: 'r2', metric: 'ATTENDANCE', name: 'Attendance', operator: '≥', required: 75, actual: null, unit: '%', passed: false, status: 'DATA_REQUIRED' },
+          ],
+        },
+        { stageCode: 'YODDHA', eligible: false, status: 'NOT_CONFIGURED', requirements: [] },
+      ],
+    },
+  ]);
+
+  const res = await api('GET', `/api/teacher/students/progress/${students[0]._id}`, { cookie });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+
+  const { earnedNextStage, blocked } = res.body.data.eligibility;
+  assert.equal(earnedNextStage, null, 'nothing has been earned');
+
+  const garud = blocked.find((b) => b.stageCode === 'GARUD');
+  assert.ok(garud, 'the shut stage is reported');
+  assert.deepEqual(
+    garud.outstanding.map((r) => r.name),
+    ['Total XP', 'Attendance'],
+    'only what is outstanding - the satisfied requirement is not a reason'
+  );
+  assert.equal(
+    garud.outstanding.find((r) => r.metric === 'ATTENDANCE').actual,
+    null,
+    'and missing attendance stays null rather than becoming a zero the student did not earn'
+  );
+
+  const yoddha = blocked.find((b) => b.stageCode === 'YODDHA');
+  assert.equal(yoddha.status, 'NOT_CONFIGURED', 'an unpublished rule is distinguishable from an unmet one');
+  assert.equal(yoddha.outstanding.length, 0, 'and has nothing to list, because nothing has been asked for yet');
+});

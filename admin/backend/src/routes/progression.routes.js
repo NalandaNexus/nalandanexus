@@ -23,6 +23,16 @@ router.patch('/stages/:code', requirePermission('settings.manage'), validate({ .
 router.patch('/achievements/:code', requirePermission('settings.manage'), validate({ ...codeParam('code'), body: z.record(z.any()) }), controller.updateAchievement);
 router.post('/recalculate', requirePermission('settings.manage'), validate({ body: z.record(z.any()) }), controller.recalculate);
 router.post('/journey/setup', requirePermission('settings.manage'), validate({ body: z.record(z.any()) }), controller.setupJourney);
+// Stage eligibility. Configuration is settings.manage; the student overview
+// is a reporting view and sits behind analytics.view.
+router.get('/eligibility', requirePermission('settings.manage'), controller.listEligibility);
+router.get('/eligibility/:stage', requirePermission('settings.manage'), validate(codeParam('stage')), controller.getEligibility);
+router.put('/eligibility/:stage/draft', requirePermission('settings.manage'), validate({ ...codeParam('stage'), body: z.record(z.any()) }), controller.saveEligibilityDraft);
+router.post('/eligibility/:stage/validate', requirePermission('settings.manage'), validate({ ...codeParam('stage'), body: z.record(z.any()) }), controller.validateEligibility);
+router.post('/eligibility/:stage/publish', requirePermission('settings.manage'), validate({ ...codeParam('stage'), body: z.record(z.any()) }), controller.publishEligibility);
+router.post('/eligibility/:stage/disable', requirePermission('settings.manage'), validate({ ...codeParam('stage'), body: z.record(z.any()) }), controller.disableEligibility);
+router.post('/eligibility/preview', requirePermission('settings.manage'), validate({ body: z.record(z.any()) }), controller.previewEligibility);
+router.get('/student-eligibility', requirePermission('analytics.view'), controller.studentEligibilityOverview);
 router.get('/analytics', requirePermission('analytics.view'), controller.getAnalytics);
 
 export default router;

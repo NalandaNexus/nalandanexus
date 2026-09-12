@@ -292,6 +292,71 @@ export async function recalculateProgression(payload) {
   return body?.data || null;
 }
 
+/**
+ * Stage eligibility configuration, proxied to the service that evaluates it.
+ *
+ * The rules live with the engine that applies them, so an administrator edits
+ * one definition rather than a copy that could drift out of step with what
+ * students are actually measured against.
+ */
+export async function listEligibility() {
+  const body = await couponCall('/api/internal/progression/eligibility', { method: 'GET' });
+  return body?.data || [];
+}
+
+export async function getEligibility(stage) {
+  const body = await couponCall(`/api/internal/progression/eligibility/${encodeURIComponent(stage)}`, { method: 'GET' });
+  return body?.data || null;
+}
+
+export async function saveEligibilityDraft(stage, payload) {
+  const body = await couponCall(`/api/internal/progression/eligibility/${encodeURIComponent(stage)}/draft`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+  return body?.data || null;
+}
+
+export async function validateEligibility(stage, payload) {
+  const body = await couponCall(`/api/internal/progression/eligibility/${encodeURIComponent(stage)}/validate`, {
+    method: 'POST',
+    body: JSON.stringify(payload || {}),
+  });
+  return body?.data || null;
+}
+
+export async function publishEligibility(stage, payload) {
+  const body = await couponCall(`/api/internal/progression/eligibility/${encodeURIComponent(stage)}/publish`, {
+    method: 'POST',
+    body: JSON.stringify(payload || {}),
+  });
+  return body?.data || null;
+}
+
+export async function disableEligibility(stage) {
+  const body = await couponCall(`/api/internal/progression/eligibility/${encodeURIComponent(stage)}/disable`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+  return body?.data || null;
+}
+
+export async function previewEligibility(payload) {
+  const body = await couponCall('/api/internal/progression/eligibility/preview', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  return body?.data || null;
+}
+
+export async function studentEligibilityOverview(query = {}) {
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries(query)) if (v !== undefined && v !== null && v !== '') params.set(k, v);
+  const qs = params.toString();
+  const body = await couponCall(`/api/internal/progression/student-eligibility${qs ? `?${qs}` : ''}`, { method: 'GET' });
+  return { rows: body?.data || [], meta: body?.meta || {} };
+}
+
 export async function setupJourney(payload) {
   const body = await couponCall('/api/internal/progression/journey/setup', {
     method: 'POST',
@@ -367,6 +432,14 @@ export default {
   recalculateProgression,
   getProgressionAnalytics,
   setupJourney,
+  listEligibility,
+  getEligibility,
+  saveEligibilityDraft,
+  validateEligibility,
+  publishEligibility,
+  disableEligibility,
+  previewEligibility,
+  studentEligibilityOverview,
   getCourseContent,
   setContentSubjects,
   listSubjects,

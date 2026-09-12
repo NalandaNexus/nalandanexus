@@ -48,8 +48,48 @@ function flagsFor(progress, thresholds) {
     lowPerformance: progress.overallPower > 0 && progress.overallPower < thresholds.lowOverallPower,
     highPerformer: progress.overallPower >= thresholds.highPerformer,
     nearCompletion: progress.stageProgress >= thresholds.nearCompletion && progress.stageProgress < 100,
-    eligibleForNextStage: (progress.eligibility || []).some((e) => e.eligible),
+    eligibleForNextStage: nextStageFor(progress) !== null,
   };
+}
+
+/**
+ * The stage this student has earned but has not moved to, or null.
+ *
+ * `eligible` alone is not that question. Every student's first stage is
+ * recorded as eligible - there is nothing before it to qualify for - so a plain
+ * `.some(e => e.eligible)` was true for the entire roster and flagged everyone,
+ * which is the same as flagging nobody. Two things narrow it to the students a
+ * teacher actually wants to see:
+ *
+ *   - `status === 'ELIGIBLE'`, which only a published rule the student passed
+ *     produces. STARTING_STAGE and NOT_CONFIGURED are excluded by construction.
+ *   - not the stage they are already standing on, which they have plainly
+ *     qualified for and just as plainly do not need moving to.
+ */
+function nextStageFor(progress) {
+  const earned = (progress?.eligibility || []).find(
+    (e) => e.status === 'ELIGIBLE' && e.stageCode !== progress.stageCode
+  );
+  return earned || null;
+}
+
+/**
+ * What a stage is still waiting on, for the teacher's detail view.
+ *
+ * The criteria and the verdict both come from the student service - this
+ * decides nothing and re-checks nothing. A teacher reading a different answer
+ * from the one that gates enrolment would be worse than reading none.
+ */
+function blockedStagesFor(progress) {
+  return (progress?.eligibility || [])
+    .filter((e) => !e.eligible && e.stageCode !== progress.stageCode)
+    .map((e) => ({
+      stageCode: e.stageCode,
+      status: e.status,
+      // NOT_CONFIGURED has no outstanding criteria to list because none have
+      // been published - a different thing to say, and said differently.
+      outstanding: (e.requirements || []).filter((r) => !r.passed),
+    }));
 }
 
 /**
@@ -153,6 +193,13 @@ export async function getStudentProgressDetail(teacherId, studentId, { limit = 5
     progress,
     activity: events,
     flags: flagsFor(progress, DEFAULT_THRESHOLDS),
+    // Read-only, and authored elsewhere. Surfaced so a teacher can answer
+    // "why am I still locked out of GARUD?" with the same list the student is
+    // looking at, instead of guessing.
+    eligibility: {
+      earnedNextStage: nextStageFor(progress),
+      blocked: blockedStagesFor(progress),
+    },
   };
 }
 

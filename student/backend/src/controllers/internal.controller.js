@@ -1215,8 +1215,28 @@ export const adminGetStudentProgress = asyncHandler(async (req, res) => {
         quizzesCompleted: profile.stats?.quizzesCompleted || 0,
         lastActivityAt: p.lastActivityAt || null,
         // Whether the student may move on, and why not. Computed here so a
-        // teacher sees the same verdict the student does.
-        eligibility: (p.eligibility || []).map((e) => ({ stageCode: e.stageCode, eligible: e.eligible })),
+        // teacher sees the same verdict the student does - including the
+        // outstanding criteria, without which "why not" cannot be answered and
+        // a teacher can only repeat the padlock back to the student.
+        eligibility: (p.eligibility || []).map((e) => ({
+          stageCode: e.stageCode,
+          eligible: e.eligible,
+          // STARTING_STAGE, NOT_CONFIGURED and NOT_ELIGIBLE are three different
+          // situations that the boolean alone flattens into one.
+          status: e.status || 'NOT_CONFIGURED',
+          version: e.version ?? null,
+          requirements: (e.requirements || []).map((r) => ({
+            key: r.key,
+            metric: r.metric,
+            name: r.name,
+            operator: r.operator,
+            required: r.required,
+            actual: r.actual,
+            unit: r.unit,
+            passed: r.passed,
+            status: r.status,
+          })),
+        })),
       };
     }),
   });
@@ -1396,7 +1416,30 @@ export const adminProgressionAnalytics = asyncHandler(async (req, res) => {
   const [total, active, eligible] = await Promise.all([
     StudentProfile.countDocuments({}),
     StudentProfile.countDocuments({ 'progression.lastActivityAt': { $gte: inactiveSince } }),
-    StudentProfile.countDocuments({ 'progression.eligibility': { $elemMatch: { eligible: true } } }),
+    StudentProfile.countDocuments({
+      $expr: {
+        $gt: [
+          {
+            $size: {
+              $filter: {
+                input: { $ifNull: ['$progression.eligibility', []] },
+                as: 'e',
+                cond: {
+                  $and: [
+                    // ELIGIBLE is only set by a published rule the student
+                    // passed; STARTING_STAGE and NOT_CONFIGURED are excluded by
+                    // construction rather than by a second condition.
+                    { $eq: ['$$e.status', 'ELIGIBLE'] },
+                    { $ne: ['$$e.stageCode', '$progression.currentStageCode'] },
+                  ],
+                },
+              },
+            },
+          },
+          0,
+        ],
+      },
+    }),
   ]);
 
   return sendSuccess(res, {

@@ -47,13 +47,15 @@ async function buildJourney(userId, profile) {
     const progress = isCurrent ? snapshot.stageProgress || 0 : enrolment ? enrolment.progressPercent || 0 : 0;
 
     const previous = index > 0 ? stages[index - 1] : null;
-    const previousDone = previous ? Boolean(eligibilityFor(previous.code)?.eligible) : true;
     const ownVerdict = eligibilityFor(stage.code);
+    // Whether this stage may be entered is this stage's own verdict - the
+    // published rule targeting it - not a property of the stage before.
+    const mayEnter = previous ? Boolean(ownVerdict?.eligible) : true;
 
     let state;
-    if (enrolment && ownVerdict?.eligible && progress >= 100) state = 'COMPLETED';
+    if (enrolment && progress >= 100) state = 'COMPLETED';
     else if (enrolment) state = 'ACTIVE';
-    else if (previousDone) state = 'ELIGIBLE';
+    else if (mayEnter) state = 'ELIGIBLE';
     else state = 'LOCKED';
 
     return {
@@ -69,8 +71,11 @@ async function buildJourney(userId, profile) {
         ? { slug: course.slug, title: course.title, priceInPaise: course.priceInPaise, isPurchasable: course.isPurchasable }
         : null,
       enrolment: enrolment ? { startsAt: enrolment.startsAt, endsAt: enrolment.endsAt } : null,
-      // Why a locked stage is locked, item by item.
-      requirements: previous ? (eligibilityFor(previous.code)?.checks || []) : [],
+      // Why a locked stage is locked, item by item. Read from THIS stage's
+      // own verdict: the rule for GARUD describes what it takes to enter
+      // GARUD, which is what a student looking at GARUD wants to know.
+      requirements: eligibilityFor(stage.code)?.requirements || [],
+      eligibilityStatus: eligibilityFor(stage.code)?.status || 'NOT_CONFIGURED',
       unlocksAfter: previous ? { code: previous.code, name: previous.name } : null,
     };
   });
@@ -173,9 +178,10 @@ export const getMyProgression = asyncHandler(async (req, res) => {
             name: nextStage.name,
             tagline: nextStage.tagline,
             eligible: nextEligibility?.eligible || false,
+            status: nextEligibility?.status || 'NOT_CONFIGURED',
             // Every requirement, met and unmet, so a locked stage explains
             // itself instead of just refusing.
-            checks: nextEligibility?.checks || [],
+            requirements: nextEligibility?.requirements || [],
           }
         : null,
 
