@@ -51,7 +51,16 @@ export async function resolveSubject({ activitySubject, moduleSubject, coursePil
   const enabled = await loadEnabledSubjectCodes();
 
   const explicit = normalize(activitySubject);
-  if (explicit && enabled.includes(explicit)) return explicit;
+  if (explicit) {
+    // An explicitly-set subject that is no longer enabled is reported as
+    // unassigned rather than falling through to the module or the pillar:
+    // somebody chose that value, and quietly overriding their choice hides the
+    // problem. Disabling a subject would otherwise move every lesson still
+    // tagged with it onto the pillar's skill - crediting, on a `communicate`
+    // course like PRARAMBH, English for cybersecurity work. UNASSIGNED is
+    // visible and counted for review; a wrong number nobody can see is not.
+    return enabled.includes(explicit) ? explicit : UNASSIGNED_SUBJECT;
+  }
 
   const fromModule = normalize(moduleSubject);
   if (fromModule && enabled.includes(fromModule)) return fromModule;
@@ -60,9 +69,6 @@ export async function resolveSubject({ activitySubject, moduleSubject, coursePil
   const fromPillar = PILLAR_DEFAULT_SUBJECT[pillar];
   if (fromPillar && enabled.includes(fromPillar)) return fromPillar;
 
-  // An explicitly-set subject that is no longer enabled is reported as
-  // unassigned rather than silently demoted to the pillar default: somebody
-  // chose that value, and quietly overriding their choice hides the problem.
   return UNASSIGNED_SUBJECT;
 }
 

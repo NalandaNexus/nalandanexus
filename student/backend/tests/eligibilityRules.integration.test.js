@@ -611,3 +611,57 @@ test('the first stage cannot be validated any more than it can be drafted', asyn
   assert.equal(res.status, 400);
   assert.equal(res.body.error.code, 'STARTING_STAGE');
 });
+
+
+test('the public catalogue exposes a duration that can be computed with', async () => {
+  // Only the "9 Months" label was published. A client cannot add a label to a
+  // date, so an enrolment window or a countdown had nothing to work from, and
+  // QA could not verify the stage durations as data rather than display text.
+  const list = await request.get('/api/public/courses');
+  assert.equal(list.status, 200);
+
+  const row = list.body.data.find((c) => c.slug === 'prarambh');
+  assert.ok(row, 'the course is listed');
+  assert.equal(row.durationValue, 9);
+  assert.equal(row.durationUnit, 'MONTHS');
+  // The display label is separate and set independently of these two - this
+  // fixture sets only the numbers, which are the part a client computes with.
+  assert.ok('duration' in row, 'the human label is still carried alongside');
+
+  const detail = await request.get('/api/public/courses/prarambh');
+  assert.equal(detail.status, 200);
+  assert.equal(detail.body.data.durationValue, 9, 'and on the detail route, not just the list');
+  assert.equal(detail.body.data.durationUnit, 'MONTHS');
+});
+
+
+test('requiring completion of a stage with no lessons is warned about', async () => {
+  // Production has exactly this shape: GARUD and YODDHA exist as courses with
+  // zero modules and zero lessons. Stage progress is lessons-completed over
+  // lessons-available and returns 0 when there is nothing available, so a
+  // YODDHA rule asking for GARUD completion could never be met by anyone - and
+  // would read to the student as "you have not done enough" rather than "there
+  // is nothing here to do".
+  const empty = await Course.create({
+    slug: 'garud', title: 'GARUD', description: 'x', priceInPaise: 0,
+    isPublished: true, isPurchasable: false, pillar: 'communicate', modules: [],
+  });
+  await Stage.updateOne({ code: 'GARUD' }, { $set: { courseSlug: 'garud' } });
+
+  const res = await asService(request.post('/api/internal/progression/eligibility/YODDHA/validate')).send({
+    rootGroup: {
+      logic: 'ALL',
+      requirements: [{ key: 'r0', metric: 'PREVIOUS_STAGE_COMPLETION', operator: 'GTE', value: 80, enabled: true }],
+    },
+  });
+
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(res.body.data.valid, true, 'it is a warning, not a block - the stage may be built later');
+  assert.ok(
+    res.body.data.warnings.some((w) => /no published lessons/i.test(w)),
+    `expected an unreachable-progress warning, got ${JSON.stringify(res.body.data.warnings)}`
+  );
+
+  await Course.deleteOne({ _id: empty._id });
+  await Stage.updateOne({ code: 'GARUD' }, { $set: { courseSlug: null } });
+});

@@ -169,6 +169,20 @@ if (env.isProd && env.mongoUri.includes(KNOWN_LEAKED_MONGO_PASSWORD_FRAGMENT)) {
 // environment - refuse to boot rather than risk a developer accidentally
 // processing a real charge against a local/staging run. Set
 // PAYMENTS_MOCK_MODE=true or use rzp_test_ keys for local development.
+// The mirror of the guard below, and the more dangerous direction of the two.
+// Mock mode makes a signature built from the hard-coded 'mock_secret' verify,
+// so leaving the flag on in production would let anyone forge a successful
+// payment and enrol in a paid course for nothing. Nothing legitimately needs
+// mock payments in production, so this refuses to start rather than trusting
+// that the flag was set deliberately.
+if (env.isProd && env.razorpay.mockMode) {
+  throw new Error(
+    'PAYMENTS_MOCK_MODE is "true" while NODE_ENV is "production". Mock mode accepts forged ' +
+      'payment signatures, so a real course could be enrolled in without paying. Refusing to start. ' +
+      'Unset PAYMENTS_MOCK_MODE in the production environment.'
+  );
+}
+
 if (!env.isProd && env.razorpay.keyId.startsWith('rzp_live_') && !env.razorpay.mockMode) {
   throw new Error(
     'RAZORPAY_KEY_ID is a live production key but NODE_ENV is not "production" and ' +

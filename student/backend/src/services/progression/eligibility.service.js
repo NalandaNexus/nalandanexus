@@ -339,6 +339,30 @@ export async function validateRule(rule, { previousStageCourseId } = {}) {
     }
   }
 
+  // Progress reachability: stage progress is lessons-completed over
+  // lessons-available, which is 0 when a course has no lessons at all. A rule
+  // asking for completion of a stage that has not been built yet can therefore
+  // never be satisfied by anyone, and would read as "this student has not
+  // worked hard enough" rather than "there is nothing here to complete".
+  const progressRequirements = active.filter(
+    (r) => ['PREVIOUS_STAGE_COMPLETION', 'COURSE_COMPLETION', 'LESSON_COMPLETION'].includes(r.metric) && r.value > 0
+  );
+  if (progressRequirements.length && previousStageCourseId) {
+    const { Course } = await import('../../models/Course.js');
+    const previousCourse = await Course.findById(previousStageCourseId).select('modules').lean();
+    const lessonCount = (previousCourse?.modules || []).reduce(
+      (n, m) => n + (m.lessons || []).filter((l) => l.isPublished !== false).length,
+      0
+    );
+    if (!lessonCount) {
+      warnings.push(
+        `${rule.previousStageCode} has no published lessons, so its completion is always 0%. ` +
+          `${progressRequirements.length === 1 ? 'A requirement' : 'Requirements'} based on it can never be met by any ` +
+          'student until that course has content. Add lessons before publishing, or use a different criterion.'
+      );
+    }
+  }
+
   // Curriculum reachability: a subject requirement nobody can satisfy because
   // the prerequisite stage teaches none of it.
   const subjectRequirements = active.filter((r) => r.metric === 'SUBJECT_SCORE' && subjectCodes.has(r.subjectCode) && r.value > 0);

@@ -54,6 +54,11 @@ function toPublicCourse(course, enrolledCourseIds) {
     grades: obj.grades,
     difficulty: obj.difficulty,
     duration: obj.duration,
+    // The label is for display; these two are the real value. A client that
+    // needs to compute with a duration - an enrolment window, a countdown -
+    // cannot parse "9 Months" into arithmetic, and only the label was exposed.
+    durationValue: obj.durationValue ?? null,
+    durationUnit: obj.durationUnit ?? null,
     bannerImage: obj.bannerImage,
     priceInPaise: obj.priceInPaise,
     originalPriceInPaise: obj.originalPriceInPaise,

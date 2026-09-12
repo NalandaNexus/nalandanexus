@@ -60,3 +60,46 @@ test('quiz submission rejects malformed answers payload', async () => {
   const res = await request.post('/api/student/quizzes/mindset/submit').send({ answers: 'not-an-object' });
   assert.ok([401, 422].includes(res.status));
 });
+
+
+test('a body that is not valid JSON is a bad request, not a server error', async () => {
+  // express.json() throws a SyntaxError the error handler did not recognise, so
+  // this fell through to the catch-all and answered 500 - on an unauthenticated
+  // route, which meant any client could manufacture server errors at will and
+  // bury real ones in the same log.
+  const res = await request
+    .post('/api/auth/login')
+    .set('Content-Type', 'application/json')
+    .send('{"email": ');
+
+  assert.equal(res.status, 400, 'malformed JSON is the caller getting it wrong');
+  assert.equal(res.body.error.code, 'INVALID_JSON');
+});
+
+test('refreshing with no session at all is not reported as a failure', async () => {
+  // Every first landing on the public site runs this probe before anyone has
+  // logged in. Answering 401 made the browser log a console error on a page
+  // where nothing had gone wrong.
+  const res = await request.post('/api/auth/refresh');
+
+  assert.equal(res.status, 200, 'an anonymous visitor is not an auth failure');
+  assert.equal(res.body.data.accessToken, null, 'and is told plainly there is no session');
+  assert.equal(res.body.data.user, null);
+});
+
+test('a refresh cookie that is present but invalid is still refused', async () => {
+  // The other half of the change above: only the absence of a cookie is benign.
+  // A cookie that was presented and does not verify is a real refusal.
+  const res = await request.post('/api/auth/refresh').set('Cookie', 'refreshToken=not-a-real-token');
+
+  assert.equal(res.status, 401, 'a token that fails to verify must never pass');
+});
+
+test('health reports which build is answering', async () => {
+  // Without this, confirming a deploy meant comparing frontend bundle hashes,
+  // because every guarded route answers 401 before routing and cannot be probed.
+  const res = await request.get('/api/health');
+  assert.equal(res.status, 200);
+  assert.ok(res.body.data.commit, 'a commit is always reported');
+  assert.ok(res.body.data.commit.length <= 7, 'short form');
+});

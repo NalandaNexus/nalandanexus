@@ -169,18 +169,53 @@ test('changing the password invalidates other sessions but keeps this one', asyn
 });
 
 /**
- * The already-deployed admin frontend authenticates with a bearer token, and
- * frontend and backend deploy independently. If the cookie change removed
- * bearer support, every administrator would be locked out during the window
- * between the two deploys.
+ * The session token is never handed to JavaScript.
+ *
+ * It used to be returned in the login body as well as the cookie, so that an
+ * already-deployed frontend authenticating with a bearer token would not be
+ * locked out in the window between the frontend and backend deploys. Both are
+ * long since on the cookie, and returning it undid most of the reason for
+ * moving: httpOnly exists so that a SUPER_ADMIN token is out of reach of any
+ * script on the page, which a token handed back on every login plainly is not.
  */
-test('bearer tokens still work, so the two deploys can land in either order', async () => {
+test('the login response does not expose the session token', async () => {
   const res = await login();
-  const token = res.body.data.token;
-  assert.ok(token, 'transitional: the body still carries a token for the older frontend');
+  assert.equal(res.status, 200);
+  assert.ok(res.body.data.admin, 'the administrator record is still returned');
+  assert.equal(res.body.data.token, undefined, 'but never the token itself');
+
+  // Changing a password reissues the session, and that reply must not leak it
+  // either.
+  const changed = await call('/api/admin/auth/change-password', {
+    method: 'POST',
+    cookie: res.cookie,
+    body: { currentPassword: 'TestPass123!', newPassword: 'RotatedPass789!' },
+  });
+  assert.equal(changed.status, 200);
+  assert.equal(changed.body.data?.token, undefined, 'the reissued token stays in the cookie');
+
+  // Restore, so this file can be re-run.
+  await call('/api/admin/auth/change-password', {
+    method: 'POST',
+    cookie: changed.cookie,
+    body: { currentPassword: 'RotatedPass789!', newPassword: 'TestPass123!' },
+  });
+});
+
+/**
+ * Bearer authentication is still accepted by the middleware - server-to-server
+ * callers use it. Removing the token from the login body did not remove the
+ * header path, and this proves the two are independent.
+ */
+test('bearer tokens are still accepted', async () => {
+  const res = await login();
+  // The cookie's value IS the JWT, which is how a bearer token can still be
+  // obtained now that the body no longer carries one.
+  const token = res.cookie.slice(res.cookie.indexOf('=') + 1);
+  assert.ok(token, 'the cookie carries the session');
 
   const me = await call('/api/admin/auth/me', { headers: { Authorization: `Bearer ${token}` } });
-  assert.equal(me.status, 200, 'an older deployed frontend must keep working');
+  assert.equal(me.status, 200, 'the header path still authenticates');
 });
 
 test('a forged or tampered token is rejected', async () => {
@@ -222,4 +257,20 @@ test('the probe leaves no residue in the counter collection', async () => {
   await call('/api/health');
   const leftovers = await mongoose.connection.collection('ratelimits').countDocuments({ _id: /^probe:/ });
   assert.equal(leftovers, 0, 'a diagnostic must not accumulate documents');
+});
+
+
+test('a body that is not valid JSON is a bad request, not a server error', async () => {
+  // express.json() throws a SyntaxError the error handler did not recognise, so
+  // this reached the catch-all and answered 500 on an unauthenticated route -
+  // any client could manufacture server errors and bury real ones beside them.
+  const res = await fetch(`${base}/api/admin/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{"email": ',
+  });
+  const body = await res.json();
+
+  assert.equal(res.status, 400, 'malformed JSON is the caller getting it wrong');
+  assert.equal(body.code, 'INVALID_JSON');
 });

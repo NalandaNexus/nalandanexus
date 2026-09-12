@@ -17,6 +17,12 @@ export function errorHandler(err, req, res, next) {
   if (!(error instanceof ApiError)) {
     if (error.name === 'CastError') {
       error = ApiError.badRequest(`Invalid identifier: ${error.value}`, 'INVALID_ID');
+    } else if (error.type === 'entity.parse.failed') {
+      // A body express.json() could not parse. Unhandled, this reached the
+      // catch-all below and answered 500, so any client could manufacture
+      // server errors and bury real ones. A body the caller sent wrong is a
+      // bad request.
+      error = ApiError.badRequest('Malformed JSON in request body.', 'INVALID_JSON');
     } else if (error.name === 'ValidationError') {
       const details = Object.values(error.errors || {}).map((e) => ({ path: e.path, message: e.message }));
       error = ApiError.unprocessable('Validation failed', 'VALIDATION_ERROR', details);

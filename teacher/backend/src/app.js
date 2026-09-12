@@ -48,6 +48,11 @@ export function createApp() {
       status: 'healthy',
       service: 'Nalanda Faculty & Teacher Backend',
       database: isDatabaseConnected() ? 'connected' : 'disconnected',
+      // Which build is answering. Without it, confirming a deploy meant
+      // comparing frontend bundle hashes and authenticating, because every
+      // guarded route answers 401 before routing and so cannot be probed.
+      // Render sets RENDER_GIT_COMMIT; 'unknown' where it is not set.
+      commit: (process.env.RENDER_GIT_COMMIT || 'unknown').slice(0, 7),
       timestamp: new Date().toISOString(),
     });
   });

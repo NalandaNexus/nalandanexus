@@ -97,18 +97,25 @@ export default function HeroVisual() {
         className="absolute inset-0 w-full h-full pointer-events-none z-10"
       />
 
-      {/* Floating Pillar Card 1: COMMUNICATE (Top-Left) */}
-      <div className="absolute top-2 left-1 sm:left-4 lg:left-4 z-30">
+      {/* Floating pillar cards. Each is capped at 200px wide, so three of them
+          need 600px before any gaps - on a 375px phone they sat on top of one
+          another and covered each other's text. They are decoration: the same
+          three pillars get a proper, readable treatment in PillarsSection
+          further down the page, so below `sm` they are simply not drawn rather
+          than shrunk into illegibility. */}
+
+      {/* COMMUNICATE (Top-Left) */}
+      <div className="hidden sm:block absolute top-2 left-1 sm:left-4 lg:left-4 z-30">
         <FloatingPillarCard type="communicate" />
       </div>
 
-      {/* Floating Pillar Card 2: COMPUTE (Top-Center) */}
-      <div className="absolute -top-3 left-1/2 -translate-x-1/2 sm:translate-x-0 sm:left-auto sm:right-24 lg:right-32 z-30">
+      {/* COMPUTE (Top-Center) */}
+      <div className="hidden sm:block absolute -top-3 left-1/2 -translate-x-1/2 sm:translate-x-0 sm:left-auto sm:right-24 lg:right-32 z-30">
         <FloatingPillarCard type="compute" />
       </div>
 
-      {/* Floating Pillar Card 3: CREATE (Top-Right) */}
-      <div className="absolute top-8 right-0 sm:right-2 lg:right-0 z-30">
+      {/* CREATE (Top-Right) */}
+      <div className="hidden sm:block absolute top-8 right-0 sm:right-2 lg:right-0 z-30">
         <FloatingPillarCard type="create" />
       </div>
 

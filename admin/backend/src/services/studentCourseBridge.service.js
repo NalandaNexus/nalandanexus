@@ -232,15 +232,23 @@ async function couponCall(path, options) {
     const status = Number(match?.[1]);
     if (status >= 400 && status < 500) {
       let message = match?.[2] || err.message;
-      let code = 'COUPON_REJECTED';
+      // This leg is shared by coupons, progression config and eligibility, so
+      // the fallback names the transport rather than one of its passengers -
+      // "COUPON_REJECTED" on a stage-eligibility call was simply wrong.
+      let code = 'STUDENT_SERVICE_REJECTED';
       try {
         const body = JSON.parse(message);
         message = body?.error?.message || body?.message || message;
-        code = body?.error?.code || code;
+        code = body?.error?.code || body?.code || code;
       } catch {
         // Not JSON - the raw text is still better than nothing.
       }
-      throw ApiError.unprocessable(message, code);
+      // The upstream status is carried through rather than flattened to 422.
+      // The student service already decided whether this was a bad request, a
+      // missing record or a refusal, and collapsing all three lost a
+      // distinction the caller can act on - a 404 and a validation failure need
+      // different handling, and only the code survived to tell them apart.
+      throw new ApiError(status, message, code);
     }
     console.error('[studentCourseBridge] Coupon administration failed:', err.message);
     throw couponsUnavailable();

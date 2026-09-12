@@ -154,7 +154,19 @@ export const me = asyncHandler(async (req, res) => {
 export const refresh = asyncHandler(async (req, res) => {
   const rawRefreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
   if (!rawRefreshToken) {
-    throw AppError.unauthorized('No active session to refresh.', 'NO_REFRESH_TOKEN');
+    // No cookie was presented at all. That is an anonymous visitor, not a
+    // failed authentication - every first-time landing on the public site runs
+    // this probe, and answering 401 made the browser log a console error on a
+    // page where nothing had gone wrong. Real failures below still 401: a
+    // cookie that IS presented and turns out to be expired, rotated or forged
+    // is a genuine refusal worth seeing.
+    //
+    // `accessToken: null` is what the client already reads, so it treats this
+    // exactly as it treated the 401 - as "no session" - without the noise.
+    return sendSuccess(res, {
+      message: 'No active session.',
+      data: { user: null, accessToken: null },
+    });
   }
 
   const { user, accessToken, refreshToken } = await rotateRefreshToken(rawRefreshToken, requestMeta(req));

@@ -25,12 +25,16 @@ function cookieOptions() {
 export const login = catchAsync(async (req, res) => {
   const { token, admin } = await authService.login(req.body, req);
   res.cookie(env.cookieName, token, cookieOptions());
-  // The token is still returned in the body during the migration to cookies:
-  // an already-deployed admin frontend authenticates with it, and frontend and
-  // backend deploy independently, so removing it here would sign everyone out
-  // in the window between the two deploys. The updated frontend ignores this
-  // field and relies on the httpOnly cookie above. Drop it once both are live.
-  return sendSuccess(res, { data: { token, admin }, message: 'Login successful' });
+  // The token is NOT returned in the body. It was, during the migration to
+  // cookies, so that an already-deployed frontend authenticating with it would
+  // not be signed out in the window between the two deploys - both are now
+  // live on the cookie, which was the condition for dropping it.
+  //
+  // Returning it undid most of the reason for the move: httpOnly exists so a
+  // SUPER_ADMIN token is out of reach of any script on the page, and a token
+  // handed to JavaScript on every login is reachable by anything that hooks
+  // fetch, including a compromised dependency.
+  return sendSuccess(res, { data: { admin }, message: 'Login successful' });
 });
 
 export const logout = catchAsync(async (req, res) => {
@@ -51,7 +55,9 @@ export const changePassword = catchAsync(async (req, res) => {
   // session including this browser's cookie - so it must be replaced here or
   // the admin is signed out by their own password change.
   res.cookie(env.cookieName, token, cookieOptions());
-  return sendSuccess(res, { data: { token }, message: 'Password changed successfully' });
+  // Same reasoning as login: the new session travels in the httpOnly cookie set
+  // above, and nothing needs a copy of it in reach of the page.
+  return sendSuccess(res, { message: 'Password changed successfully' });
 });
 
 export default { login, logout, me, changePassword };

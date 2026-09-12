@@ -1011,3 +1011,64 @@ test('existing enrolments are untouched by a course duration change', async () =
   assert.equal(after.status, 'active');
   assert.deepEqual(after.endsAt, before.endsAt, 'the window it was enrolled under did not move');
 });
+
+
+test('an explicit activity subject outranks the module and the pillar', async () => {
+  // Mutation testing found nothing guarding this. The fixture above has a
+  // module-level subject whose lessons carry none, so the module default is
+  // exercised - but no case ever had a lesson subject DISAGREE with its
+  // module, which is exactly the case precedence exists to decide. Inverting
+  // the order in resolveSubject passed all 180 tests.
+  //
+  // It matters because it is how PRARAMBH is tagged: a `communicate` course
+  // whose individual lessons are the authoritative record of what they teach.
+  const { resolveSubject, invalidateSubjectCache } = subjectService;
+  invalidateSubjectCache();
+
+  assert.equal(
+    await resolveSubject({ activitySubject: 'ENGLISH', moduleSubject: 'COMPUTER', coursePillar: 'create' }),
+    'ENGLISH',
+    'the lesson wins over both the module and the pillar'
+  );
+
+  assert.equal(
+    await resolveSubject({ moduleSubject: 'COMPUTER', coursePillar: 'create' }),
+    'COMPUTER',
+    'the module wins over the pillar when the lesson says nothing'
+  );
+
+  assert.equal(
+    await resolveSubject({ coursePillar: 'communicate' }),
+    'ENGLISH',
+    'the pillar is the last resort, not the identity'
+  );
+
+  assert.equal(
+    await resolveSubject({}),
+    'UNASSIGNED',
+    'nothing to go on is reported rather than guessed'
+  );
+
+  assert.equal(
+    await resolveSubject({ activitySubject: 'NOT_A_REAL_SUBJECT' }),
+    'UNASSIGNED',
+    'a subject that is no longer enabled, with nothing to fall back to, is flagged rather than guessed'
+  );
+
+  // The case that matters most, and the one that used to disagree with the
+  // function's own documentation. A lesson tagged with a subject that has since
+  // been disabled must NOT quietly fall through to the pillar: on PRARAMBH - a
+  // `communicate` course - that credited English for cybersecurity work, and a
+  // wrong score nobody can see is worse than a visible gap.
+  assert.equal(
+    await resolveSubject({ activitySubject: 'NOT_A_REAL_SUBJECT', coursePillar: 'communicate' }),
+    'UNASSIGNED',
+    'a disabled subject is flagged for review, never demoted to the pillar default'
+  );
+
+  assert.equal(
+    await resolveSubject({ activitySubject: 'NOT_A_REAL_SUBJECT', moduleSubject: 'COMPUTER' }),
+    'UNASSIGNED',
+    'and not demoted to the module subject either'
+  );
+});
