@@ -52,7 +52,19 @@ const courseSchema = new Schema(
     reviewsCount: { type: Number, default: 0, min: 0 },
     grades: [{ type: String }], // e.g. ["3","4",...,"12"] - class/grade applicability
     difficulty: { type: String, default: 'Beginner Friendly' },
+    // Human-readable label, kept for the existing catalogue UI.
     duration: { type: String, default: '' },
+
+    /**
+     * The same fact as a number the system can compute with.
+     *
+     * `duration` alone is presentation text - "9 Months" cannot be added to an
+     * enrolment date. These two carry the real value so an enrolment can work
+     * out when a course ends, and the label above is derived from them when a
+     * course is created or its duration changed.
+     */
+    durationValue: { type: Number, default: null, min: 0 },
+    durationUnit: { type: String, enum: ['DAYS', 'WEEKS', 'MONTHS', 'YEARS', null], default: null },
     bannerImage: { type: String, default: '' },
     videoUrl: { type: String, default: '' },
 

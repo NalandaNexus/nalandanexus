@@ -763,3 +763,164 @@ test('a freshly deployed service configures itself on first read', async () => {
   await Subject.updateOne({ code: 'ENGLISH' }, { $set: { name: 'English & Communication' } });
   subjectService.invalidateSubjectCache();
 });
+
+// --- The three-stage journey ------------------------------------------------
+
+let garud;
+let yoddha;
+
+test('the journey courses exist and carry a real duration', async () => {
+  garud = await Course.create({
+    slug: 'garud', title: 'GARUD — The Rise', description: 'Build Your Power',
+    priceInPaise: 0, isPublished: true, isPurchasable: false, pillar: 'communicate',
+    duration: '9 Months', durationValue: 9, durationUnit: 'MONTHS', modules: [],
+  });
+  yoddha = await Course.create({
+    slug: 'yoddha', title: 'YODDHA — The Warrior', description: 'Master Your Skills',
+    priceInPaise: 0, isPublished: true, isPurchasable: false, pillar: 'communicate',
+    duration: '9 Months', durationValue: 9, durationUnit: 'MONTHS', modules: [],
+  });
+  await Course.updateOne({ slug: 'prarambh' }, { $set: { duration: '9 Months', durationValue: 9, durationUnit: 'MONTHS' } });
+  await Stage.updateOne({ code: 'GARUD' }, { $set: { courseSlug: 'garud' } });
+  await Stage.updateOne({ code: 'YODDHA' }, { $set: { courseSlug: 'yoddha' } });
+
+  // Duration is a number the system can compute with, not a label it has to parse.
+  const { enrollmentWindow } = await import('../src/services/progression/access.service.js');
+  const from = new Date('2026-01-15T00:00:00Z');
+  const { endsAt } = enrollmentWindow(await Course.findOne({ slug: 'garud' }).lean(), from);
+  assert.equal(endsAt.toISOString().slice(0, 10), '2026-10-15', 'nine months after the start');
+});
+
+test('a stage beyond the first is refused until the one before it is complete', async () => {
+  const learner = await newLearner('locked');
+  const { assertStageAccessible, evaluateStageAccess } = await import('../src/services/progression/access.service.js');
+
+  await Stage.updateOne({ code: 'PRARAMBH' }, { $set: { 'requirements.minStageProgress': 100, 'requirements.minXP': 5000 } });
+  await engine.rebuildSnapshot(learner.userId);
+
+  const verdict = await evaluateStageAccess(learner.userId, garud);
+  assert.equal(verdict.allowed, false);
+  assert.equal(verdict.reason, 'PRIOR_STAGE_INCOMPLETE');
+  assert.ok(verdict.unmet.length > 0, 'and it can say what is outstanding');
+
+  await assert.rejects(
+    () => assertStageAccessible(learner.userId, garud),
+    (err) => {
+      assert.equal(err.code, 'STAGE_LOCKED');
+      assert.match(err.message, /GARUD/);
+      return true;
+    }
+  );
+});
+
+test('the first stage is always open', async () => {
+  const learner = await newLearner('first-stage');
+  const { evaluateStageAccess } = await import('../src/services/progression/access.service.js');
+
+  const verdict = await evaluateStageAccess(learner.userId, course);
+  assert.equal(verdict.allowed, true, 'nobody has to earn the beginning');
+  assert.equal(verdict.reason, 'FIRST_STAGE');
+});
+
+test('an ordinary course outside the journey is unaffected', async () => {
+  const learner = await newLearner('plain-course');
+  const plain = await Course.create({
+    slug: `plain-${Math.random().toString(36).slice(2, 7)}`, title: 'Something Else',
+    description: 'x', priceInPaise: 0, isPublished: true, isPurchasable: true, modules: [],
+  });
+
+  const { evaluateStageAccess } = await import('../src/services/progression/access.service.js');
+  const verdict = await evaluateStageAccess(learner.userId, plain);
+  assert.equal(verdict.allowed, true);
+  assert.equal(verdict.reason, 'NOT_A_STAGE_COURSE', 'the gate only applies to the staged journey');
+});
+
+test('a locked stage cannot be reached by enrolling directly', async () => {
+  // The gate lives inside createEnrollment, so every path that produces an
+  // enrolment passes it - including one added later by someone who has not read
+  // this file.
+  const learner = await newLearner('bypass');
+  const { createEnrollment } = await import('../src/services/enrollment.service.js');
+
+  await assert.rejects(
+    () => createEnrollment({ userId: learner.userId, courseId: garud._id, course: garud }),
+    (err) => {
+      assert.equal(err.code, 'STAGE_LOCKED');
+      return true;
+    }
+  );
+  assert.equal(await Enrollment.countDocuments({ userId: learner.userId, courseId: garud._id }), 0);
+});
+
+test('completing a stage unlocks the next one and no further', async () => {
+  const learner = await newLearner('chain');
+  const { createEnrollment } = await import('../src/services/enrollment.service.js');
+  const { evaluateStageAccess } = await import('../src/services/progression/access.service.js');
+
+  // A requirement the test can actually satisfy, set the way an administrator
+  // would rather than by writing the verdict directly.
+  await Stage.updateOne({ code: 'PRARAMBH' }, { $set: { 'requirements.minStageProgress': 0, 'requirements.minXP': 10, 'requirements.subjects': [] } });
+  await Stage.updateOne({ code: 'GARUD' }, { $set: { 'requirements.minStageProgress': 0, 'requirements.minXP': 100000, 'requirements.subjects': [] } });
+
+  await engine.recordActivity({
+    userId: learner.userId, activityType: 'LECTURE_COMPLETED', status: 'COMPLETED',
+    refId: 'l-eng-1', courseId: course._id, subjectCode: 'ENGLISH',
+  });
+
+  // PRARAMBH is now satisfied, so GARUD opens.
+  const toGarud = await evaluateStageAccess(learner.userId, garud);
+  assert.equal(toGarud.allowed, true, 'GARUD unlocked by finishing PRARAMBH');
+
+  const enrolment = await createEnrollment({ userId: learner.userId, courseId: garud._id, course: garud });
+  assert.ok(enrolment, 'and the enrolment goes through');
+  assert.ok(enrolment.endsAt, 'with a computed end date');
+
+  // YODDHA must stay shut - the GARUD requirement is deliberately out of reach.
+  const toYoddha = await evaluateStageAccess(learner.userId, yoddha);
+  assert.equal(toYoddha.allowed, false, 'YODDHA is not unlocked by reaching GARUD');
+  assert.equal(toYoddha.reason, 'PRIOR_STAGE_INCOMPLETE');
+});
+
+test('the journey reports a state for every stage', async () => {
+  const learner = await newLearner('journey-view');
+  await Stage.updateOne({ code: 'PRARAMBH' }, { $set: { 'requirements.minStageProgress': 100, 'requirements.minXP': 5000 } });
+
+  await engine.recordActivity({
+    userId: learner.userId, activityType: 'LECTURE_COMPLETED', status: 'COMPLETED',
+    refId: 'l-comp-1', courseId: course._id, subjectCode: 'COMPUTER',
+  });
+
+  const res = await request.get('/api/student/progression').set(bearer(learner.accessToken));
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+
+  const journey = res.body.data.journey;
+  assert.equal(journey.length, 3, 'all three stages appear');
+  assert.deepEqual(journey.map((j) => j.code), ['PRARAMBH', 'GARUD', 'YODDHA'], 'in order');
+
+  const prarambh = journey[0];
+  assert.equal(prarambh.state, 'ACTIVE', 'enrolled and under way');
+  assert.equal(prarambh.duration.value, 9);
+  assert.equal(prarambh.duration.unit, 'MONTHS');
+
+  const garudView = journey[1];
+  assert.equal(garudView.state, 'LOCKED');
+  assert.ok(garudView.requirements.length > 0, 'and says what would unlock it');
+  assert.equal(garudView.unlocksAfter.code, 'PRARAMBH');
+
+  assert.equal(journey[2].state, 'LOCKED');
+});
+
+test('existing enrolments are untouched by a course duration change', async () => {
+  // The regression the spec is most worried about: setting PRARAMBH to nine
+  // months must not disturb anybody already enrolled.
+  const learner = await newLearner('regression');
+  const before = await Enrollment.findOne({ userId: learner.userId, courseId: course._id }).lean();
+
+  await Course.updateOne({ slug: 'prarambh' }, { $set: { durationValue: 9, durationUnit: 'MONTHS', duration: '9 Months' } });
+
+  const after = await Enrollment.findOne({ userId: learner.userId, courseId: course._id }).lean();
+  assert.equal(String(after._id), String(before._id), 'same enrolment');
+  assert.equal(after.enrollmentId, before.enrollmentId, 'same identity');
+  assert.equal(after.status, 'active');
+  assert.deepEqual(after.endsAt, before.endsAt, 'the window it was enrolled under did not move');
+});

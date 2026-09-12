@@ -1,4 +1,5 @@
 import { Enrollment } from '../models/Enrollment.js';
+import { assertStageAccessible, enrollmentWindow } from './progression/access.service.js';
 import { Notification } from '../models/Notification.js';
 import { Counter } from '../models/Counter.js';
 import { requestBatchPlacement } from './teacherBridge.service.js';
@@ -52,6 +53,15 @@ export async function assignEnrollmentToBatch(enrollment, courseSlug) {
 }
 
 export async function createEnrollment({ userId, courseId, orderId = null, course }) {
+  // The one gate every enrolment passes through, whatever created it - a paid
+  // order, a coupon, or anything added later. Putting it here rather than at
+  // each call site is what makes "a new way to enrol" safe by default instead
+  // of safe only if somebody remembered.
+  //
+  // Ordinary courses are unaffected; only the staged journey has a prior-stage
+  // requirement, and only beyond its first stage.
+  if (course) await assertStageAccessible(userId, course);
+
   const existing = await Enrollment.findOne({ userId, courseId });
   if (existing) {
     if (existing.status !== 'active') {
@@ -74,10 +84,16 @@ export async function createEnrollment({ userId, courseId, orderId = null, cours
   const firstModule = course?.modules?.[0];
   const firstLesson = firstModule?.lessons?.[0];
 
+  // Fixed at enrolment, not derived on read: changing a course's duration later
+  // must not move the end date of everyone already enrolled under the old one.
+  const { startsAt, endsAt } = enrollmentWindow(course);
+
   const enrollment = await Enrollment.create({
     userId,
     courseId,
     orderId,
+    startsAt,
+    endsAt,
     enrollmentId: await nextEnrollmentId(),
     currentModuleId: firstModule?.moduleId || null,
     currentLessonId: firstLesson?.lessonId || null,

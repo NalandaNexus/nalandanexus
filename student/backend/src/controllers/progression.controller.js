@@ -9,6 +9,74 @@ import { Stage } from '../models/Stage.js';
 import { rebuildSnapshot } from '../services/progression/engine.service.js';
 
 /**
+ * The three-stage journey, with each stage's state for this student.
+ *
+ * States are derived, never stored: an enrolment plus a progress figure plus
+ * the previous stage's eligibility verdict fully determine which of the four a
+ * stage is in, and a stored state would be a fifth thing that could disagree
+ * with the other four.
+ *
+ * LOCKED and ELIGIBLE are both "not enrolled" - the difference is whether the
+ * student has earned the right to be, which is exactly what a student needs to
+ * see to know whether to keep working or to go and enrol.
+ */
+async function buildJourney(userId, profile) {
+  const { Stage } = await import('../models/Stage.js');
+  const { Course } = await import('../models/Course.js');
+  const { Enrollment } = await import('../models/Enrollment.js');
+
+  const stages = await Stage.find({ enabled: true }).sort({ order: 1 }).lean();
+  if (!stages.length) return [];
+
+  const slugs = stages.map((s) => s.courseSlug).filter(Boolean);
+  const courses = await Course.find({ slug: { $in: slugs } })
+    .select('slug title subtitle tagline duration durationValue durationUnit priceInPaise isPurchasable')
+    .lean();
+  const courseBySlug = new Map(courses.map((c) => [c.slug, c]));
+
+  const enrolments = await Enrollment.find({ userId, status: 'active' }).select('courseId startsAt endsAt progressPercent').lean();
+  const enrolmentByCourse = new Map(enrolments.map((e) => [String(e.courseId), e]));
+
+  const snapshot = profile.progression || {};
+  const eligibilityFor = (code) => (snapshot.eligibility || []).find((e) => e.stageCode === code);
+
+  return stages.map((stage, index) => {
+    const course = stage.courseSlug ? courseBySlug.get(stage.courseSlug) : null;
+    const enrolment = course ? enrolmentByCourse.get(String(course._id)) : null;
+    const isCurrent = snapshot.currentStageCode === stage.code;
+    const progress = isCurrent ? snapshot.stageProgress || 0 : enrolment ? enrolment.progressPercent || 0 : 0;
+
+    const previous = index > 0 ? stages[index - 1] : null;
+    const previousDone = previous ? Boolean(eligibilityFor(previous.code)?.eligible) : true;
+    const ownVerdict = eligibilityFor(stage.code);
+
+    let state;
+    if (enrolment && ownVerdict?.eligible && progress >= 100) state = 'COMPLETED';
+    else if (enrolment) state = 'ACTIVE';
+    else if (previousDone) state = 'ELIGIBLE';
+    else state = 'LOCKED';
+
+    return {
+      code: stage.code,
+      name: stage.name,
+      tagline: stage.tagline,
+      order: stage.order,
+      state,
+      progress,
+      // The real duration, so the client can show it without parsing a label.
+      duration: course ? { value: course.durationValue, unit: course.durationUnit, label: course.duration } : null,
+      course: course
+        ? { slug: course.slug, title: course.title, priceInPaise: course.priceInPaise, isPurchasable: course.isPurchasable }
+        : null,
+      enrolment: enrolment ? { startsAt: enrolment.startsAt, endsAt: enrolment.endsAt } : null,
+      // Why a locked stage is locked, item by item.
+      requirements: previous ? (eligibilityFor(previous.code)?.checks || []) : [],
+      unlocksAfter: previous ? { code: previous.code, name: previous.name } : null,
+    };
+  });
+}
+
+/**
  * The student's own Digital Learner Profile.
  *
  * Read-only by construction. There is no endpoint anywhere that lets a client
@@ -110,6 +178,10 @@ export const getMyProgression = asyncHandler(async (req, res) => {
             checks: nextEligibility?.checks || [],
           }
         : null,
+
+      // The whole journey, so the dashboard can show where this student is in
+      // it rather than only the stage they happen to be on.
+      journey: await buildJourney(userId, profile),
 
       lastActivityAt: p.lastActivityAt || null,
     },

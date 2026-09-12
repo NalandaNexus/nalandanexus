@@ -49,6 +49,21 @@ const enrollmentSchema = new Schema(
     currentModuleId: { type: String, default: null },
     currentLessonId: { type: String, default: null },
     enrolledAt: { type: Date, default: Date.now },
+
+    /**
+     * The window this enrolment covers.
+     *
+     * Computed from the course's duration when the enrolment is created, and
+     * stored rather than derived on read: a course's duration can change, and
+     * doing so must not silently move the end date of everyone already enrolled
+     * under the old one.
+     *
+     * Null on enrolments created before durations existed, and on courses that
+     * have no duration - an absent end date means "no defined end", which is a
+     * different thing from an end date in the past.
+     */
+    startsAt: { type: Date, default: null },
+    endsAt: { type: Date, default: null, index: true },
     // Cached resolution of "which teacher/backend Teacher owns this course",
     // via GET /api/internal/teacher-for-course/:slug (see
     // services/teacherBridge.service.js). Refreshed lazily when stale/missing

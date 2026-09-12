@@ -6,6 +6,7 @@ import { Order } from '../models/Order.js';
 import { User } from '../models/User.js';
 import { createRazorpayOrder, verifyPaymentSignature, verifyWebhookSignature } from '../services/payment.service.js';
 import { createEnrollment, getActiveEnrollment } from '../services/enrollment.service.js';
+import { assertStageAccessible } from '../services/progression/access.service.js';
 import { pushPaymentToAdmin } from '../services/adminPaymentBridge.service.js';
 import { env } from '../config/env.js';
 
@@ -27,6 +28,12 @@ export const createOrder = asyncHandler(async (req, res) => {
   if (existingEnrollment) {
     throw AppError.conflict('You are already enrolled in this course.', 'ALREADY_ENROLLED');
   }
+
+  // Checked BEFORE Razorpay is involved, not only at enrolment. Both gates
+  // exist and both matter: this one stops a student paying for a stage they
+  // cannot have, and the one inside createEnrollment stops any future path
+  // reaching an enrolment without passing the same test.
+  await assertStageAccessible(req.user._id, course);
 
   if (course.priceInPaise <= 0) {
     // Free course: skip Razorpay entirely and enroll immediately.

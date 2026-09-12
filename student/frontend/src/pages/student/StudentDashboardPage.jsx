@@ -13,6 +13,7 @@ import LeaderboardSection from '../../components/student/LeaderboardSection';
 import ParambhJourney from '../../components/student/ParambhJourney';
 import MyEnrollmentCard from '../../components/student/MyEnrollmentCard';
 import LearnerProfileCard from '../../components/student/LearnerProfileCard';
+import JourneyCard from '../../components/student/JourneyCard';
 import { useProgression } from '../../hooks/useProgression';
 
 export default function StudentDashboardPage() {
@@ -80,6 +81,13 @@ export default function StudentDashboardPage() {
             because it answers "where am I?" before the dashboard asks them to
             do anything. */}
         <LearnerProfileCard data={progression} loading={isLoadingProgression} />
+
+        {/* The three-stage journey. Placed under the profile because "where am
+            I in the whole thing" follows naturally from "how am I doing". */}
+        <JourneyCard
+          journey={progression?.journey || []}
+          onContinue={() => navigate('/student/parambh')}
+        />
 
         {/* Section 2: Continue where you left off */}
         <ContinueCard />
