@@ -1092,6 +1092,10 @@ export const adminSetContentSubjects = asyncHandler(async (req, res) => {
 /** The subjects an administrator may choose from. */
 export const adminListSubjects = asyncHandler(async (req, res) => {
   const { Subject } = await import('../models/Subject.js');
+  const { ensureProgressionConfig } = await import('../services/progression/rules.service.js');
+  // A freshly-deployed service has no configuration until something creates it,
+  // and an empty dropdown is a worse answer than the launch defaults.
+  await ensureProgressionConfig();
   const subjects = await Subject.find({ enabled: true }).sort({ order: 1 }).lean();
   return sendSuccess(res, {
     data: subjects.map((s) => ({ code: s.code, name: s.name, color: s.color, icon: s.icon })),
@@ -1250,10 +1254,12 @@ export const adminGetStudentActivity = asyncHandler(async (req, res) => {
  * invite a screen showing a consistent-looking mixture of two versions.
  */
 export const adminGetProgressionRules = asyncHandler(async (req, res) => {
-  const { getRules } = await import('../services/progression/rules.service.js');
+  const { getRules, ensureProgressionConfig } = await import('../services/progression/rules.service.js');
   const { Stage } = await import('../models/Stage.js');
   const { Subject } = await import('../models/Subject.js');
   const { Achievement } = await import('../models/Achievement.js');
+
+  await ensureProgressionConfig();
 
   const [rules, stages, subjects, achievements] = await Promise.all([
     getRules({ fresh: true }),

@@ -1,5 +1,7 @@
 import { ProgressionRules, DEFAULT_XP_RULES, DEFAULT_RANKS } from '../../models/ProgressionRules.js';
-import { DEFAULT_SUBJECTS } from '../../models/Subject.js';
+import { Subject, DEFAULT_SUBJECTS } from '../../models/Subject.js';
+import { Stage, DEFAULT_STAGES } from '../../models/Stage.js';
+import { Achievement, DEFAULT_ACHIEVEMENTS } from '../../models/Achievement.js';
 
 /**
  * The one place progression configuration is read from.
@@ -84,4 +86,43 @@ export function findXpRule(rules, { activityType, stageCode = null, subjectCode 
   return applicable.sort((a, b) => score(b) - score(a))[0];
 }
 
-export default { getRules, ensureRules, invalidateRulesCache, findXpRule };
+/**
+ * Makes sure the progression configuration exists.
+ *
+ * The seed script is the deliberate way to create this, but it needs shell
+ * access to the database - which a managed deployment does not give you. So the
+ * first read creates anything missing instead, and a freshly-deployed service is
+ * never left with no subjects and a tagging screen full of empty dropdowns.
+ *
+ * Additive only: an existing collection is left exactly as it is, so this can
+ * never overwrite an administrator's edits.
+ */
+export async function ensureProgressionConfig() {
+  const created = { subjects: 0, stages: 0, achievements: 0, rules: false };
+
+  const seedIfEmpty = async (Model, defaults, key) => {
+    if (await Model.countDocuments({})) return;
+    try {
+      await Model.insertMany(defaults.map((d) => ({ ...d })));
+      created[key] = defaults.length;
+    } catch (err) {
+      // Two instances can both find it empty and both insert; the unique code
+      // index means one wins and the loser has nothing to do.
+      if (err?.code !== 11000) throw err;
+    }
+  };
+
+  await seedIfEmpty(Subject, DEFAULT_SUBJECTS, 'subjects');
+  await seedIfEmpty(Stage, DEFAULT_STAGES, 'stages');
+  await seedIfEmpty(Achievement, DEFAULT_ACHIEVEMENTS, 'achievements');
+
+  const existing = await ProgressionRules.findOne({ key: 'GLOBAL' }).select('_id').lean();
+  if (!existing) {
+    await ensureRules();
+    created.rules = true;
+  }
+
+  return created;
+}
+
+export default { getRules, ensureRules, ensureProgressionConfig, invalidateRulesCache, findXpRule };

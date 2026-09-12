@@ -732,3 +732,34 @@ test('attendance intake is unreachable without the service key', async () => {
   const res = await request.post('/api/internal/attendance').send({ records: [] });
   assert.ok(res.status === 401 || res.status === 403, `got ${res.status}`);
 });
+
+test('a freshly deployed service configures itself on first read', async () => {
+  // The seed script needs shell access to the database, which a managed
+  // deployment does not give you. Without this, the first admin to open the
+  // tagging screen would find an empty dropdown and no way to fill it.
+  const { Subject } = await import('../src/models/Subject.js');
+  const { Stage } = await import('../src/models/Stage.js');
+  const { Achievement } = await import('../src/models/Achievement.js');
+  const { ensureProgressionConfig } = await import('../src/services/progression/rules.service.js');
+
+  await Promise.all([Subject.deleteMany({}), Stage.deleteMany({}), Achievement.deleteMany({}), ProgressionRules.deleteMany({})]);
+  subjectService.invalidateSubjectCache();
+  rulesService.invalidateRulesCache();
+
+  const created = await ensureProgressionConfig();
+  assert.ok(created.subjects > 0 && created.stages > 0 && created.achievements > 0 && created.rules);
+
+  const res = await asService(request.get('/api/internal/subjects'));
+  assert.equal(res.status, 200);
+  assert.ok(res.body.data.length >= 3, 'the tagging dropdown has options');
+
+  // Running again must not duplicate or overwrite anything.
+  await Subject.updateOne({ code: 'ENGLISH' }, { $set: { name: 'Renamed By Admin' } });
+  const again = await ensureProgressionConfig();
+  assert.deepEqual(again, { subjects: 0, stages: 0, achievements: 0, rules: false }, 'nothing recreated');
+  const english = await Subject.findOne({ code: 'ENGLISH' }).lean();
+  assert.equal(english.name, 'Renamed By Admin', 'an administrator edit survives');
+
+  await Subject.updateOne({ code: 'ENGLISH' }, { $set: { name: 'English & Communication' } });
+  subjectService.invalidateSubjectCache();
+});
