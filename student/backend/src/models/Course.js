@@ -9,6 +9,19 @@ const lessonSchema = new Schema(
     duration: { type: String, default: '' },
     order: { type: Number, required: true },
     videoUrl: { type: String, default: '' },
+    /**
+     * What the lesson actually teaches.
+     *
+     * A lesson used to carry a title, a duration and a video URL and nothing
+     * else, so a course with no video was a list of headings. `summary` is the
+     * one-line description the syllabus shows beside each lesson; `content` is
+     * the written material a student reads, which is what makes a lesson usable
+     * before any video exists for it.
+     *
+     * Both default to empty, so every existing lesson keeps working untouched.
+     */
+    summary: { type: String, default: '' },
+    content: { type: String, default: '' },
     isPublished: { type: Boolean, default: true },
     isLocked: { type: Boolean, default: false },
     // Set per lesson so one purchased course can teach - and score - all three

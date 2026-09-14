@@ -1478,8 +1478,106 @@ export const adminSetupJourney = asyncHandler(async (req, res) => {
   });
 });
 
+/**
+ * Seeds the GARUD and YODDHA curriculum, or reports what it would do.
+ *
+ * Exists for the same reason the journey setup does: the seed script needs
+ * database access a managed deployment does not give you, so content defined in
+ * code could otherwise never reach production. Dry by default - an operator
+ * sees every decision before anything is written.
+ *
+ * Adds and never overwrites, and writes no student data of any kind.
+ */
+export const adminSeedCurriculum = asyncHandler(async (req, res) => {
+  const { seedCurriculum } = await import('../services/progression/curriculum.service.js');
+  const result = await seedCurriculum({
+    apply: req.body?.apply === true,
+    only: req.body?.only || null,
+  });
+
+  return sendSuccess(res, {
+    message: result.applied ? 'Curriculum applied.' : 'Dry run - nothing was written.',
+    data: result,
+  });
+});
+
+/** What is actually in the database for the journey courses. Read-only. */
+export const adminAuditCurriculum = asyncHandler(async (req, res) => {
+  const { auditCurriculum } = await import('../services/progression/curriculum.service.js');
+  return sendSuccess(res, { data: await auditCurriculum() });
+});
+
+/**
+ * Task submissions for a given set of students.
+ *
+ * Grading a submission already worked - gradeBridgedTaskSubmission takes any
+ * TaskSubmission by id - but only submissions that had been pushed outward from
+ * a teacher-authored assignment were ever visible on that side. A task authored
+ * as course content, which is what the GARUD and YODDHA assignments are, had no
+ * route by which a teacher could find it, so in practice it could not be graded
+ * at all.
+ *
+ * The caller supplies the student ids it is entitled to see; scoping to a
+ * teacher's own roster happens on the teacher side, where the ownership records
+ * actually live. This endpoint is behind the service key and returns nothing
+ * for ids it is not given.
+ */
+export const adminListTaskSubmissions = asyncHandler(async (req, res) => {
+  const userIds = Array.isArray(req.body?.userIds) ? req.body.userIds.filter(mongoose.isValidObjectId) : [];
+  const ungradedOnly = req.body?.ungradedOnly === true;
+  if (!userIds.length) return sendSuccess(res, { data: [] });
+
+  const filter = { userId: { $in: userIds } };
+  if (ungradedOnly) filter.teacherScore = null;
+
+  const submissions = await TaskSubmission.find(filter).sort({ completedAt: -1 }).limit(500).lean();
+  if (!submissions.length) return sendSuccess(res, { data: [] });
+
+  const [tasks, users] = await Promise.all([
+    Task.find({ _id: { $in: submissions.map((s) => s.taskId) } }).select('taskId title subject type moduleTitle pointsReward courseId').lean(),
+    User.find({ _id: { $in: submissions.map((s) => s.userId) } }).select('name email').lean(),
+  ]);
+  const courses = await Course.find({ _id: { $in: tasks.map((t) => t.courseId) } }).select('slug title').lean();
+
+  const taskById = new Map(tasks.map((t) => [String(t._id), t]));
+  const userById = new Map(users.map((u) => [String(u._id), u]));
+  const courseById = new Map(courses.map((c) => [String(c._id), c]));
+
+  return sendSuccess(res, {
+    data: submissions.map((sub) => {
+      const task = taskById.get(String(sub.taskId));
+      const course = task ? courseById.get(String(task.courseId)) : null;
+      const user = userById.get(String(sub.userId));
+      return {
+        submissionId: String(sub._id),
+        userId: String(sub.userId),
+        studentName: user?.name || null,
+        studentEmail: user?.email || null,
+        taskId: task?.taskId || null,
+        taskTitle: task?.title || null,
+        taskType: task?.type || null,
+        subject: task?.subject || null,
+        moduleTitle: task?.moduleTitle || null,
+        courseSlug: course?.slug || null,
+        courseTitle: course?.title || null,
+        submissionText: sub.submissionText || '',
+        status: sub.status,
+        submittedAt: sub.completedAt,
+        graded: sub.teacherScore !== null && sub.teacherScore !== undefined,
+        teacherScore: sub.teacherScore ?? null,
+        teacherMaxScore: sub.teacherMaxScore ?? null,
+        teacherFeedback: sub.teacherFeedback ?? null,
+        gradedAt: sub.gradedAt || null,
+      };
+    }),
+  });
+});
+
 export default {
   adminSetupJourney,
+  adminListTaskSubmissions,
+  adminSeedCurriculum,
+  adminAuditCurriculum,
   adminGetProgressionRules,
   adminUpdateProgressionRules,
   adminUpdateStage,

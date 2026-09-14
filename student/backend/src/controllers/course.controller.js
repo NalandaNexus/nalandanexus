@@ -74,6 +74,12 @@ export const getEnrolledCourseContent = asyncHandler(async (req, res) => {
           duration: l.duration,
           order: l.order,
           videoUrl: l.videoUrl,
+          // The teaching material. A lesson used to be a title, a duration and
+          // a video URL, so a course with no video was a list of headings -
+          // which is exactly what GARUD and YODDHA would have been.
+          summary: l.summary,
+          content: l.content,
+          subject: l.subject,
           isLocked: l.isLocked,
           completed: completedLessonIds.has(l.lessonId),
           isCurrent: l.lessonId === enrollment?.currentLessonId,

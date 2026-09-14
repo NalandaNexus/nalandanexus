@@ -86,7 +86,10 @@ export default function StudentDashboardPage() {
             I in the whole thing" follows naturally from "how am I doing". */}
         <JourneyCard
           journey={progression?.journey || []}
-          onContinue={() => navigate('/student/parambh')}
+          onContinue={(stage) =>
+            // Into the stage the student is actually on, not always PRARAMBH.
+            navigate(stage?.course?.slug ? `/student/course/${stage.course.slug}` : '/student/parambh')
+          }
         />
 
         {/* Section 2: Continue where you left off */}

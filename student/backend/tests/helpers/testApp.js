@@ -28,7 +28,12 @@ process.env.INTERNAL_SERVICE_KEY = 'test_internal_key';
  * RBAC), not just reject unauthenticated requests before touching the DB.
  */
 export async function bootTestApp() {
-  const mongod = await MongoMemoryServer.create();
+  // Several suites boot a server at once, and mongod's default 10s start
+  // window is occasionally missed under that contention - producing a failure
+  // that looks like a test failure and is really a resource one. The wait is
+  // generous rather than tight; a slow start costs seconds, a spurious failure
+  // costs an investigation.
+  const mongod = await MongoMemoryServer.create({ instance: { launchTimeout: 60_000 } });
 
   const { connectDB, disconnectDB } = await import('../../src/config/db.js');
   await connectDB(mongod.getUri());

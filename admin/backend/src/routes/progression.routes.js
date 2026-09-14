@@ -23,6 +23,10 @@ router.patch('/stages/:code', requirePermission('settings.manage'), validate({ .
 router.patch('/achievements/:code', requirePermission('settings.manage'), validate({ ...codeParam('code'), body: z.record(z.any()) }), controller.updateAchievement);
 router.post('/recalculate', requirePermission('settings.manage'), validate({ body: z.record(z.any()) }), controller.recalculate);
 router.post('/journey/setup', requirePermission('settings.manage'), validate({ body: z.record(z.any()) }), controller.setupJourney);
+// Curriculum content. Seeding writes course content and nothing about students,
+// so it sits with the other settings.manage actions; the audit is a read.
+router.post('/curriculum/seed', requirePermission('settings.manage'), validate({ body: z.record(z.any()) }), controller.seedCurriculum);
+router.get('/curriculum/audit', requirePermission('settings.manage'), controller.auditCurriculum);
 // Stage eligibility. Configuration is settings.manage; the student overview
 // is a reporting view and sits behind analytics.view.
 router.get('/eligibility', requirePermission('settings.manage'), controller.listEligibility);

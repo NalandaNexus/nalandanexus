@@ -121,6 +121,43 @@ export const setupJourney = catchAsync(async (req, res) => {
   sendSuccess(res, { message: apply ? 'Journey courses set up' : 'Dry run', data: result });
 });
 
+/**
+ * Puts the GARUD and YODDHA curriculum into the database.
+ *
+ * Dry run unless explicitly applied, and audit-logged when it is. It adds and
+ * never overwrites, so a second run leaves an administrator's edits alone - and
+ * it writes no student data, because populating a course does not give anybody
+ * access to it. The eligibility gate still decides that.
+ */
+export const seedCurriculum = catchAsync(async (req, res) => {
+  const apply = req.body?.apply === true;
+  const result = await studentBridge.seedCurriculum({ apply, only: req.body?.only || null });
+
+  if (apply) {
+    const decisions = (result?.courses || []).flatMap((c) => c.decisions || []);
+    await recordAuditLog({
+      actor: req.admin,
+      action: 'progression.curriculum.seeded',
+      entityType: 'Course',
+      entityId: 'CURRICULUM',
+      metadata: {
+        only: req.body?.only || 'all',
+        created: decisions.filter((d) => d.action === 'CREATE').length,
+        unchanged: decisions.filter((d) => d.action === 'UNCHANGED').length,
+        courses: (result?.courses || []).map((c) => c.slug),
+      },
+      req,
+    });
+  }
+
+  sendSuccess(res, { message: apply ? 'Curriculum applied' : 'Dry run', data: result });
+});
+
+/** What is actually in the database for the journey courses. Read-only. */
+export const auditCurriculum = catchAsync(async (req, res) => {
+  sendSuccess(res, { data: await studentBridge.auditCurriculum() });
+});
+
 // --- Stage eligibility -------------------------------------------------------
 
 /**
@@ -209,6 +246,7 @@ export const getAnalytics = catchAsync(async (req, res) => {
 
 export default {
   getRules, updateRules, updateStage, updateAchievement, recalculate, setupJourney, getAnalytics,
+  seedCurriculum, auditCurriculum,
   listEligibility, getEligibility, saveEligibilityDraft, validateEligibility,
   publishEligibility, disableEligibility, previewEligibility, studentEligibilityOverview,
 };

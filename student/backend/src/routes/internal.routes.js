@@ -109,6 +109,14 @@ router.post('/progression/eligibility/preview', eligibilityController.previewEli
 router.get('/progression/student-eligibility', eligibilityController.studentEligibilityOverview);
 // Brings GARUD and YODDHA into existence. Dry run unless { apply: true }.
 router.post('/progression/journey/setup', internalController.adminSetupJourney);
+// Curriculum content. Dry unless the body says apply, and it never writes
+// student data - creating content is not the same as granting access to it.
+router.post('/progression/curriculum/seed', internalController.adminSeedCurriculum);
+// Task submissions for a set of students, so a teacher can find the course
+// assignments they are entitled to grade. Grading itself already exists at
+// /task-submissions/:sourceId/grade and works on any submission by id.
+router.post('/task-submissions/for-students', internalController.adminListTaskSubmissions);
+router.get('/progression/curriculum/audit', internalController.adminAuditCurriculum);
 
 router.post('/progression/students', validate(adminStudentProgressSchema), internalController.adminGetStudentProgress);
 router.get('/progression/students/:userId/activity', validate(adminStudentActivitySchema), internalController.adminGetStudentActivity);

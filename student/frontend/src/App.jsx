@@ -160,6 +160,12 @@ export default function App() {
                     <Route path="parambh" element={<ParambhCoursePage />} />
                     <Route path="parambh/tasks/:taskId" element={<TaskDetailPage />} />
                     <Route path="parambh/quizzes/:quizId" element={<QuizRunnerPage />} />
+                    {/* The same screens for any stage the student may enter.
+                        The parambh routes above are kept so existing links and
+                        bookmarks continue to work. */}
+                    <Route path="course/:slug" element={<ParambhCoursePage />} />
+                    <Route path="course/:slug/tasks/:taskId" element={<TaskDetailPage />} />
+                    <Route path="course/:slug/quizzes/:quizId" element={<QuizRunnerPage />} />
                     <Route path="notes" element={<NotesPage />} />
                     <Route path="live-classes" element={<LiveClassesPage />} />
                     <Route path="quizzes" element={<QuizzesListPage />} />

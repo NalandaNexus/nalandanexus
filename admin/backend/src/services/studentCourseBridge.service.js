@@ -373,6 +373,23 @@ export async function setupJourney(payload) {
   return body?.data || null;
 }
 
+/**
+ * Curriculum content for the journey courses, proxied to the service that owns
+ * the content. Dry unless the payload says apply.
+ */
+export async function seedCurriculum(payload) {
+  const body = await couponCall('/api/internal/progression/curriculum/seed', {
+    method: 'POST',
+    body: JSON.stringify(payload || {}),
+  });
+  return body?.data || null;
+}
+
+export async function auditCurriculum() {
+  const body = await couponCall('/api/internal/progression/curriculum/audit', { method: 'GET' });
+  return body?.data || [];
+}
+
 export async function getProgressionAnalytics() {
   const body = await couponCall('/api/internal/progression/analytics', { method: 'GET' });
   return body?.data || null;
@@ -440,6 +457,8 @@ export default {
   recalculateProgression,
   getProgressionAnalytics,
   setupJourney,
+  seedCurriculum,
+  auditCurriculum,
   listEligibility,
   getEligibility,
   saveEligibilityDraft,

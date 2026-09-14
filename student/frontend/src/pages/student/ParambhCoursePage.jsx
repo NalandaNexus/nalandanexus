@@ -1,13 +1,23 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { Play, CheckCircle2, Lock, FileText, BrainCircuit, ArrowLeft, BookOpen } from 'lucide-react';
 import { courseService } from '../../services/courseService';
 import { useStudent } from '../../context/StudentContext';
 
-const COURSE_SLUG = 'prarambh';
+/**
+ * The course slug used to be hard-coded here, and the route had no parameter -
+ * so this page could only ever show PRARAMBH. Once GARUD and YODDHA have
+ * content, a student who becomes eligible for one has to be able to open it.
+ *
+ * The legacy /student/parambh route still works and falls back to this default,
+ * so nothing that already links to it breaks.
+ */
+const DEFAULT_COURSE_SLUG = 'prarambh';
 
 export default function ParambhCoursePage() {
   const { refreshData } = useStudent();
+  const { slug } = useParams();
+  const courseSlug = slug || DEFAULT_COURSE_SLUG;
 
   const [courseContent, setCourseContent] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -20,7 +30,7 @@ export default function ParambhCoursePage() {
     setIsLoading(true);
     setError('');
     try {
-      const data = await courseService.getEnrolledCourseContent(COURSE_SLUG);
+      const data = await courseService.getEnrolledCourseContent(courseSlug);
       setCourseContent(data);
       const currentModule = data.modules.find((m) => m.lessons.some((l) => l.isCurrent)) || data.modules[0];
       const currentLesson = currentModule?.lessons.find((l) => l.isCurrent) || currentModule?.lessons[0];
@@ -31,7 +41,7 @@ export default function ParambhCoursePage() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [courseSlug]);
 
   useEffect(() => {
     load();
@@ -69,7 +79,7 @@ export default function ParambhCoursePage() {
         <div className="max-w-sm text-center space-y-3 bg-[#FAF9F4] border border-[#DFDACB] rounded-2xl p-6">
           <p className="font-heading font-bold text-[#22355E]">Course content unavailable</p>
           <p className="text-xs text-[#2B2B28]/70">{error}</p>
-          <Link to="/courses/prarambh" className="inline-block px-5 py-2.5 bg-[#AB5236] text-white font-heading font-bold text-xs rounded-xl">
+          <Link to={`/courses/${courseSlug}`} className="inline-block px-5 py-2.5 bg-[#AB5236] text-white font-heading font-bold text-xs rounded-xl">
             View Course & Purchase
           </Link>
         </div>
@@ -131,17 +141,23 @@ export default function ParambhCoursePage() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* LEFT: Video Player & Lesson Content (7 cols) */}
           <div className="lg:col-span-7 space-y-4">
-            <div className="bg-black rounded-2xl overflow-hidden shadow-lg aspect-video relative border border-[#DFDACB] flex items-center justify-center">
-              <video
-                key={activeLesson?.lessonId}
-                src={activeLesson?.videoUrl || courseContent.videoUrl}
-                poster={courseContent.bannerImage}
-                controls
-                className="w-full h-full object-cover"
-              >
-                Your browser does not support the video tag.
-              </video>
-            </div>
+            {/* A lesson may be written rather than filmed - GARUD and YODDHA are
+                text-first. An empty black player in place of a video that does
+                not exist is worse than no player, so it is only drawn when
+                there is something to play. */}
+            {(activeLesson?.videoUrl || courseContent.videoUrl) && (
+              <div className="bg-black rounded-2xl overflow-hidden shadow-lg aspect-video relative border border-[#DFDACB] flex items-center justify-center">
+                <video
+                  key={activeLesson?.lessonId}
+                  src={activeLesson?.videoUrl || courseContent.videoUrl}
+                  poster={courseContent.bannerImage}
+                  controls
+                  className="w-full h-full object-cover"
+                >
+                  Your browser does not support the video tag.
+                </video>
+              </div>
+            )}
 
             {/* Current Lesson Metadata Card */}
             <div className="bg-[#FAF9F4] border border-[#DFDACB] rounded-2xl p-5 shadow-xs space-y-3">
@@ -157,6 +173,24 @@ export default function ParambhCoursePage() {
               <h2 className="font-heading font-bold text-base sm:text-lg text-[#22355E]">
                 {activeLesson?.title}
               </h2>
+
+              {activeLesson?.summary && (
+                <p className="text-sm text-[#2B2B28]/70 leading-relaxed">{activeLesson.summary}</p>
+              )}
+
+              {activeLesson?.content && (
+                /* Paragraphs are split on blank lines rather than rendered as
+                   HTML: the material is authored as plain text, and rendering
+                   it as markup would mean trusting content the page does not
+                   control. */
+                <div className="pt-3 border-t border-[#DFDACB] space-y-3">
+                  {activeLesson.content.split('\n\n').map((para, i) => (
+                    <p key={i} className="text-sm text-[#2B2B28] leading-relaxed whitespace-pre-line">
+                      {para}
+                    </p>
+                  ))}
+                </div>
+              )}
 
               <div className="pt-3 border-t border-[#DFDACB] flex flex-wrap items-center gap-2.5">
                 <button
