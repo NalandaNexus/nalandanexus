@@ -305,6 +305,27 @@ export async function retractLiveClassFromStudents(sessionId, reason = 'cancelle
 }
 
 /**
+ * Course-assignment submissions for a set of students.
+ *
+ * The ids are supplied by the caller, which has already scoped them to the
+ * teacher's own roster - this leg carries no authority of its own beyond the
+ * service key, and returns nothing for ids it is not given.
+ */
+export async function fetchCourseSubmissions(userIds, { ungradedOnly = false } = {}) {
+  if (!isConfigured() || !userIds.length) return { ok: false, submissions: [] };
+  try {
+    const body = await call('/api/internal/task-submissions/for-students', {
+      method: 'POST',
+      body: JSON.stringify({ userIds, ungradedOnly }),
+    });
+    return { ok: true, submissions: body?.data || [] };
+  } catch (err) {
+    console.error('[studentBridge] Course submission fetch failed:', err.message);
+    return { ok: false, submissions: [], error: err.message };
+  }
+}
+
+/**
  * Pushes a real grade back to the student portal's own TaskSubmission — the
  * return leg of the task bridge (submission.service.js#gradeSubmission
  * calls this when the graded Submission carries a `studentSubmissionSourceId`,

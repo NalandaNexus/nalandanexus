@@ -76,6 +76,8 @@ async function startFakeStudentPortal() {
     requireServiceKey: true,
     // Progression the student service would report, keyed by portal user id.
     progressByUser: {},
+    submissions: [],
+    gradesDelivered: [],
     activityByUser: {},
     calls: [],
   };
@@ -132,6 +134,30 @@ async function startFakeStudentPortal() {
       });
     }
 
+    if (url.pathname === '/api/internal/task-submissions/for-students') {
+      // Like the real endpoint, answers only for the ids it was asked about -
+      // which is what makes the roster-scoping test meaningful.
+      let body = '';
+      req.on('data', (c) => (body += c));
+      return req.on('end', () => {
+        const parsed = body ? JSON.parse(body) : {};
+        const ids = new Set(parsed.userIds || []);
+        let rows = (state.submissions || []).filter((r) => ids.has(r.userId));
+        if (parsed.ungradedOnly) rows = rows.filter((r) => !r.graded);
+        send(200, { success: true, data: rows });
+      });
+    }
+
+    const grade = url.pathname.match(/^\/api\/internal\/task-submissions\/([^/]+)\/grade$/);
+    if (grade) {
+      let body = '';
+      req.on('data', (c) => (body += c));
+      return req.on('end', () => {
+        state.gradesDelivered.push({ submissionId: grade[1], ...JSON.parse(body || '{}') });
+        send(200, { success: true, data: null });
+      });
+    }
+
     // Every other bridge call (announcements, materials, ...) is a best-effort
     // side channel that must never fail the action that triggered it.
     return send(200, { success: true, data: null });
@@ -149,6 +175,8 @@ async function startFakeStudentPortal() {
       state.enrolledStatus = 200;
       state.enrolledBySlug = {};
       state.progressByUser = {};
+      state.submissions = [];
+      state.gradesDelivered = [];
       state.activityByUser = {};
       state.calls = [];
     },

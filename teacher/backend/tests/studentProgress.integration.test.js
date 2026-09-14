@@ -302,3 +302,125 @@ test('a teacher can see why a stage is still shut, in the same terms the student
   assert.equal(yoddha.status, 'NOT_CONFIGURED', 'an unpublished rule is distinguishable from an unmet one');
   assert.equal(yoddha.outstanding.length, 0, 'and has nothing to list, because nothing has been asked for yet');
 });
+
+
+// --- Course assignments ------------------------------------------------------
+
+const seedSubmissions = (rows) => {
+  portal.state.submissions = rows;
+};
+
+test('a teacher sees course-assignment submissions only from their own students', async () => {
+  // Assignments that are part of the course content are submitted in the
+  // student portal and were previously invisible here - the student portal's
+  // own comment said a non-bridged task had no grading mechanism at all.
+  const mine = await makeTeacherWithStudents('course-mine', [{ name: 'My Student' }]);
+  const theirs = await makeTeacherWithStudents('course-theirs', [{ name: 'Other Student' }]);
+
+  seedSubmissions([
+    {
+      submissionId: 'sub-mine',
+      userId: String(mine.students[0].linkedUserId),
+      studentName: 'My Student',
+      taskId: 'garud-m01-a01',
+      taskTitle: 'Introduce Yourself Professionally',
+      subject: 'ENGLISH',
+      courseSlug: 'garud',
+      submissionText: 'my answer',
+      graded: false,
+    },
+    {
+      submissionId: 'sub-theirs',
+      userId: String(theirs.students[0].linkedUserId),
+      studentName: 'Other Student',
+      taskId: 'garud-m01-a01',
+      taskTitle: 'Introduce Yourself Professionally',
+      subject: 'ENGLISH',
+      courseSlug: 'garud',
+      submissionText: 'their answer',
+      graded: false,
+    },
+  ]);
+
+  const res = await api('GET', '/api/teacher/course-assignments', { cookie: mine.cookie });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.deepEqual(
+    res.body.data.map((r) => r.submissionId),
+    ['sub-mine'],
+    'the other teacher\'s student never appears'
+  );
+  assert.equal(res.body.data[0].subject, 'ENGLISH', 'the subject travels with it');
+  assert.equal(res.body.data[0].courseSlug, 'garud');
+});
+
+test('a teacher cannot grade another teacher\'s student', async () => {
+  const mine = await makeTeacherWithStudents('grade-mine', [{ name: 'My Student' }]);
+  const theirs = await makeTeacherWithStudents('grade-theirs', [{ name: 'Other Student' }]);
+
+  seedSubmissions([
+    { submissionId: 'sub-theirs', userId: String(theirs.students[0].linkedUserId), taskTitle: 'T', graded: false },
+  ]);
+
+  const res = await api('PATCH', '/api/teacher/course-assignments/sub-theirs/grade', {
+    cookie: mine.cookie,
+    body: { score: 80, maxScore: 100, feedback: 'nice' },
+  });
+
+  assert.equal(res.status, 404, 'refused');
+  assert.equal(res.body.error?.code || res.body.code, 'SUBMISSION_NOT_FOUND');
+  assert.equal(portal.state.gradesDelivered.length, 0, 'and no grade was delivered');
+});
+
+test('grading a course assignment delivers the real score to the student portal', async () => {
+  const { cookie, students } = await makeTeacherWithStudents('grade-ok', [{ name: 'Gradable Student' }]);
+  seedSubmissions([
+    {
+      submissionId: 'sub-ok',
+      userId: String(students[0].linkedUserId),
+      taskTitle: 'Threat Analysis Report',
+      subject: 'CYBERSECURITY',
+      graded: false,
+    },
+  ]);
+
+  const res = await api('PATCH', '/api/teacher/course-assignments/sub-ok/grade', {
+    cookie,
+    body: { score: 84, maxScore: 100, feedback: 'Strong threat modelling; ranking needs justification.' },
+  });
+
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(portal.state.gradesDelivered.length, 1, 'the grade crossed the bridge');
+  assert.equal(portal.state.gradesDelivered[0].submissionId, 'sub-ok');
+  assert.equal(portal.state.gradesDelivered[0].score, 84);
+  assert.equal(portal.state.gradesDelivered[0].maxScore, 100);
+});
+
+test('a score above the maximum is refused before it is delivered', async () => {
+  const { cookie, students } = await makeTeacherWithStudents('grade-range', [{ name: 'Range Student' }]);
+  seedSubmissions([
+    { submissionId: 'sub-range', userId: String(students[0].linkedUserId), taskTitle: 'T', graded: false },
+  ]);
+
+  const res = await api('PATCH', '/api/teacher/course-assignments/sub-range/grade', {
+    cookie,
+    body: { score: 140, maxScore: 100 },
+  });
+
+  assert.equal(res.status, 400);
+  assert.equal(portal.state.gradesDelivered.length, 0, 'nothing was delivered');
+});
+
+test('an unreachable student service costs the list, not the page', async () => {
+  const { cookie } = await makeTeacherWithStudents('course-down', [{ name: 'Down Student' }]);
+  portal.state.down = true;
+
+  const res = await api('GET', '/api/teacher/course-assignments', { cookie });
+  assert.equal(res.status, 200, 'the page still answers');
+  assert.equal(res.body.meta.available, false, 'and says plainly that the column is missing');
+  assert.deepEqual(res.body.data, []);
+});
+
+test('course assignments are unreachable without a teacher session', async () => {
+  const res = await api('GET', '/api/teacher/course-assignments');
+  assert.ok(res.status === 401 || res.status === 403, `expected a refusal, got ${res.status}`);
+});

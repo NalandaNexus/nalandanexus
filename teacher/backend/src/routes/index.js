@@ -5,6 +5,7 @@ import classRoutes from './class.routes.js';
 import studentRoutes from './student.routes.js';
 import assignmentRoutes from './assignment.routes.js';
 import submissionRoutes from './submission.routes.js';
+import courseAssignmentRoutes from './courseAssignments.routes.js';
 import attendanceRoutes from './attendance.routes.js';
 import dashboardRoutes from './dashboard.routes.js';
 import analyticsRoutes from './analytics.routes.js';
@@ -40,6 +41,10 @@ router.use('/classes', classRoutes);
 router.use('/students', studentRoutes);
 router.use('/assignments', assignmentRoutes);
 router.use('/submissions', submissionRoutes);
+// Assignments that are part of the course content rather than teacher-authored.
+// Submissions live in the student portal; ownership is enforced against this
+// teacher's own roster before anything is read or graded.
+router.use('/course-assignments', courseAssignmentRoutes);
 router.use('/attendance', attendanceRoutes);
 router.use('/dashboard', dashboardRoutes);
 router.use('/analytics', analyticsRoutes);

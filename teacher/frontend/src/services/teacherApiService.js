@@ -177,6 +177,17 @@ class TeacherApiService {
     return get('/students/progress', params).then((r) => r);
   }
 
+  /**
+   * Coursework from the three stages, submitted in the student portal. The
+   * roster check is on the server; this is only the transport.
+   */
+  listCourseAssignments(params = {}) {
+    return get('/course-assignments', params).then((r) => r);
+  }
+  gradeCourseAssignment(submissionId, payload) {
+    return patch(`/course-assignments/${submissionId}/grade`, payload).then((r) => r.data);
+  }
+
   getStudentProgressDetail(studentId, params = {}) {
     return get(`/students/progress/${studentId}`, params).then((r) => r.data);
   }

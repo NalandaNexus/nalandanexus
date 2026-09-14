@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, X } from 'lucide-react';
 import { teacherApiService, ApiClientError } from '../services/teacherApiService';
 import { socketService } from '../services/socketService';
+import CourseAssignments from '../components/grading/CourseAssignments';
 
 export default function GradingPage() {
   const [assignments, setAssignments] = useState([]);
@@ -264,6 +265,10 @@ export default function GradingPage() {
           </div>
         </div>
       )}
+
+      {/* Coursework from the three stages. Authored as course content rather
+          than created here, so it never appeared on this page before. */}
+      <CourseAssignments />
     </div>
   );
 }
