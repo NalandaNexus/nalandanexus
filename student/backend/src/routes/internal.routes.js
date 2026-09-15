@@ -34,6 +34,7 @@ import {
   adminUpdateCouponSchema,
   adminCouponIdSchema,
   lookupStudentSchema,
+  resyncPortalStudentsSchema,
 } from '../validators/internal.validators.js';
 
 // Service-to-service only - authenticated by a shared secret
@@ -139,5 +140,9 @@ router.delete('/coupons/:id', validate(adminCouponIdSchema), internalController.
 // teacher's roster as the scope; the admin portal sends none. A POST because the
 // scope can be long, not because anything is written.
 router.post('/students/lookup', validate(lookupStudentSchema), internalController.lookupStudentByEnrollmentNumber);
+
+// Resends student records to the admin and teacher portals. Dry unless
+// { apply: true }, like the other administrative runs on this router.
+router.post('/portal-students/resync', validate(resyncPortalStudentsSchema), internalController.resyncPortalStudents);
 
 export default router;

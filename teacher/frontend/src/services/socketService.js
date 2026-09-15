@@ -78,6 +78,9 @@ class SocketService {
         'class.completed',
         'class.cancelled',
         'class.updated',
+        // A student's record arrived from the student portal - an enrolment or a
+        // profile change for someone on this teacher's roster.
+        'student.synced',
       ];
       forwardEvents.forEach((ev) => {
         this.socket.on(ev, (payload) => {

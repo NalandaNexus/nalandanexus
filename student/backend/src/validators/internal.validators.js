@@ -405,3 +405,24 @@ export const lookupStudentSchema = z.object({
     })
     .strict(),
 });
+
+/**
+ * Resending student records to the admin and teacher portals. `mode` says whose:
+ * one student (by enrollment number), everyone still pending, or all enrolled
+ * students from `cursor`, `limit` at a time.
+ */
+export const resyncPortalStudentsSchema = z.object({
+  body: z
+    .object({
+      mode: z.enum(['one', 'pending', 'all']).optional().default('pending'),
+      enrollmentNumber: z.string().trim().min(1).max(40).optional(),
+      cursor: z.string().regex(/^[0-9a-fA-F]{24}$/).nullable().optional(),
+      limit: z.number().int().min(1).max(100).optional().default(50),
+      apply: z.boolean().optional().default(false),
+    })
+    .strict()
+    .refine((b) => b.mode !== 'one' || Boolean(b.enrollmentNumber), {
+      message: 'enrollmentNumber is required to resync one student.',
+      path: ['enrollmentNumber'],
+    }),
+});

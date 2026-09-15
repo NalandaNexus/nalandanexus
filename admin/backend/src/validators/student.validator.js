@@ -7,6 +7,7 @@ export const listStudentsQuery = {
     department: z.string().trim().max(100).optional(),
     courseId: z.string().regex(/^[0-9a-fA-F]{24}$/).optional(),
     batch: z.string().trim().max(50).optional(),
+    source: z.enum(['manual', 'student-portal']).optional(),
   }),
 };
 
@@ -63,4 +64,37 @@ export const enrollmentNumberParams = {
   }),
 };
 
-export default { listStudentsQuery, createStudentSchema, updateStudentSchema, enrollmentNumberParams };
+/**
+ * Resending portal students' records. `mode` picks whose: one student by
+ * enrollment number, everyone whose last delivery failed, or every enrolled
+ * student a page at a time. Nothing is sent unless `apply` is true.
+ */
+export const portalSyncSchema = {
+  body: z
+    .object({
+      mode: z.enum(['one', 'pending', 'all']).optional().default('pending'),
+      enrollmentNumber: z
+        .string()
+        .max(40)
+        .optional()
+        .transform((value, ctx) => {
+          if (value === undefined) return undefined;
+          const normalized = normalizeEnrollmentNumber(value);
+          if (!normalized) {
+            ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Enter a valid enrollment number, for example NN26-000124.' });
+            return z.NEVER;
+          }
+          return normalized;
+        }),
+      cursor: z.string().regex(/^[0-9a-fA-F]{24}$/).nullable().optional(),
+      limit: z.coerce.number().int().min(1).max(100).optional().default(10),
+      apply: z.boolean().optional().default(false),
+    })
+    .strict()
+    .refine((b) => b.mode !== 'one' || Boolean(b.enrollmentNumber), {
+      message: 'An enrollment number is required to resend one student.',
+      path: ['enrollmentNumber'],
+    }),
+};
+
+export default { listStudentsQuery, createStudentSchema, updateStudentSchema, enrollmentNumberParams, portalSyncSchema };

@@ -3,7 +3,7 @@ import * as studentController from '../controllers/student.controller.js';
 import { authenticate, requirePermission } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { objectIdParam } from '../validators/common.js';
-import { listStudentsQuery, createStudentSchema, updateStudentSchema, enrollmentNumberParams } from '../validators/student.validator.js';
+import { listStudentsQuery, createStudentSchema, updateStudentSchema, enrollmentNumberParams, portalSyncSchema } from '../validators/student.validator.js';
 
 const router = Router();
 
@@ -18,6 +18,8 @@ router.get(
   validate(enrollmentNumberParams),
   studentController.findByEnrollmentNumber
 );
+// Resends portal students' records when a delivery failed. Dry unless { apply: true }.
+router.post('/portal-sync', requirePermission('students.update'), validate(portalSyncSchema), studentController.syncPortalStudents);
 router.get('/:id', requirePermission('students.read'), validate({ params: objectIdParam() }), studentController.getById);
 router.post('/', requirePermission('students.create'), validate(createStudentSchema), studentController.create);
 router.put('/:id', requirePermission('students.update'), validate({ params: objectIdParam(), ...updateStudentSchema }), studentController.update);

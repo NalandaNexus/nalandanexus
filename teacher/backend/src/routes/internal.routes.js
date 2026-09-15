@@ -19,6 +19,7 @@ import {
   adminAnnouncementValidator,
   receiveSubmissionValidator,
   receiveQuizResultValidator,
+  portalStudentValidator,
 } from '../validators/internal.validators.js';
 
 // Service-to-service only - authenticated by a shared secret
@@ -30,6 +31,8 @@ router.use(requireInternalServiceKey);
 
 router.get('/teacher-for-course/:studentCourseSlug', teacherForCourseValidator, validate, internalController.getTeacherForCourse);
 router.post('/batches/place', placeEnrollmentValidator, validate, internalController.placeEnrollmentInBatch);
+// A student's current record from the student portal, applied to the rows placement created.
+router.put('/portal-students/:userId', portalStudentValidator, validate, internalController.applyPortalStudentRecord);
 
 // Batch administration for the Admin portal. Batches live in this database, so
 // Admin manages them through here rather than owning a competing model.

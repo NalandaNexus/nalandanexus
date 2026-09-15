@@ -87,6 +87,28 @@ export const placeEnrollmentValidator = [
 ];
 
 /**
+ * A student's current record from the student portal. The email is checked but
+ * not normalised: normalising would rewrite a real address (dots in a Gmail
+ * local part) into one the student does not use.
+ */
+export const portalStudentValidator = [
+  param('userId').isMongoId().withMessage('userId must be a valid identifier.'),
+  body('userId').isMongoId().withMessage('userId must be a valid identifier.'),
+  body('fullName').isString().trim().notEmpty().isLength({ max: 120 }),
+  body('email').isString().trim().isEmail().isLength({ max: 200 }),
+  body('enrollmentNumber').optional({ nullable: true }).isString().trim().matches(/^NN\d{2}-\d{6,9}$/),
+  body('phone').optional({ nullable: true }).isString().isLength({ max: 20 }),
+  body('avatar').optional({ nullable: true }).isString().isLength({ max: 2000 }),
+  body('guardianName').optional({ nullable: true }).isString().isLength({ max: 120 }),
+  body('grade').optional({ nullable: true }).isString().isLength({ max: 40 }),
+  body('enrollments').isArray({ max: 200 }),
+  body('enrollments.*.enrollmentId').isString().trim().notEmpty().isLength({ max: 40 }).matches(/^[A-Z0-9-]+$/i),
+  body('enrollments.*.status').isIn(['active', 'revoked']),
+  body('enrollments.*.batchId').optional({ nullable: true }).isString().isLength({ max: 40 }),
+  body('sourceUpdatedAt').isISO8601(),
+];
+
+/**
  * Admin batch administration. The teacher is identified by EMAIL, the identity
  * shared across services - never by one of this database's ObjectIds, which
  * Admin has no way to know and must not be able to guess at.
@@ -131,6 +153,7 @@ export default {
   adminReassignBatchValidator,
   adminListBatchesValidator,
   placeEnrollmentValidator,
+  portalStudentValidator,
   teacherForCourseValidator,
   deliverMessageValidator,
   provisionTeacherValidator,

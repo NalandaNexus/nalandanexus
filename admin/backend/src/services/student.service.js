@@ -26,6 +26,7 @@ export async function listStudents(query) {
   if (query.department) filter.department = new RegExp(escapeRegex(query.department), 'i');
   if (query.courseId) filter.enrolledCourses = query.courseId;
   if (query.batch) filter.batch = query.batch;
+  if (query.source) filter.source = query.source;
   if (query.search) filter.$text = { $search: query.search };
 
   const [items, total] = await Promise.all([

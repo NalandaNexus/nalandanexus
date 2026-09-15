@@ -3,6 +3,8 @@ import { sendSuccess } from '../utils/ApiResponse.js';
 import * as paymentService from '../services/payment.service.js';
 import * as academicsService from '../services/academics.service.js';
 import * as announcementService from '../services/announcement.service.js';
+import * as portalStudentService from '../services/portalStudent.service.js';
+import { ApiError } from '../utils/ApiError.js';
 
 /**
  * Receives a real, signature-verified Razorpay payment event from
@@ -45,7 +47,27 @@ export const retractTeacherAnnouncement = catchAsync(async (req, res) => {
   return sendSuccess(res, { message: 'Removed.', data: { sourceId: req.params.sourceId } });
 });
 
+/**
+ * PUT /api/internal/portal-students/:userId
+ *
+ * A student's current record from the student portal - sent when they enrol
+ * and whenever their profile changes - applied to the Students list here.
+ * Idempotent on the user id: the same record twice updates one student.
+ */
+export const upsertPortalStudent = catchAsync(async (req, res) => {
+  if (req.body.userId !== req.params.userId) {
+    throw ApiError.badRequest('The student in the body does not match the address.', 'USER_ID_MISMATCH');
+  }
+  const result = await portalStudentService.upsertPortalStudent(req.body);
+  return sendSuccess(res, {
+    statusCode: result.outcome === 'created' ? 201 : 200,
+    message: `Student record ${result.outcome}.`,
+    data: result,
+  });
+});
+
 export default {
+  upsertPortalStudent,
   ingestPayment,
   ingestAssignmentActivity,
   ingestQuizActivity,

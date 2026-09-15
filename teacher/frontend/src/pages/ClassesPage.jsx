@@ -111,7 +111,13 @@ export default function ClassesPage() {
   useEffect(() => {
     socketService.connect();
     const unbind = socketService.on('score:update', fetchClasses);
-    return unbind;
+    // A student's record arrived from the student portal: the batch's verified
+    // count and link state may have changed.
+    const unbindSynced = socketService.on('student.synced', fetchClasses);
+    return () => {
+      unbind();
+      unbindSynced();
+    };
   }, [fetchClasses]);
 
   const courseFilters = ['all', ...new Set(classes.map((c) => c.courseTitle).filter(Boolean))];

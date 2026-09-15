@@ -50,9 +50,12 @@ export default function StudentsPage() {
     socketService.connect();
     const unbindScore = socketService.on('score:update', fetchStudents);
     const unbindSubmission = socketService.on('submission.received', fetchStudents);
+    // A student enrolled or changed their profile on the student portal.
+    const unbindSynced = socketService.on('student.synced', fetchStudents);
     return () => {
       unbindScore();
       unbindSubmission();
+      unbindSynced();
     };
   }, [fetchStudents]);
 
@@ -163,8 +166,10 @@ export default function StudentsPage() {
                     {/* The business identity the student quotes in support and
                         that cross-portal sync matches on. Shown because a
                         teacher cannot otherwise tie a person to their enrollment. */}
-                    {st.enrollmentId && (
-                      <p className="text-[10px] text-[#9B9690] font-mono truncate">{st.enrollmentId}</p>
+                    {(st.enrollmentNumber || st.enrollmentId) && (
+                      <p className="text-[10px] text-[#9B9690] font-mono truncate">
+                        {[st.enrollmentNumber, st.enrollmentId].filter(Boolean).join(' • ')}
+                      </p>
                     )}
                   </div>
                 </div>

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { objectIdParam } from './common.js';
 
 export const ingestPaymentSchema = {
   body: z.object({
@@ -68,7 +69,46 @@ export const ingestTeacherAnnouncementSchema = {
   }),
 };
 
+const optionalText = (max) => z.string().trim().max(max).nullable().optional();
+
+/**
+ * A student's current record from the student portal (see
+ * student/backend/src/services/portalSync.service.js). Unknown fields are
+ * stripped, so the student portal can add to it without breaking this one.
+ */
+export const upsertPortalStudentSchema = {
+  params: objectIdParam('userId'),
+  body: z.object({
+    userId: z.string().regex(/^[0-9a-fA-F]{24}$/),
+    enrollmentNumber: z.string().trim().regex(/^NN\d{2}-\d{6,9}$/).nullable().optional(),
+    fullName: z.string().trim().min(1).max(120),
+    email: z.string().trim().email().max(200),
+    phone: optionalText(20),
+    avatar: optionalText(2000),
+    guardianName: optionalText(120),
+    grade: optionalText(40),
+    profileComplete: z.boolean().optional().default(false),
+    profileCompletedAt: z.coerce.date().nullable().optional(),
+    enrollments: z
+      .array(
+        z.object({
+          enrollmentId: optionalText(40),
+          courseSlug: optionalText(200),
+          courseTitle: optionalText(200),
+          status: z.enum(['active', 'revoked']),
+          enrolledAt: z.coerce.date().nullable().optional(),
+          endsAt: z.coerce.date().nullable().optional(),
+          batchId: optionalText(40),
+          batchCode: optionalText(40),
+        })
+      )
+      .max(200),
+    sourceUpdatedAt: z.coerce.date(),
+  }),
+};
+
 export default {
+  upsertPortalStudentSchema,
   ingestPaymentSchema,
   ingestAssignmentActivitySchema,
   ingestQuizActivitySchema,

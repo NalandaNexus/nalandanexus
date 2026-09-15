@@ -6,6 +6,7 @@ import { requestBatchPlacement } from './teacherBridge.service.js';
 import { User } from '../models/User.js';
 import { ensureEnrollmentNumber } from './studentProfile.service.js';
 import { logger } from '../utils/logger.js';
+import { syncStudentToPortals } from './portalSync.service.js';
 
 export async function getActiveEnrollment(userId, courseId) {
   return Enrollment.findOne({ userId, courseId, status: 'active' });
@@ -111,6 +112,10 @@ export async function createEnrollment({ userId, courseId, orderId = null, cours
     // A retried purchase or a replayed webhook lands here. The number is issued
     // if an earlier attempt did not get that far, and otherwise left alone.
     await issueEnrollmentNumber(userId);
+    // So is the sync: it resends the same record under the same key, which
+    // changes nothing if an earlier attempt delivered it and finishes the job if
+    // one did not.
+    await syncStudentToPortals(userId, { reason: 'enrollment.confirmed', retryPlacement: false });
     return existing;
   }
 
@@ -142,6 +147,7 @@ export async function createEnrollment({ userId, courseId, orderId = null, cours
     const winner = await Enrollment.findOne({ userId, courseId });
     if (!winner) throw err;
     await issueEnrollmentNumber(userId);
+    await syncStudentToPortals(userId, { reason: 'enrollment.confirmed', retryPlacement: false });
     return winner;
   }
 
@@ -152,6 +158,12 @@ export async function createEnrollment({ userId, courseId, orderId = null, cours
   if (course?.slug) {
     await assignEnrollmentToBatch(enrollment, course.slug, placement).catch(() => enrollment);
   }
+
+  // The admin portal's student list and the teacher's roster learn about the
+  // student here, with their name, number and course - after the enrolment and
+  // its placement exist, so the record they receive is complete. Never fails
+  // the enrolment; a failure is left pending and retried.
+  await syncStudentToPortals(userId, { reason: 'enrollment.created', retryPlacement: false });
 
   await Notification.create({
     userId,

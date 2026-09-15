@@ -1,20 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { Search, UserPlus, FileDown, MoreVertical, Trash2, Edit, CheckCircle2, ShieldAlert } from 'lucide-react';
+import { Search, UserPlus, FileDown, MoreVertical, Trash2, Edit, CheckCircle2, ShieldAlert, RefreshCw } from 'lucide-react';
 import StatusBadge from '../components/common/StatusBadge';
 import EmptyState from '../components/common/EmptyState';
 import DeleteModal from '../components/common/DeleteModal';
 import { adminApi } from '../services/adminApi';
 import { useRealtimeEvents } from '../hooks/useRealtimeEvents';
 import EnrollmentLookup from '../components/students/EnrollmentLookup';
+import { useAdminAuth } from '../context/AdminAuthContext';
 
 export default function StudentsPage() {
   const [students, setStudents] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [filters, setFilters] = useState({ search: '', department: 'ALL', batch: 'ALL' });
+  const [filters, setFilters] = useState({ search: '', department: 'ALL', batch: 'ALL', source: 'ALL' });
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [studentToDelete, setStudentToDelete] = useState(null);
   const [toastMsg, setToastMsg] = useState(null);
+  const { hasPermission } = useAdminAuth();
+  const canResync = hasPermission('students.update');
+  const [isResyncing, setIsResyncing] = useState(false);
 
   // New Student Form
   const [formData, setFormData] = useState({
@@ -54,6 +58,7 @@ export default function StudentsPage() {
       const query = { ...filters, limit: 100 };
       if (query.department === 'ALL') delete query.department;
       if (query.batch === 'ALL') delete query.batch;
+      if (query.source === 'ALL') delete query.source;
       const data = await adminApi.getStudents(query);
       setStudents(data);
     } catch (err) {
@@ -67,9 +72,49 @@ export default function StudentsPage() {
     fetchStudents();
   }, [filters]);
 
+  // Portal students arrive through these too: the Student service sends each
+  // enrolment and profile change, and the backend announces it once stored.
   useRealtimeEvents(['student.created', 'student.updated', 'student.deleted'], () => {
     fetchStudents();
   });
+
+  // Recovery for portal students whose record did not arrive. Counts first and
+  // asks, so nothing is resent by accident; then sends a page at a time.
+  const handlePortalResync = async () => {
+    setIsResyncing(true);
+    try {
+      const preview = await adminApi.syncPortalStudents({ mode: 'all', apply: false });
+      const total = preview?.total ?? 0;
+      if (!total) {
+        showToast('No portal students to resend.');
+        return;
+      }
+      const noun = `portal student record${total === 1 ? '' : 's'}`;
+      if (!window.confirm(`Resend ${total} ${noun} from the Student service to the admin and teacher portals?`)) return;
+
+      let cursor = null;
+      let synced = 0;
+      let failed = 0;
+      do {
+        const page = await adminApi.syncPortalStudents({ mode: 'all', apply: true, limit: 10, ...(cursor ? { cursor } : {}) });
+        synced += page?.synced || 0;
+        failed += page?.failed || 0;
+        cursor = page?.nextCursor || null;
+      } while (cursor);
+
+      showToast(
+        failed
+          ? `${synced} resent; ${failed} could not be delivered and will be retried automatically.`
+          : `${synced} portal student record${synced === 1 ? '' : 's'} resent.`,
+        failed ? 'error' : 'success'
+      );
+      fetchStudents();
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      setIsResyncing(false);
+    }
+  };
 
   const handleAddStudent = async (e) => {
     e.preventDefault();
@@ -115,6 +160,18 @@ export default function StudentsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2.5">
+          {canResync && (
+            <button
+              type="button"
+              disabled={isResyncing}
+              onClick={handlePortalResync}
+              title="Resend the records of students who enrolled on the student portal"
+              className="px-3.5 py-2 rounded-xl bg-white border border-[#DFDACB] hover:bg-[#EDEAE0] disabled:opacity-60 text-xs font-semibold text-[#22355E] transition-colors flex items-center gap-1.5 shadow-sm"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isResyncing ? 'animate-spin' : ''}`} />
+              <span>Resync Portal Students</span>
+            </button>
+          )}
           <button
             type="button"
             disabled={isExportingCsv}
@@ -157,6 +214,15 @@ export default function StudentsPage() {
 
         <div className="flex items-center gap-2">
           <select
+            value={filters.source}
+            onChange={(e) => setFilters({ ...filters, source: e.target.value })}
+            className="bg-[#F7F5EE] border border-[#DFDACB] rounded-xl px-3 py-2 text-xs font-semibold text-[#22355E] focus:outline-none"
+          >
+            <option value="ALL">All Records</option>
+            <option value="student-portal">Portal Enrolments</option>
+            <option value="manual">Admin-entered</option>
+          </select>
+          <select
             value={filters.department}
             onChange={(e) => setFilters({ ...filters, department: e.target.value })}
             className="bg-[#F7F5EE] border border-[#DFDACB] rounded-xl px-3 py-2 text-xs font-semibold text-[#22355E] focus:outline-none"
@@ -194,7 +260,7 @@ export default function StudentsPage() {
               title="No students found"
               description="No student records match your query."
               actionText="Clear Filters"
-              onAction={() => setFilters({ search: '', department: 'ALL', batch: 'ALL' })}
+              onAction={() => setFilters({ search: '', department: 'ALL', batch: 'ALL', source: 'ALL' })}
             />
           </div>
         ) : (
@@ -202,8 +268,8 @@ export default function StudentsPage() {
             <table className="w-full text-left text-xs">
               <thead className="bg-[#F7F5EE] border-b border-[#DFDACB] text-[#9B9690] font-semibold">
                 <tr>
-                  <th className="py-3 px-4">Student & Roll No</th>
-                  <th className="py-3 px-4">Department & Batch</th>
+                  <th className="py-3 px-4">Student & Enrollment / Roll No</th>
+                  <th className="py-3 px-4">Course or Department</th>
                   <th className="py-3 px-4">Attendance</th>
                   <th className="py-3 px-4 font-mono">GPA</th>
                   <th className="py-3 px-4">Status</th>
@@ -215,12 +281,43 @@ export default function StudentsPage() {
                 {students.map((student) => (
                   <tr key={student.id} className="hover:bg-[#F7F5EE]/60 transition-colors">
                     <td className="py-3.5 px-4">
-                      <p className="font-bold text-[#22355E]">{student.name}</p>
-                      <p className="text-[10px] font-mono text-[#9B9690]">{student.rollNo} • {student.email}</p>
+                      <p className="font-bold text-[#22355E] flex items-center gap-1.5">
+                        {student.name}
+                        {student.source === 'student-portal' && (
+                          <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-[#5C7A5E]/10 text-[#5C7A5E]">
+                            Portal
+                          </span>
+                        )}
+                      </p>
+                      <p className="text-[10px] font-mono text-[#9B9690]">{student.enrollmentNumber || student.rollNo} • {student.email}</p>
+                      {student.source === 'student-portal' && (
+                        <p className="text-[10px] text-[#9B9690]">
+                          {[student.grade, student.guardianName && `Guardian: ${student.guardianName}`, student.phone].filter(Boolean).join(' • ') ||
+                            'Profile not completed yet'}
+                        </p>
+                      )}
                     </td>
                     <td className="py-3.5 px-4">
-                      <p className="font-semibold text-[#22355E]">{student.department || '—'}</p>
-                      <p className="text-[10px] text-[#9B9690]">{student.batch || '—'}</p>
+                      {student.source === 'student-portal' ? (
+                        (student.portalEnrollments || []).map((enrolment) => (
+                          <div key={enrolment.enrollmentId || enrolment.courseSlug} className="mb-1 last:mb-0">
+                            <p className="font-semibold text-[#22355E]">{enrolment.courseTitle || enrolment.courseSlug || 'Course'}</p>
+                            <p className="text-[10px] text-[#9B9690]">
+                              <span className={`font-bold ${enrolment.status === 'active' ? 'text-[#5C7A5E]' : 'text-[#C1352B]'}`}>
+                                {enrolment.status === 'active' ? 'Active' : 'Revoked'}
+                              </span>
+                              {' • Enrolled '}
+                              {enrolment.enrolledAt ? new Date(enrolment.enrolledAt).toLocaleDateString() : '—'}
+                              {enrolment.batchCode ? ` • ${enrolment.batchCode}` : ''}
+                            </p>
+                          </div>
+                        ))
+                      ) : (
+                        <>
+                          <p className="font-semibold text-[#22355E]">{student.department || '—'}</p>
+                          <p className="text-[10px] text-[#9B9690]">{student.batch || '—'}</p>
+                        </>
+                      )}
                     </td>
                     <td className="py-3.5 px-4">
                       <span className="font-mono font-bold text-[#5C7A5E] bg-[#5C7A5E]/10 px-2 py-0.5 rounded">

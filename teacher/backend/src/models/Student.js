@@ -50,6 +50,16 @@ const studentSchema = new Schema(
     guardianPhone: { type: String, default: null, trim: true },
     guardianEmail: { type: String, default: null, trim: true },
 
+    // From the student portal, never set by a teacher (see
+    // services/portalStudentSync.service.js): the student's institution-wide
+    // enrollment number (NN26-000124), their class as they recorded it, and when
+    // the record last applied here was read there - so an older record delivered
+    // late cannot overwrite a newer one. No default on the number; it is absent
+    // until the student portal supplies it.
+    enrollmentNumber: { type: String, trim: true, uppercase: true },
+    grade: { type: String, default: null, trim: true },
+    portalSyncedAt: { type: Date, default: null },
+
     status: { type: String, enum: ['active', 'inactive'], default: 'active', index: true },
     enrollmentDate: { type: Date, default: Date.now },
 
@@ -79,6 +89,8 @@ studentSchema.index({ class: 1, email: 1 }, { unique: true });
 // One roster row per enrollment, globally: an enrollment belongs to exactly one
 // batch, so this also stops a student being placed into two batches at once.
 studentSchema.index({ enrollmentId: 1 }, { unique: true, sparse: true });
+// Finds a student's rows when their record arrives from the student portal.
+studentSchema.index({ linkedUserId: 1 });
 studentSchema.index({ name: 'text', email: 'text' });
 
 /** Deterministic risk classification used everywhere a score needs a tier. */

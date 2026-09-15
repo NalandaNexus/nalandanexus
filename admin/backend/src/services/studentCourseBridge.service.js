@@ -502,3 +502,26 @@ export async function lookupStudentByEnrollmentNumber(enrollmentNumber, { includ
     throw err;
   }
 }
+
+/**
+ * Asks the student service to send portal students' records here and to the
+ * teacher portal again - the recovery for a delivery that failed. A dry run
+ * unless `apply` is true.
+ */
+export async function resyncPortalStudents(payload) {
+  try {
+    const body = await couponCall('/api/internal/portal-students/resync', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return body?.data || null;
+  } catch (err) {
+    if (err?.code === 'STUDENT_SERVICE_UNAVAILABLE') {
+      throw ApiError.serviceUnavailable(
+        'The Student service is unavailable, so student records cannot be resent right now. Please try again in a moment.',
+        'STUDENT_SERVICE_UNAVAILABLE'
+      );
+    }
+    throw err;
+  }
+}

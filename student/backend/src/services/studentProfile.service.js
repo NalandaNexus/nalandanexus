@@ -6,6 +6,7 @@ import { Order } from '../models/Order.js';
 import { Coupon } from '../models/Coupon.js';
 import { Counter } from '../models/Counter.js';
 import { AppError } from '../utils/AppError.js';
+import { syncStudentToPortals } from './portalSync.service.js';
 
 /**
  * The student profile a course requires, and the enrollment number that
@@ -280,6 +281,11 @@ export async function completeProfile(user, input) {
       { $set: { profileCompletedAt: new Date() } }
     );
   }
+
+  // The admin and teacher portals show the name, class, guardian and phone just
+  // saved, so they are sent on now - an enrolment that came before the profile
+  // otherwise leaves those portals holding the account's earlier name.
+  await syncStudentToPortals(user._id, { reason: 'profile.saved' });
 
   return getProfileCompletion(user);
 }

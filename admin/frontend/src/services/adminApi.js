@@ -270,6 +270,15 @@ export const adminApi = {
     return json.data;
   },
 
+  /**
+   * Resends portal students' records from the Student service. A dry run (a
+   * count, nothing sent) unless `apply` is true. Needs students.update.
+   */
+  async syncPortalStudents(body) {
+    const json = await request('/students/portal-sync', { method: 'POST', body });
+    return json.data;
+  },
+
   async createStudent(studentData) {
     const json = await request('/students', { method: 'POST', body: studentData });
     return json.data;

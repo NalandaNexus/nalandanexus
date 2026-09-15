@@ -6,6 +6,7 @@ import { env } from './config/env.js';
 import { logger } from './utils/logger.js';
 import { startQuizExpirySweep } from './jobs/quizExpirySweep.job.js';
 import { startLiveClassStatusSweep } from './jobs/liveClassStatusSweep.job.js';
+import { startPortalSyncSweep } from './jobs/portalSyncSweep.job.js';
 
 async function main() {
   try {
@@ -20,6 +21,7 @@ async function main() {
   initSocket(httpServer);
   startQuizExpirySweep();
   startLiveClassStatusSweep();
+  startPortalSyncSweep();
 
   httpServer.listen(env.port, () => {
     logger.info(`Nalanda Student Backend running on http://localhost:${env.port} (${env.nodeEnv})`);

@@ -2,6 +2,7 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { sendSuccess } from '../utils/apiResponse.js';
 import { AppError } from '../utils/AppError.js';
 import { storeAvatar } from '../services/fileStorage.service.js';
+import { syncStudentToPortals } from '../services/portalSync.service.js';
 import { StudentProfile } from '../models/StudentProfile.js';
 import { Enrollment } from '../models/Enrollment.js';
 import { Course } from '../models/Course.js';
@@ -65,6 +66,11 @@ export const updateProfile = asyncHandler(async (req, res) => {
   Object.assign(profile, profileFields);
   await profile.save();
 
+  // The name, photo and class are shown in the admin and teacher portals too.
+  if (name || avatar !== undefined || profileFields.grade !== undefined) {
+    await syncStudentToPortals(req.user._id, { reason: 'profile.updated' });
+  }
+
   return sendSuccess(res, { message: 'Profile updated.', data: { user: req.user.toJSON(), profile } });
 });
 
@@ -79,6 +85,7 @@ export const uploadAvatar = asyncHandler(async (req, res) => {
     mimetype: req.file.mimetype,
   });
   await req.user.save();
+  await syncStudentToPortals(req.user._id, { reason: 'avatar.updated' });
   return sendSuccess(res, { message: 'Profile photo updated.', data: { user: req.user.toJSON() } });
 });
 

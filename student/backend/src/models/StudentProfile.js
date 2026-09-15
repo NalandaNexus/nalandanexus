@@ -53,6 +53,20 @@ const studentProfileSchema = new Schema(
     // When the profile first became complete. Set once and never moved.
     profileCompletedAt: { type: Date, default: null },
 
+    // Whether the admin and teacher portals hold this student's current record
+    // (see services/portalSync.service.js). `pendingSince` is set while a change
+    // is waiting to be delivered and cleared once both portals have it;
+    // `revision` counts sync requests, so a slow attempt can never clear a newer
+    // one that is still owed.
+    portalSync: {
+      revision: { type: Number, default: 0, min: 0 },
+      pendingSince: { type: Date, default: null },
+      lastAttemptAt: { type: Date, default: null },
+      lastSyncedAt: { type: Date, default: null },
+      attempts: { type: Number, default: 0, min: 0 },
+      lastError: { type: String, default: null, maxlength: 500 },
+    },
+
     /**
      * Current progression snapshot.
      *
@@ -166,6 +180,11 @@ const studentProfileSchema = new Schema(
 
 // Globally unique, and the index the teacher and admin portals' lookup is served by.
 studentProfileSchema.index({ enrollmentNumber: 1 }, { unique: true, sparse: true });
+// The retry sweep's query. Partial, so it holds only the students actually waiting.
+studentProfileSchema.index(
+  { 'portalSync.pendingSince': 1 },
+  { partialFilterExpression: { 'portalSync.pendingSince': { $type: 'date' } } }
+);
 
 /** An issued enrollment number is quoted by teachers, admins and support, so it is never rewritten. */
 studentProfileSchema.pre('save', function guardEnrollmentNumber(next) {

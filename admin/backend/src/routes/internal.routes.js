@@ -8,6 +8,7 @@ import {
   ingestQuizActivitySchema,
   ingestAttendanceSummarySchema,
   ingestTeacherAnnouncementSchema,
+  upsertPortalStudentSchema,
 } from '../validators/internal.validators.js';
 
 // Service-to-service only - authenticated by a shared secret
@@ -23,5 +24,7 @@ router.post('/academics/quizzes', validate(ingestQuizActivitySchema), internalCo
 router.post('/academics/attendance', validate(ingestAttendanceSummarySchema), internalController.ingestAttendanceSummary);
 router.post('/teacher-announcements', validate(ingestTeacherAnnouncementSchema), internalController.ingestTeacherAnnouncement);
 router.delete('/teacher-announcements/:sourceId', internalController.retractTeacherAnnouncement);
+// A portal student's current record, keyed on their student-portal user id.
+router.put('/portal-students/:userId', validate(upsertPortalStudentSchema), internalController.upsertPortalStudent);
 
 export default router;

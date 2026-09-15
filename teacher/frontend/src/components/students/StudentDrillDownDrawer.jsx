@@ -78,6 +78,14 @@ export default function StudentDrillDownDrawer({
                 </span>
               </div>
               <p className="text-xs text-[#6E6A64] mt-0.5 truncate">{student.email}</p>
+              {/* The student's profile as the student portal holds it. */}
+              {(student.enrollmentNumber || student.grade || student.guardianName || student.phone) && (
+                <p className="text-[11px] text-[#6E6A64] mt-0.5 truncate">
+                  {[student.enrollmentNumber, student.grade, student.guardianName && `Guardian: ${student.guardianName}`, student.phone]
+                    .filter(Boolean)
+                    .join(' • ')}
+                </p>
+              )}
 
               {student.atRiskReason && (
                 <div className="mt-1.5">

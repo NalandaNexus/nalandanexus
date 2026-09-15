@@ -11,6 +11,8 @@ import { Notification } from '../models/Notification.js';
 import { emitToAllTeachers, emitToTeacher } from '../sockets/index.js';
 import { receiveBridgedSubmission } from '../services/submission.service.js';
 import { receiveBridgedQuizResult } from '../services/exam.service.js';
+import { applyPortalStudent } from '../services/portalStudentSync.service.js';
+import { ApiError } from '../utils/ApiError.js';
 
 /**
  * Persists a real, per-teacher Notification for every active teacher — the
@@ -215,6 +217,24 @@ export const placeEnrollmentInBatch = catchAsync(async (req, res) => {
 });
 
 /**
+ * PUT /api/internal/portal-students/:userId
+ *
+ * A student's current record from the student portal, sent after they enrol and
+ * whenever their profile changes. Updates - and verifies or withdraws - the
+ * roster rows placement created for their enrolments; never creates one.
+ */
+export const applyPortalStudentRecord = catchAsync(async (req, res) => {
+  if (req.body.userId !== req.params.userId) {
+    throw ApiError.badRequest('The student in the body does not match the address.', 'USER_ID_MISMATCH');
+  }
+  const result = await applyPortalStudent(req.body);
+  sendSuccess(res, {
+    message: result.matched ? 'Roster updated from the student portal.' : 'This student is on no roster here yet.',
+    data: result,
+  });
+});
+
+/**
  * Batch administration for the Admin portal.
  *
  * Batches live in this service's database, so Admin reaches them over the same
@@ -262,6 +282,7 @@ export default {
   adminReassignBatchTeacher,
   adminListBatchStudents,
   placeEnrollmentInBatch,
+  applyPortalStudentRecord,
   getTeacherForCourse,
   deliverMessage,
   resetTeacherCredentials,

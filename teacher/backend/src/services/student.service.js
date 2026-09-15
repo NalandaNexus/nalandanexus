@@ -18,6 +18,8 @@ function shapeStudentSummary(s) {
     // teacher can tie a person on the roster to the enrollment support and
     // cross-portal sync both refer to.
     enrollmentId: s.enrollmentId || null,
+    // The student's own number across the institution, as the student portal issued it.
+    enrollmentNumber: s.enrollmentNumber || null,
     avatar: s.avatarUrl || dicebearAvatar(s.name),
     classId: s.class?._id || s.class,
     className: s.class?.name || undefined,
@@ -118,6 +120,11 @@ export async function getStudentDetail(teacherId, studentId) {
 
   return {
     ...shapeStudentSummary(student),
+    // The student's profile as the student portal holds it - visible to this
+    // teacher because the student is on their roster (assertStudentOwnership).
+    grade: student.grade || null,
+    guardianName: student.guardianName || null,
+    phone: student.phone || null,
     conceptScores: mapToObject(student.conceptScores),
     submissions: submissions.map((sub) => ({
       id: sub._id,

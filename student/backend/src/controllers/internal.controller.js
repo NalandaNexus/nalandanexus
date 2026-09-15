@@ -25,6 +25,7 @@ import { Notification } from '../models/Notification.js';
 import { TaskSubmission } from '../models/TaskSubmission.js';
 import { StudentProfile } from '../models/StudentProfile.js';
 import { findStudentByEnrollmentNumber } from '../services/studentProfile.service.js';
+import { resyncPortalStudents as runPortalResync } from '../services/portalSync.service.js';
 import { createAnnouncement as createAnnouncementService } from '../services/announcement.service.js';
 
 /**
@@ -1634,4 +1635,18 @@ export const lookupStudentByEnrollmentNumber = asyncHandler(async (req, res) => 
     includePayments: includePayments === true,
   });
   return sendSuccess(res, { message: student ? 'Student found.' : 'No matching student.', data: student });
+});
+
+/**
+ * POST /api/internal/portal-students/resync
+ *
+ * The admin portal's recovery for student records that did not reach it or the
+ * teacher portal: one student by enrollment number, everyone still pending, or
+ * every enrolled student a page at a time. A dry run unless `apply` is true, in
+ * which case it reports what would be sent and sends nothing.
+ */
+export const resyncPortalStudents = asyncHandler(async (req, res) => {
+  const { mode, enrollmentNumber, cursor, limit, apply } = req.body;
+  const data = await runPortalResync({ mode, enrollmentNumber, cursor, limit, dryRun: !apply });
+  return sendSuccess(res, { message: apply ? 'Student records resent.' : 'Dry run - nothing was sent.', data });
 });
