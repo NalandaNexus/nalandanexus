@@ -36,6 +36,16 @@ export class ApiError extends Error {
     return new ApiError(429, message, code);
   }
 
+  /**
+   * A dependency this request needed (the student or teacher service) could not
+   * be reached - the caller should retry; nothing was written. Four services
+   * already threw this, and without it each of those paths answered 500 with a
+   * TypeError instead of the 503 it meant.
+   */
+  static serviceUnavailable(message = 'Service temporarily unavailable', code = 'SERVICE_UNAVAILABLE', details) {
+    return new ApiError(503, message, code, details);
+  }
+
   static internal(message = 'Internal server error', code = 'INTERNAL_ERROR') {
     return new ApiError(500, message, code);
   }

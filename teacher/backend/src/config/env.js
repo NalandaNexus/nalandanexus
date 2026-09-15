@@ -1,6 +1,10 @@
 import dotenv from 'dotenv';
 
-dotenv.config();
+// A test run never reads this machine's .env. Tests configure what they use
+// themselves, and a developer's .env names real databases, deployed services
+// and service keys - loaded underneath a test, it would quietly point whatever
+// the test does not override at production.
+if (process.env.NODE_ENV !== 'test') dotenv.config();
 
 function required(name, fallback = undefined) {
   const value = process.env[name] ?? fallback;
