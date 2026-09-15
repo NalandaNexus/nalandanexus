@@ -3,6 +3,9 @@ import { assertStageAccessible, enrollmentWindow } from './progression/access.se
 import { Notification } from '../models/Notification.js';
 import { Counter } from '../models/Counter.js';
 import { requestBatchPlacement } from './teacherBridge.service.js';
+import { User } from '../models/User.js';
+import { ensureEnrollmentNumber } from './studentProfile.service.js';
+import { logger } from '../utils/logger.js';
 
 export async function getActiveEnrollment(userId, courseId) {
   return Enrollment.findOne({ userId, courseId, status: 'active' });
@@ -35,13 +38,17 @@ export async function nextEnrollmentId(now = new Date()) {
  * transaction the student has already paid for; an unplaced enrollment is a real,
  * visible state, not a silent error.
  */
-export async function assignEnrollmentToBatch(enrollment, courseSlug) {
+export async function assignEnrollmentToBatch(enrollment, courseSlug, { studentName = null } = {}) {
   if (enrollment.batchId) return enrollment;
 
   const placement = await requestBatchPlacement({
     courseSlug,
     enrollmentId: enrollment.enrollmentId,
-    studentName: enrollment.studentName,
+    // The student's real name, supplied by the caller. This used to read
+    // `enrollment.studentName`, a field Enrollment does not have, so every
+    // placement reached the teacher portal as "Enrolled student" and the roster
+    // showed that until a later sync happened to overwrite it.
+    studentName,
   });
   if (!placement?.batchId) return enrollment;
 
@@ -50,6 +57,26 @@ export async function assignEnrollmentToBatch(enrollment, courseSlug) {
   enrollment.batchAssignedAt = new Date();
   await enrollment.save();
   return enrollment;
+}
+
+/**
+ * Gives a student their enrollment number with their first course place.
+ *
+ * Every way of gaining a course - a paid order, its webhook, a coupon, a free
+ * course - comes through createEnrollment, so issuing here covers all of them.
+ * A student who already has a number keeps it; a second course never produces a
+ * second number (see studentProfile.service.js#ensureEnrollmentNumber).
+ *
+ * It never fails the enrolment. A student who has paid must not lose their
+ * course over a number, and one that could not be issued now is issued the
+ * next time the student's profile is read.
+ */
+async function issueEnrollmentNumber(userId) {
+  try {
+    await ensureEnrollmentNumber(userId);
+  } catch (err) {
+    logger.error(`[Enrollment] Enrollment number not issued for ${userId}; it will be issued on the next profile read.`, err.message);
+  }
 }
 
 export async function createEnrollment({ userId, courseId, orderId = null, course }) {
@@ -61,6 +88,9 @@ export async function createEnrollment({ userId, courseId, orderId = null, cours
   // Ordinary courses are unaffected; only the staged journey has a prior-stage
   // requirement, and only beyond its first stage.
   if (course) await assertStageAccessible(userId, course);
+
+  const student = await User.findById(userId).select('name').lean();
+  const placement = { studentName: student?.name || null };
 
   const existing = await Enrollment.findOne({ userId, courseId });
   if (existing) {
@@ -76,8 +106,11 @@ export async function createEnrollment({ userId, courseId, orderId = null, cours
       await existing.save();
     }
     if (course?.slug && !existing.batchId) {
-      await assignEnrollmentToBatch(existing, course.slug).catch(() => existing);
+      await assignEnrollmentToBatch(existing, course.slug, placement).catch(() => existing);
     }
+    // A retried purchase or a replayed webhook lands here. The number is issued
+    // if an earlier attempt did not get that far, and otherwise left alone.
+    await issueEnrollmentNumber(userId);
     return existing;
   }
 
@@ -88,21 +121,36 @@ export async function createEnrollment({ userId, courseId, orderId = null, cours
   // must not move the end date of everyone already enrolled under the old one.
   const { startsAt, endsAt } = enrollmentWindow(course);
 
-  const enrollment = await Enrollment.create({
-    userId,
-    courseId,
-    orderId,
-    startsAt,
-    endsAt,
-    enrollmentId: await nextEnrollmentId(),
-    currentModuleId: firstModule?.moduleId || null,
-    currentLessonId: firstLesson?.lessonId || null,
-  });
+  let enrollment;
+  try {
+    enrollment = await Enrollment.create({
+      userId,
+      courseId,
+      orderId,
+      startsAt,
+      endsAt,
+      enrollmentId: await nextEnrollmentId(),
+      currentModuleId: firstModule?.moduleId || null,
+      currentLessonId: firstLesson?.lessonId || null,
+    });
+  } catch (err) {
+    // Two deliveries of the same purchase at once - the verify call and its
+    // webhook, or a webhook Razorpay retried - both found no enrolment and both
+    // tried to create one. The unique { userId, courseId } index let exactly one
+    // through; the other returns that one instead of failing a paid request.
+    if (err?.code !== 11000) throw err;
+    const winner = await Enrollment.findOne({ userId, courseId });
+    if (!winner) throw err;
+    await issueEnrollmentNumber(userId);
+    return winner;
+  }
+
+  await issueEnrollmentNumber(userId);
 
   // Placement is attempted immediately but never blocks the enrollment itself
   // (see assignEnrollmentToBatch).
   if (course?.slug) {
-    await assignEnrollmentToBatch(enrollment, course.slug).catch(() => enrollment);
+    await assignEnrollmentToBatch(enrollment, course.slug, placement).catch(() => enrollment);
   }
 
   await Notification.create({

@@ -25,6 +25,7 @@ const NotFound = lazy(() => import('./pages/NotFound'));
 // Student Workspace Pages & Layout
 const StudentLayout = lazy(() => import('./components/student/StudentLayout'));
 const PurchasePage = lazy(() => import('./pages/student/PurchasePage'));
+const CompleteProfilePage = lazy(() => import('./pages/student/CompleteProfilePage'));
 const StudentDashboardPage = lazy(() => import('./pages/student/StudentDashboardPage'));
 const ParambhCoursePage = lazy(() => import('./pages/student/ParambhCoursePage'));
 const TaskDetailPage = lazy(() => import('./pages/student/TaskDetailPage'));
@@ -154,6 +155,10 @@ export default function App() {
                   {/* Purchase gate: a logged-in student must buy the Parambh
                       course before reaching the dashboard/learning routes. */}
                   <Route path="purchase" element={<PurchasePage />} />
+
+                  {/* The profile a course requires. Outside the enrollment gate,
+                      because the gate is what sends students here. */}
+                  <Route path="complete-profile" element={<CompleteProfilePage />} />
 
                   <Route element={<EnrollmentGate />}>
                     <Route path="dashboard" element={<StudentDashboardPage />} />

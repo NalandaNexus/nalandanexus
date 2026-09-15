@@ -5,6 +5,7 @@ import EmptyState from '../components/common/EmptyState';
 import DeleteModal from '../components/common/DeleteModal';
 import { adminApi } from '../services/adminApi';
 import { useRealtimeEvents } from '../hooks/useRealtimeEvents';
+import EnrollmentLookup from '../components/students/EnrollmentLookup';
 
 export default function StudentsPage() {
   const [students, setStudents] = useState([]);
@@ -137,6 +138,9 @@ export default function StudentsPage() {
           </button>
         </div>
       </div>
+
+      {/* Portal students, by the enrollment number the student service issues */}
+      <EnrollmentLookup />
 
       {/* Search & Filter Toolbar */}
       <div className="bg-white border border-[#DFDACB] rounded-2xl p-4 shadow-card flex flex-col sm:flex-row sm:items-center justify-between gap-3">

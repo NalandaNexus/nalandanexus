@@ -32,6 +32,27 @@ const studentProfileSchema = new Schema(
 
     hasCompletedOnboarding: { type: Boolean, default: false },
 
+    // --- the profile a course requires -----------------------------------------
+    //
+    // See services/studentProfile.service.js. The full name and phone number are
+    // User.name and User.phone, and the class is `grade` above, because every
+    // other portal already reads them there. Only these three are new.
+
+    guardianName: { type: String, default: null, trim: true, maxlength: 120 },
+
+    // The student's own identity across the institution, e.g. NN26-000124: one
+    // per student for life, however many courses they take. Not the same thing
+    // as Enrollment.enrollmentId, which names a single course place. Issued only
+    // by studentProfile.service.js#ensureEnrollmentNumber, never by a client.
+    //
+    // Deliberately NO `default: null`. The unique index below is sparse, and a
+    // sparse index only skips a document when the field is genuinely ABSENT -
+    // the same trap documented on Enrollment.enrollmentId.
+    enrollmentNumber: { type: String, trim: true, uppercase: true },
+
+    // When the profile first became complete. Set once and never moved.
+    profileCompletedAt: { type: Date, default: null },
+
     /**
      * Current progression snapshot.
      *
@@ -142,5 +163,16 @@ const studentProfileSchema = new Schema(
   },
   { timestamps: true }
 );
+
+// Globally unique, and the index the teacher and admin portals' lookup is served by.
+studentProfileSchema.index({ enrollmentNumber: 1 }, { unique: true, sparse: true });
+
+/** An issued enrollment number is quoted by teachers, admins and support, so it is never rewritten. */
+studentProfileSchema.pre('save', function guardEnrollmentNumber(next) {
+  if (!this.isNew && this.isModified('enrollmentNumber')) {
+    return next(new Error('enrollmentNumber is immutable once assigned.'));
+  }
+  next();
+});
 
 export const StudentProfile = mongoose.model('StudentProfile', studentProfileSchema);

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Navigate, Outlet } from 'react-router-dom';
+import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useStudent } from '../../context/StudentContext';
 
 /**
@@ -10,7 +10,8 @@ import { useStudent } from '../../context/StudentContext';
  * the backend is the actual security boundary (master doc section 74).
  */
 export default function EnrollmentGate() {
-  const { isEnrolled, isLoadingDashboard, profileLoaded } = useStudent();
+  const { isEnrolled, isLoadingDashboard, profileLoaded, requiresProfileCompletion } = useStudent();
+  const location = useLocation();
 
   if (isEnrolled === null && (isLoadingDashboard || !profileLoaded)) {
     return (
@@ -22,6 +23,13 @@ export default function EnrollmentGate() {
 
   if (isEnrolled === false) {
     return <Navigate to="/student/purchase" replace />;
+  }
+
+  // Holding a course is not enough: the student profile it requires comes
+  // first. The backend refuses the content anyway (PROFILE_INCOMPLETE); this
+  // sends the student straight to the form, and the form brings them back here.
+  if (requiresProfileCompletion) {
+    return <Navigate to="/student/complete-profile" replace state={{ from: `${location.pathname}${location.search}` }} />;
   }
 
   return <Outlet />;

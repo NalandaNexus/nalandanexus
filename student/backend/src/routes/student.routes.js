@@ -13,7 +13,8 @@ import { authenticate } from '../middleware/authenticate.js';
 import { requireRole } from '../middleware/authorize.js';
 import { validate } from '../middleware/validate.js';
 import { avatarUpload } from '../middleware/upload.js';
-import { updateProfileSchema } from '../validators/profile.validators.js';
+import { updateProfileSchema, completeProfileSchema } from '../validators/profile.validators.js';
+import { requireCompleteProfile } from '../middleware/requireCompleteProfile.js';
 import { upsertNoteSchema } from '../validators/note.validators.js';
 import { sendMessageSchema } from '../validators/message.validators.js';
 import { createPostSchema, listPostsSchema } from '../validators/community.validators.js';
@@ -24,6 +25,11 @@ const router = Router();
 router.use(authenticate, requireRole('student'));
 
 router.get('/profile', studentController.getProfile);
+
+// The profile a course requires. The student sets four fields; the enrollment
+// number and every identifier stay server-issued (studentProfile.service.js).
+router.get('/profile/completion', studentController.getProfileCompletion);
+router.put('/profile/completion', validate(completeProfileSchema), studentController.completeProfile);
 
 // The Digital Learner Profile. Read-only and always scoped to the caller -
 // there is deliberately no route that writes XP, rank or eligibility.
@@ -38,7 +44,7 @@ router.get('/notifications', notificationController.listNotifications);
 router.patch('/notifications/:id/read', notificationController.markNotificationRead);
 router.patch('/notifications/read-all', notificationController.markAllNotificationsRead);
 
-router.get('/materials', materialController.listMyMaterials);
+router.get('/materials', requireCompleteProfile, materialController.listMyMaterials);
 
 router.get('/notes', noteController.listNotes);
 router.post('/notes', validate(upsertNoteSchema), noteController.createNote);
@@ -53,7 +59,7 @@ router.post('/community/posts', validate(createPostSchema), communityController.
 router.post('/community/posts/:id/like', communityController.toggleLike);
 router.delete('/community/posts/:id', communityController.deletePost);
 
-router.get('/live-classes', liveClassController.listLiveClasses);
+router.get('/live-classes', requireCompleteProfile, liveClassController.listLiveClasses);
 
 router.get('/support-tickets', supportController.listMyTickets);
 router.post('/support-tickets', validate(createTicketSchema), supportController.createTicket);

@@ -15,6 +15,7 @@
     "seed:coupons": "node src/scripts/seedCoupons.js",
     "seed:curriculum": "node src/scripts/seedCurriculum.js",
     "backfill:enrollment-ids": "node src/scripts/backfillEnrollmentIds.js",
+    "backfill:enrollment-numbers": "node src/scripts/backfillEnrollmentNumbers.js",
     "seed:progression": "node src/scripts/seedProgression.js",
     "seed:journey": "node src/scripts/seedJourneyCourses.js"
   },

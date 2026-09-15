@@ -32,7 +32,7 @@ before(async () => {
     ],
   });
 
-  student = await registerAndLogin(app.request, { name: 'Quiz Student', email: 'quiz@integration.test' });
+  student = await registerAndLogin(app.request, { completeProfile: true, name: 'Quiz Student', email: 'quiz@integration.test' });
   await createEnrollment({ userId: student.user._id, courseId: course._id, course });
 });
 
@@ -72,7 +72,7 @@ test('submitting all-wrong answers plus a spoofed score/points in the body is st
 });
 
 test('a fresh student answering everything correctly earns the full server-computed score and points', async () => {
-  const secondStudent = await registerAndLogin(app.request, { name: 'Quiz Student 2', email: 'quiz2@integration.test' });
+  const secondStudent = await registerAndLogin(app.request, { completeProfile: true, name: 'Quiz Student 2', email: 'quiz2@integration.test' });
   const { Course } = await import('../src/models/Course.js');
   const { createEnrollment } = await import('../src/services/enrollment.service.js');
   const course = await Course.findOne({ slug: 'integration-course' });

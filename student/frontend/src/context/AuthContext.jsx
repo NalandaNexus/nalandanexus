@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { authService } from '../services/authService';
 import { ApiError } from '../services/apiClient';
 
@@ -11,15 +11,24 @@ export function AuthProvider({ children }) {
   // refresh loses my session").
   const [isLoading, setIsLoading] = useState(true);
   const [authError, setAuthError] = useState(null);
+  // Bumped whenever a sign-in, verification or sign-out completes, so a session
+  // restore that started before it can tell it has been overtaken.
+  const authEpoch = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
+    const startedAt = authEpoch.current;
     (async () => {
       const restored = await authService.restoreSession();
-      if (!cancelled) {
-        setUser(restored?.user || null);
-        setIsLoading(false);
-      }
+      if (cancelled) return;
+      // Restoring reads whichever session the refresh cookie held when the page
+      // loaded. A sign-in, verification or sign-out that completed while it was
+      // in flight is newer and stands. Applying the restored user regardless is
+      // what put the previous account's name on screen after continuing with
+      // Google or opening a verification link - and what could sign a student
+      // straight back out after verifying on a slow start.
+      if (startedAt === authEpoch.current) setUser(restored?.user || null);
+      setIsLoading(false);
     })();
     return () => {
       cancelled = true;
@@ -31,6 +40,7 @@ export function AuthProvider({ children }) {
     setAuthError(null);
     try {
       const loggedInUser = await authService.login({ email, password });
+      authEpoch.current += 1;
       setUser(loggedInUser);
       return loggedInUser;
     } catch (err) {
@@ -65,6 +75,7 @@ export function AuthProvider({ children }) {
     setAuthError(null);
     try {
       const verifiedUser = await authService.verifyEmail(token);
+      authEpoch.current += 1;
       setUser(verifiedUser);
       return verifiedUser;
     } catch (err) {
@@ -85,6 +96,7 @@ export function AuthProvider({ children }) {
     setAuthError(null);
     try {
       const googleUser = await authService.googleAuth(idToken);
+      authEpoch.current += 1;
       setUser(googleUser);
       return googleUser;
     } catch (err) {
@@ -96,8 +108,17 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
+  // Re-reads the signed-in account, e.g. after the student changes their name on
+  // their profile, so every screen shows what the account now holds.
+  const refreshUser = useCallback(async () => {
+    const data = await authService.me();
+    if (data?.user) setUser(data.user);
+    return data?.user || null;
+  }, []);
+
   const logout = useCallback(async () => {
     await authService.logout();
+    authEpoch.current += 1;
     setUser(null);
   }, []);
 
@@ -111,6 +132,7 @@ export function AuthProvider({ children }) {
     verifyEmail,
     resendVerification,
     loginWithGoogle,
+    refreshUser,
     logout,
   };
 

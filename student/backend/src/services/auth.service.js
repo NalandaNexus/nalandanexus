@@ -67,51 +67,116 @@ export async function verifyGoogleIdToken(idToken) {
   }
 
   const payload = ticket.getPayload();
-  if (!payload?.email) {
+  if (!payload?.email || !payload?.sub) {
     throw AppError.unauthorized('Invalid Google credential.', 'INVALID_GOOGLE_TOKEN');
   }
   if (!payload.email_verified) {
     throw AppError.unauthorized('Google account email is not verified.', 'GOOGLE_EMAIL_UNVERIFIED');
   }
 
+  return googleIdentityFromPayload(payload);
+}
+
+/**
+ * The identity a verified Google ID token vouches for.
+ *
+ * `sub` is the only stable key. An email address can be changed at Google, and a
+ * name changes whenever its owner edits it.
+ *
+ * The name is Google's own `name` claim. Given and family name are used only if
+ * `name` is absent, and the email's local part only if Google supplies no name
+ * at all - never in preference to a real one.
+ */
+export function googleIdentityFromPayload(payload) {
+  const clean = (value) => String(value ?? '').replace(/\s+/g, ' ').trim();
+  const name =
+    clean(payload.name) ||
+    clean([payload.given_name, payload.family_name].filter(Boolean).join(' ')) ||
+    payload.email.split('@')[0];
+
   return {
     googleId: payload.sub,
     email: payload.email.toLowerCase(),
-    name: payload.name || payload.email.split('@')[0],
+    // User.name is capped at 120 characters; a longer Google name would fail
+    // validation and turn a legitimate sign-in into an error.
+    name: name.slice(0, 120),
     avatar: payload.picture || null,
   };
 }
 
 /**
- * Finds the user for a verified Google identity, creating a new student
- * account on first sign-in or linking the Google identity to an existing
- * email/password account (never creates a second, duplicate account for the
- * same email - master doc section 6).
+ * Links a verified Google identity to an account that already holds its email.
+ *
+ * Whose name the account keeps depends on whether anybody had proven they own
+ * the address.
+ *
+ * A VERIFIED account's name was chosen by the person who owns this inbox, and it
+ * is kept - an official name a student entered is not replaced by whatever
+ * their Google profile says.
+ *
+ * An UNVERIFIED account was registered by somebody who never proved the address
+ * was theirs; anyone can type a student's email into the signup form under any
+ * name. Linking used to keep that name, which is how a student signing in with
+ * Google was greeted as somebody else - and it also marked the account verified,
+ * which would have let that stranger's password open the real student's
+ * account. Google has now proven who owns the address, so the account becomes
+ * theirs: Google's name, and the unproven password discarded along with any
+ * outstanding verification link.
+ *
+ * An address already linked to a DIFFERENT Google account is refused rather
+ * than silently re-pointed.
+ */
+async function linkGoogleToExistingAccount(user, { googleId, name, avatar }) {
+  if (user.googleId && user.googleId !== googleId) {
+    throw AppError.conflict(
+      'This email address is already linked to a different Google account. Sign in with that Google account instead.',
+      'GOOGLE_ACCOUNT_MISMATCH'
+    );
+  }
+  if (!user.isVerified) {
+    user.name = name;
+    user.passwordHash = null;
+    await EmailVerificationToken.deleteMany({ userId: user._id, usedAt: null });
+  }
+  user.googleId = googleId;
+  user.isVerified = true;
+  if (!user.avatar && avatar) user.avatar = avatar;
+  await user.save();
+  return user;
+}
+
+/**
+ * Finds the user for a verified Google identity, linking it to an existing
+ * account holding the same email, or creating a new student on first sign-in.
+ *
+ * The stable identity comes first and decides on its own. Once linked, a Google
+ * account resolves to its user by `sub` alone - never by name, and never by an
+ * email that may since have changed at Google - and that user's profile is left
+ * exactly as it is. A later sign-in is not an edit.
  */
 export async function findOrCreateGoogleUser({ googleId, email, name, avatar }) {
-  let user = await User.findOne({ googleId });
-  if (user) return { user, isNewUser: false };
+  const linked = await User.findOne({ googleId });
+  if (linked) return { user: linked, isNewUser: false };
 
-  user = await User.findOne({ email });
-  if (user) {
-    // Existing email/password account signing in with Google for the first time - link it.
-    user.googleId = googleId;
-    user.isVerified = true;
-    if (!user.avatar && avatar) user.avatar = avatar;
-    await user.save();
-    return { user, isNewUser: false };
+  const existing = await User.findOne({ email });
+  if (existing) {
+    return { user: await linkGoogleToExistingAccount(existing, { googleId, name, avatar }), isNewUser: false };
   }
 
-  user = await User.create({
-    name,
-    email,
-    googleId,
-    avatar,
-    role: 'student',
-    isVerified: true,
-  });
-  await StudentProfile.create({ userId: user._id });
-  return { user, isNewUser: true };
+  try {
+    const user = await User.create({ name, email, googleId, avatar, role: 'student', isVerified: true });
+    await StudentProfile.create({ userId: user._id });
+    return { user, isNewUser: true };
+  } catch (err) {
+    // Two first sign-ins racing (a double click, two tabs). The unique indexes
+    // on email and googleId let one create through; the other resolves to the
+    // account that won instead of failing or creating a second one.
+    if (err?.code !== 11000) throw err;
+    const winner = (await User.findOne({ googleId })) || (await User.findOne({ email }));
+    if (!winner) throw err;
+    if (winner.googleId === googleId) return { user: winner, isNewUser: false };
+    return { user: await linkGoogleToExistingAccount(winner, { googleId, name, avatar }), isNewUser: false };
+  }
 }
 
 export async function validateCredentials(email, password) {

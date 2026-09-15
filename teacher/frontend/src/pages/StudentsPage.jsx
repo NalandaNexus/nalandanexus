@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Search, ArrowUpRight, ShieldCheck } from 'lucide-react';
 import RiskPulseIndicator from '../components/common/RiskPulseIndicator';
 import StudentDrillDownDrawer from '../components/students/StudentDrillDownDrawer';
+import EnrollmentSearchCard from '../components/students/EnrollmentSearchCard';
 import { teacherApiService, ApiClientError } from '../services/teacherApiService';
 import { socketService } from '../services/socketService';
 
@@ -74,6 +75,18 @@ export default function StudentsPage() {
     }
   };
 
+  // Opened from an enrollment-number search, which knows the roster row but not
+  // the summary the roster grid holds - so the full record is fetched first.
+  const openStudentById = async (studentId) => {
+    try {
+      const full = await teacherApiService.getStudentById(studentId);
+      setSelectedStudent(full);
+      setIsDrawerOpen(true);
+    } catch (err) {
+      setError(err instanceof ApiClientError ? err.message : 'Could not open this student profile.');
+    }
+  };
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -82,6 +95,8 @@ export default function StudentsPage() {
           <p className="text-xs text-[#6E6A64] mt-1">{meta.totalRecords} student{meta.totalRecords === 1 ? '' : 's'} across your classes.</p>
         </div>
       </div>
+
+      <EnrollmentSearchCard onOpenProfile={openStudentById} />
 
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 p-3.5 rounded-xl bg-[#FFFFFF] border border-[#DFDACB]">
         <div className="relative flex-1 max-w-md">

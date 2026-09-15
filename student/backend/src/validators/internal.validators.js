@@ -380,3 +380,28 @@ export default {
   retractBridgedResourceSchema,
   gradeBridgedTaskSubmissionSchema,
 };
+
+/**
+ * One student by enrollment number, for the teacher and admin portals.
+ *
+ * `scope` is how the teacher portal asks: the ids on the requesting teacher's own
+ * roster. An admin lookup carries no scope. Every element is typed and bounded,
+ * so nothing but plain strings reaches a query.
+ */
+export const lookupStudentSchema = z.object({
+  body: z
+    .object({
+      enrollmentNumber: z.string().trim().min(1).max(40),
+      scope: z
+        .object({
+          userIds: z.array(z.string().regex(/^[0-9a-fA-F]{24}$/)).max(5000).default([]),
+          enrollmentIds: z.array(z.string().trim().min(1).max(40)).max(5000).default([]),
+          courseSlugs: z.array(z.string().trim().min(1).max(200)).max(500).default([]),
+        })
+        .strict()
+        .nullable()
+        .optional(),
+      includePayments: z.boolean().optional().default(false),
+    })
+    .strict(),
+});

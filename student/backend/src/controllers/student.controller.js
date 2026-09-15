@@ -10,11 +10,41 @@ import { TaskSubmission } from '../models/TaskSubmission.js';
 import { Notification } from '../models/Notification.js';
 import { getLeaderboard } from '../services/leaderboard.service.js';
 import { getWeeklyPerformanceTrend } from '../services/performance.service.js';
+import {
+  getProfileCompletion as readProfileCompletion,
+  completeProfile as saveProfileCompletion,
+  summarizeProfileCompletion,
+} from '../services/studentProfile.service.js';
 
 export const getProfile = asyncHandler(async (req, res) => {
   const profile = await StudentProfile.findOne({ userId: req.user._id });
   if (!profile) throw AppError.notFound('Student profile not found', 'PROFILE_NOT_FOUND');
   return sendSuccess(res, { data: { user: req.user.toJSON(), profile } });
+});
+
+/**
+ * GET /api/student/profile/completion
+ *
+ * The profile a course requires: the four fields the student fills in, the
+ * enrollment number beside them, and what, if anything, is still missing.
+ */
+export const getProfileCompletion = asyncHandler(async (req, res) => {
+  return sendSuccess(res, { data: await readProfileCompletion(req.user) });
+});
+
+/**
+ * PUT /api/student/profile/completion
+ *
+ * Accepts exactly full name, parent/guardian name, class and phone number (see
+ * profile.validators.js#completeProfileSchema). Repeating the same request
+ * stores the same values and changes nothing else.
+ */
+export const completeProfile = asyncHandler(async (req, res) => {
+  const data = await saveProfileCompletion(req.user, req.body);
+  return sendSuccess(res, {
+    message: data.complete ? 'Profile completed successfully.' : 'Profile saved.',
+    data,
+  });
 });
 
 export const updateProfile = asyncHandler(async (req, res) => {
@@ -77,11 +107,18 @@ export const getDashboard = asyncHandler(async (req, res) => {
 
   if (!profile) throw AppError.notFound('Student profile not found', 'PROFILE_NOT_FOUND');
 
+  // Tells the client whether the student must complete their profile first. A
+  // student who owes one is not shown course content from here either: the due
+  // tasks and the course leaderboard wait until it is complete, the same rule
+  // every course route enforces.
+  const profileCompletion = await summarizeProfileCompletion(req.user);
+  const withholdContent = profileCompletion.requiresCompletion;
+
   const primaryEnrollment = enrollments[0] || null;
   const primaryCourse = primaryEnrollment?.courseId || null;
 
   let dueTasks = [];
-  if (primaryCourse) {
+  if (primaryCourse && !withholdContent) {
     const [tasks, submissions] = await Promise.all([
       Task.find({ courseId: primaryCourse._id, isPublished: true }).sort({ order: 1 }),
       TaskSubmission.find({ userId }),
@@ -102,7 +139,7 @@ export const getDashboard = asyncHandler(async (req, res) => {
       }));
   }
 
-  const { entries: leaderboardTop } = await getLeaderboard({
+  const { entries: leaderboardTop } = withholdContent ? { entries: [] } : await getLeaderboard({
     courseId: primaryCourse?._id || null,
     period: 'thisWeek',
     limit: 7,
@@ -129,6 +166,7 @@ export const getDashboard = asyncHandler(async (req, res) => {
   return sendSuccess(res, {
     data: {
       profile,
+      profileCompletion,
       course: primaryCourse
         ? {
             id: primaryCourse.slug,

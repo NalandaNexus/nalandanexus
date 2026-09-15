@@ -79,7 +79,7 @@ export default function CourseDetail() {
     setIsPurchasing(true);
     setPurchaseError('');
     try {
-      await paymentService.purchaseCourse({
+      const result = await paymentService.purchaseCourse({
         courseSlug: slug,
         studentName: user?.name,
         studentEmail: user?.email,
@@ -92,7 +92,14 @@ export default function CourseDetail() {
         colors: ['#D97706', '#9333EA', '#06B6D4', '#10B981', '#F59E0B'],
       });
       setCourse((prev) => (prev ? { ...prev, isEnrolled: true } : prev));
-      setTimeout(() => navigate('/student/dashboard'), 1200);
+      // The student profile comes before the course, then back to this course.
+      setTimeout(() => {
+        if (result?.studentProfile?.requiresCompletion) {
+          navigate('/student/complete-profile', { state: { from: `/student/course/${slug}` } });
+        } else {
+          navigate('/student/dashboard');
+        }
+      }, 1200);
     } catch (err) {
       setPurchaseError(err.message || 'Payment could not be completed. Please try again.');
     } finally {

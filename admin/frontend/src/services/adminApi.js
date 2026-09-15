@@ -264,6 +264,12 @@ export const adminApi = {
     return json.data || [];
   },
 
+  /** Any student by enrollment number. Payment details arrive only for admins holding payments.view. */
+  async findStudentByEnrollmentNumber(enrollmentNumber) {
+    const json = await request(`/students/enrollment-number/${encodeURIComponent(enrollmentNumber)}`);
+    return json.data;
+  },
+
   async createStudent(studentData) {
     const json = await request('/students', { method: 'POST', body: studentData });
     return json.data;

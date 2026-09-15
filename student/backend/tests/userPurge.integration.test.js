@@ -31,7 +31,7 @@ test('purging a user removes every record they owned', async (t) => {
   t.after(teardown);
 
   const course = await seedCourse();
-  const student = await registerAndLogin(request, { name: 'Purge Me', email: 'purge@example.com' });
+  const student = await registerAndLogin(request, { completeProfile: true, name: 'Purge Me', email: 'purge@example.com' });
   const uid = student.user._id;
 
   const { createEnrollment } = await import('../src/services/enrollment.service.js');
@@ -74,8 +74,8 @@ test('purging a reviewer recalculates the course rating they contributed to', as
   const { createEnrollment } = await import('../src/services/enrollment.service.js');
   const { Course } = await import('../src/models/Course.js');
 
-  const keep = await registerAndLogin(request, { name: 'Keep', email: 'keep@example.com' });
-  const drop = await registerAndLogin(request, { name: 'Drop', email: 'drop@example.com' });
+  const keep = await registerAndLogin(request, { completeProfile: true, name: 'Keep', email: 'keep@example.com' });
+  const drop = await registerAndLogin(request, { completeProfile: true, name: 'Drop', email: 'drop@example.com' });
   await createEnrollment({ userId: keep.user._id, courseId: course._id, course });
   await createEnrollment({ userId: drop.user._id, courseId: course._id, course });
 
@@ -105,11 +105,11 @@ test('orphan sweep removes rows whose owner is already gone, and nothing else', 
   const { request, teardown } = await bootTestApp();
   t.after(teardown);
 
-  const living = await registerAndLogin(request, { name: 'Living', email: 'living@example.com' });
+  const living = await registerAndLogin(request, { completeProfile: true, name: 'Living', email: 'living@example.com' });
   await request.post('/api/student/community/posts').set(bearer(living.accessToken)).send({ body: 'A post with a real author.' });
 
   // Simulate the historical bug: delete the User row directly, leaving the post.
-  const ghost = await registerAndLogin(request, { name: 'Ghost', email: 'ghost@example.com' });
+  const ghost = await registerAndLogin(request, { completeProfile: true, name: 'Ghost', email: 'ghost@example.com' });
   await request.post('/api/student/community/posts').set(bearer(ghost.accessToken)).send({ body: 'A post whose author vanishes.' });
   const { User } = await import('../src/models/User.js');
   await User.deleteOne({ _id: ghost.user._id });

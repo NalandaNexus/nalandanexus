@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from './AuthContext';
 import { studentApiService } from '../services/studentApiService';
 import { connectSocket, disconnectSocket } from '../services/socket';
@@ -60,6 +60,7 @@ function mapToStudentViewModel(user, profile, course) {
     quizzesCompleted: profile.stats?.quizzesCompleted || 0,
     tasksCompleted: profile.stats?.tasksCompleted || 0,
     hasCompletedOnboarding: Boolean(profile.hasCompletedOnboarding),
+    enrollmentNumber: profile.enrollmentNumber || null,
   };
 }
 
@@ -91,6 +92,9 @@ function mapNote(n) {
 
 export function StudentProvider({ children }) {
   const { user, isAuthenticated } = useAuth();
+  // Which student is signed in, not merely whether someone is: switching accounts
+  // without a reload must not leave the previous student's data on screen.
+  const userId = user?._id || user?.id || null;
 
   const [profile, setProfile] = useState(null);
   const [course, setCourse] = useState(null);
@@ -100,6 +104,9 @@ export function StudentProvider({ children }) {
   const [notes, setNotes] = useState([]);
   const [performanceHistory, setPerformanceHistory] = useState([]);
   const [isEnrolled, setIsEnrolled] = useState(null); // null = unknown/loading
+  // From the dashboard: whether the student owes the profile a course requires.
+  const [profileCompletion, setProfileCompletion] = useState(null);
+  const profileReloadPending = useRef(false);
   const [isLoadingDashboard, setIsLoadingDashboard] = useState(false);
   const [dashboardError, setDashboardError] = useState(null);
   const [activeNotification, setActiveNotification] = useState(null);
@@ -118,6 +125,7 @@ export function StudentProvider({ children }) {
       setProfile(data.profile);
       setCourse(data.course);
       setIsEnrolled(Boolean(data.isEnrolledInAnyCourse));
+      setProfileCompletion(data.profileCompletion || null);
       setNotifications((data.notifications || []).map(mapNotification));
       // Already shaped as { day, quiz, task, average } by the backend -
       // matches what PerformanceChart (Recharts) expects directly.
@@ -126,7 +134,9 @@ export function StudentProvider({ children }) {
       // Full task catalog (dashboard only returns a due-soon slice) so
       // TasksListPage can show completed + pending tasks with real state.
       if (data.isEnrolledInAnyCourse) {
-        const allTasks = await studentApiService.getTasks();
+        // Tasks are course content, which waits for a complete profile - asking
+        // for them first would only be refused.
+        const allTasks = data.profileCompletion?.requiresCompletion ? [] : await studentApiService.getTasks();
         setTasks(
           allTasks.map((t) => ({
             ...t,
@@ -152,6 +162,11 @@ export function StudentProvider({ children }) {
 
   useEffect(() => {
     if (isAuthenticated) {
+      // A different student may have just signed in over the previous one.
+      setProfile(null);
+      setCourse(null);
+      setIsEnrolled(null);
+      setProfileCompletion(null);
       loadDashboard();
     } else {
       setProfile(null);
@@ -159,12 +174,29 @@ export function StudentProvider({ children }) {
       setTasks([]);
       setNotifications([]);
       setIsEnrolled(null);
+      setProfileCompletion(null);
     }
-  }, [isAuthenticated, loadDashboard]);
+  }, [isAuthenticated, userId, loadDashboard]);
 
-  const refreshData = useCallback(() => {
-    loadDashboard();
-  }, [loadDashboard]);
+  // Returns the load, so a caller that needs fresh state before navigating can wait for it.
+  const refreshData = useCallback(() => loadDashboard(), [loadDashboard]);
+
+  // The API refused course content because the profile is incomplete - from
+  // whichever page asked. The dashboard carries the authoritative answer, so it
+  // is reloaded (once, however many requests were refused together) and the
+  // route gate then sends the student to the profile form.
+  useEffect(() => {
+    if (!isAuthenticated) return undefined;
+    const handleProfileIncomplete = () => {
+      if (profileReloadPending.current) return;
+      profileReloadPending.current = true;
+      loadDashboard().finally(() => {
+        profileReloadPending.current = false;
+      });
+    };
+    window.addEventListener('nalanda-profile-incomplete', handleProfileIncomplete);
+    return () => window.removeEventListener('nalanda-profile-incomplete', handleProfileIncomplete);
+  }, [isAuthenticated, loadDashboard]);
 
   // Real-time layer: one authenticated socket connection per session,
   // subscribed to the student's own private room server-side (master doc
@@ -175,6 +207,10 @@ export function StudentProvider({ children }) {
       return;
     }
 
+    // A socket is authenticated as whoever held the session when it connected.
+    // When the signed-in student changes, the old connection must not go on
+    // delivering the previous student's notifications.
+    disconnectSocket();
     const socket = connectSocket();
     if (!socket) return undefined;
 
@@ -199,7 +235,7 @@ export function StudentProvider({ children }) {
       socket.off('notification.created', handleNotificationCreated);
       socket.off('leaderboard.updated', handleLeaderboardUpdated);
     };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, userId]);
 
   useEffect(() => disconnectSocket, []);
 
@@ -287,6 +323,8 @@ export function StudentProvider({ children }) {
     course,
     courses,
     isEnrolled,
+    profileCompletion,
+    requiresProfileCompletion: Boolean(profileCompletion?.requiresCompletion),
     isLoadingDashboard,
     dashboardError,
     activeNotification,

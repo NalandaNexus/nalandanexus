@@ -3,6 +3,7 @@ import { sendSuccess } from '../utils/apiResponse.js';
 import { AppError } from '../utils/AppError.js';
 import { evaluateCoupon, claimCoupon, releaseCoupon, attachEnrollmentToClaim } from '../services/coupon.service.js';
 import { createEnrollment } from '../services/enrollment.service.js';
+import { summarizeProfileCompletion } from '../services/studentProfile.service.js';
 
 /**
  * Coupon redemption, alongside the Razorpay flow rather than inside it.
@@ -101,6 +102,8 @@ export const redeemCoupon = asyncHandler(async (req, res) => {
       originalAmountInPaise,
       discountAmountInPaise,
       amountPaidInPaise: 0,
+      // A free course is still a course: the profile form comes first if it is owed.
+      studentProfile: await summarizeProfileCompletion(req.user),
       enrollment: {
         enrollmentId: enrollment.enrollmentId,
         courseId: String(course._id),

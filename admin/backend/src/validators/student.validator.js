@@ -37,4 +37,30 @@ export const updateStudentSchema = {
     .strict(),
 };
 
-export default { listStudentsQuery, createStudentSchema, updateStudentSchema };
+/** The canonical form of an enrollment number however it was typed, or null when it is not one. */
+export function normalizeEnrollmentNumber(raw) {
+  const compact = String(raw ?? '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '');
+  const match = /^NN(\d{2})(\d{6,9})$/.exec(compact);
+  return match ? `NN${match[1]}-${match[2]}` : null;
+}
+
+/** Only the canonical form ever reaches the student service; anything else is refused here. */
+export const enrollmentNumberParams = {
+  params: z.object({
+    enrollmentNumber: z
+      .string()
+      .max(40)
+      .transform((value, ctx) => {
+        const normalized = normalizeEnrollmentNumber(value);
+        if (!normalized) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Enter a valid enrollment number, for example NN26-000124.' });
+          return z.NEVER;
+        }
+        return normalized;
+      }),
+  }),
+};
+
+export default { listStudentsQuery, createStudentSchema, updateStudentSchema, enrollmentNumberParams };

@@ -71,11 +71,12 @@ export default function PurchasePage() {
     setIsPurchasing(true);
     setError('');
     try {
+      let result;
       if (isFreeWithCoupon) {
         setStatusKey('redeeming-coupon');
-        await paymentService.enrollWithCoupon({ courseSlug: COURSE_SLUG, code: coupon.code });
+        result = await paymentService.enrollWithCoupon({ courseSlug: COURSE_SLUG, code: coupon.code });
       } else {
-        await paymentService.purchaseCourse({
+        result = await paymentService.purchaseCourse({
           courseSlug: COURSE_SLUG,
           studentName: user?.name,
           studentEmail: user?.email,
@@ -83,7 +84,13 @@ export default function PurchasePage() {
         });
       }
       await refreshData();
-      navigate('/student/dashboard', { replace: true });
+      // Paid or free, a course is not opened before the student profile it
+      // requires. The backend says which applies; it enforces it too.
+      if (result?.studentProfile?.requiresCompletion) {
+        navigate('/student/complete-profile', { replace: true, state: { from: '/student/dashboard' } });
+      } else {
+        navigate('/student/dashboard', { replace: true });
+      }
     } catch (err) {
       // A coupon can lapse between preview and enrolment - somebody else may
       // have taken the last use. Drop it so the student sees the real price

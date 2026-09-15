@@ -33,7 +33,7 @@ async function enroll(userId, course) {
 }
 
 async function makeEnrolledStudent(request, course, { name, email }) {
-  const student = await registerAndLogin(request, { name, email });
+  const student = await registerAndLogin(request, { completeProfile: true, name, email });
   await enroll(student.user._id, course);
   return student;
 }
@@ -110,7 +110,7 @@ test('a student who is NOT enrolled cannot review the course', async (t) => {
   t.after(teardown);
 
   const course = await seedCourse();
-  const outsider = await registerAndLogin(request, { name: 'Outsider', email: 'outsider@example.com' });
+  const outsider = await registerAndLogin(request, { completeProfile: true, name: 'Outsider', email: 'outsider@example.com' });
 
   const res = await request
     .post(`/api/student/courses/${course.slug}/review`)

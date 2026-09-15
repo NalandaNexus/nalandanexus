@@ -64,7 +64,7 @@ export async function bootTestApp() {
  * transport configured under NODE_ENV=test the API returns the working link
  * as `verificationUrlFallback`, and verifying logs the student straight in.
  */
-export async function registerAndLogin(request, { name, email, password = 'TestPass123!' }) {
+export async function registerAndLogin(request, { name, email, password = 'TestPass123!', completeProfile = false }) {
   const res = await request.post('/api/auth/register').send({ name, email, password });
 
   const fallbackUrl = res.body?.data?.verificationUrlFallback;
@@ -78,7 +78,37 @@ export async function registerAndLogin(request, { name, email, password = 'TestP
   const token = new URL(fallbackUrl).searchParams.get('token');
   const verified = await request.post('/api/auth/verify-email').send({ token });
 
-  return { accessToken: verified.body.data.accessToken, user: verified.body.data.user };
+  const session = { accessToken: verified.body.data.accessToken, user: verified.body.data.user };
+  if (completeProfile) await completeStudentProfile(request, session);
+  return session;
+}
+
+const DIGIT_WORDS = ['Zero', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
+
+/**
+ * Completes the student profile a course requires - full name, parent or
+ * guardian, class and phone - through the real endpoint.
+ *
+ * Any suite whose students open course content needs this: an enrolled student
+ * whose profile is incomplete is refused that content by design (see
+ * services/studentProfile.service.js). The account's own name is kept, except
+ * that digits, which a person's name cannot contain, are spelled out - so
+ * "Rater 3" becomes "Rater Three".
+ */
+export async function completeStudentProfile(request, session, overrides = {}) {
+  const fullName = String(session.user.name)
+    .replace(/\d/g, (d) => ` ${DIGIT_WORDS[Number(d)]}`)
+    .replace(/\s+/g, ' ')
+    .trim();
+  const res = await request
+    .put('/api/student/profile/completion')
+    .set(bearer(session.accessToken))
+    .send({ fullName, guardianName: 'Test Guardian', grade: 'Class 9', phone: '9876543210', ...overrides });
+  if (res.status !== 200) {
+    throw new Error(`completeStudentProfile: ${res.status} ${JSON.stringify(res.body)}`);
+  }
+  session.user = { ...session.user, name: fullName };
+  return res.body.data;
 }
 
 export function bearer(token) {

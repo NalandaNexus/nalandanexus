@@ -16,9 +16,9 @@ before(async () => {
   courseX = await Course.create({ slug: 'course-x', title: 'Course X', priceInPaise: 0, isPurchasable: true, isPublished: true });
   courseY = await Course.create({ slug: 'course-y', title: 'Course Y', priceInPaise: 0, isPurchasable: true, isPublished: true });
 
-  studentA = await registerAndLogin(app.request, { name: 'Student A', email: 'a@leaderboard.test' });
-  studentB = await registerAndLogin(app.request, { name: 'Student B', email: 'b@leaderboard.test' });
-  studentC = await registerAndLogin(app.request, { name: 'Student C', email: 'c@leaderboard.test' });
+  studentA = await registerAndLogin(app.request, { completeProfile: true, name: 'Student A', email: 'a@leaderboard.test' });
+  studentB = await registerAndLogin(app.request, { completeProfile: true, name: 'Student B', email: 'b@leaderboard.test' });
+  studentC = await registerAndLogin(app.request, { completeProfile: true, name: 'Student C', email: 'c@leaderboard.test' });
 
   // A and B share Course X; C is enrolled only in Course Y.
   await createEnrollment({ userId: studentA.user._id, courseId: courseX._id, course: courseX });

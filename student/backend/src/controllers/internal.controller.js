@@ -24,6 +24,7 @@ import { Enrollment } from '../models/Enrollment.js';
 import { Notification } from '../models/Notification.js';
 import { TaskSubmission } from '../models/TaskSubmission.js';
 import { StudentProfile } from '../models/StudentProfile.js';
+import { findStudentByEnrollmentNumber } from '../services/studentProfile.service.js';
 import { createAnnouncement as createAnnouncementService } from '../services/announcement.service.js';
 
 /**
@@ -1616,3 +1617,21 @@ export default {
   retractBridgedResource,
   gradeBridgedTaskSubmission,
 };
+
+/**
+ * POST /api/internal/students/lookup
+ *
+ * One student by enrollment number, for the teacher and admin portals.
+ *
+ * Answers 200 with null when there is no match - including a student outside
+ * the teacher scope supplied - so the calling portal decides what its user
+ * hears, and "not yours" is never distinguishable from "does not exist".
+ */
+export const lookupStudentByEnrollmentNumber = asyncHandler(async (req, res) => {
+  const { enrollmentNumber, scope, includePayments } = req.body;
+  const student = await findStudentByEnrollmentNumber(enrollmentNumber, {
+    scope: scope || null,
+    includePayments: includePayments === true,
+  });
+  return sendSuccess(res, { message: student ? 'Student found.' : 'No matching student.', data: student });
+});

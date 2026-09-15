@@ -79,6 +79,22 @@ export default function SettingsPage() {
             <h2 className="font-heading font-bold text-sm text-[#22355E]">Student Profile Information</h2>
           </div>
 
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl bg-white border border-[#DFDACB]">
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-[#2B2B28]/50">Enrollment Number (system generated)</p>
+              <p className="font-data font-bold text-sm text-[#22355E]">
+                {student?.enrollmentNumber || <span className="font-sans font-normal text-xs text-[#2B2B28]/55">Issued when you enrol in a course</span>}
+              </p>
+            </div>
+            <Link
+              to="/student/complete-profile"
+              state={{ from: '/student/settings' }}
+              className="inline-flex items-center justify-center px-4 py-2 rounded-full border border-[#22355E] text-[#22355E] hover:bg-[#22355E] hover:text-white text-xs font-heading font-bold transition-colors"
+            >
+              Parent, class &amp; phone details
+            </Link>
+          </div>
+
           <div className="flex items-center gap-4">
             <div className="relative shrink-0">
               {student?.avatar ? (

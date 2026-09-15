@@ -33,6 +33,7 @@ import {
   adminCampaignIdSchema,
   adminUpdateCouponSchema,
   adminCouponIdSchema,
+  lookupStudentSchema,
 } from '../validators/internal.validators.js';
 
 // Service-to-service only - authenticated by a shared secret
@@ -133,5 +134,10 @@ router.get('/coupon-campaigns/:id/export', validate(adminCampaignIdSchema), inte
 router.get('/coupons', validate(adminListCouponsSchema), internalController.adminListCoupons);
 router.patch('/coupons/:id', validate(adminUpdateCouponSchema), internalController.adminUpdateCoupon);
 router.delete('/coupons/:id', validate(adminCouponIdSchema), internalController.adminDeleteCoupon);
+
+// Student lookup by enrollment number. The teacher portal always sends its
+// teacher's roster as the scope; the admin portal sends none. A POST because the
+// scope can be long, not because anything is written.
+router.post('/students/lookup', validate(lookupStudentSchema), internalController.lookupStudentByEnrollmentNumber);
 
 export default router;

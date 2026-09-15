@@ -24,3 +24,23 @@ export const updateProfileSchema = z.object({
     })
     .strict(),
 });
+
+/**
+ * The profile a course requires: these four fields and nothing else.
+ *
+ * `.strict()` is the point. An enrollment number, email, user id or Google id
+ * sent with the form is refused outright rather than quietly dropped, so a
+ * client that tries to set one is told it cannot. Whether each value is
+ * acceptable is decided in studentProfile.service.js#profileFieldErrors, which
+ * is also what the service enforces, so the two cannot drift apart.
+ */
+export const completeProfileSchema = z.object({
+  body: z
+    .object({
+      fullName: z.string().max(200).optional(),
+      guardianName: z.string().max(200).optional(),
+      grade: z.string().max(40).optional(),
+      phone: z.string().max(40).optional(),
+    })
+    .strict(),
+});

@@ -26,7 +26,7 @@ before(async () => {
     questions: [{ questionId: 'q1', question: '1 + 1?', options: ['1', '2'], correctIndex: 1 }],
   });
 
-  student = await registerAndLogin(app.request, { name: 'Timer Student', email: 'timer@integration.test' });
+  student = await registerAndLogin(app.request, { completeProfile: true, name: 'Timer Student', email: 'timer@integration.test' });
   await createEnrollment({ userId: student.user._id, courseId: course._id, course });
 });
 

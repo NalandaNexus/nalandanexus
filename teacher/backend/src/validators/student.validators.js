@@ -1,4 +1,4 @@
-import { body, query } from 'express-validator';
+import { body, query, param } from 'express-validator';
 import mongoose from 'mongoose';
 
 export const createStudentValidator = [
@@ -25,6 +25,11 @@ export const updateStudentValidator = [
   body('guardianEmail').optional({ nullable: true }).trim().isEmail(),
   body('status').optional().isIn(['active', 'inactive']),
   body('classId').optional().custom((v) => mongoose.Types.ObjectId.isValid(v)).withMessage('classId must be a valid identifier'),
+];
+
+/** The number as typed; the service reduces it to its canonical form, or refuses it. */
+export const enrollmentNumberParamValidator = [
+  param('enrollmentNumber').isString().isLength({ min: 1, max: 40 }).withMessage('Enter an enrollment number.'),
 ];
 
 export const listStudentsValidator = [

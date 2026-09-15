@@ -501,3 +501,24 @@ export default {
   fetchEnrolledStudents,
   pushGradeToStudent,
 };
+
+/**
+ * One student by enrollment number, asked within a teacher's scope.
+ *
+ * The scope is built by the caller from the teacher's own roster; the student
+ * portal answers only within it. `ok: false` means the question could not be
+ * asked, which a caller must not present as "no such student".
+ */
+export async function lookupStudentByEnrollmentNumber(enrollmentNumber, scope) {
+  if (!isConfigured()) return { ok: false, student: null };
+  try {
+    const body = await call('/api/internal/students/lookup', {
+      method: 'POST',
+      body: JSON.stringify({ enrollmentNumber, scope }),
+    });
+    return { ok: true, student: body?.data || null };
+  } catch (err) {
+    console.error('[studentBridge] Student lookup failed:', err.message);
+    return { ok: false, student: null, error: err.message };
+  }
+}

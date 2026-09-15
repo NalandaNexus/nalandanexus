@@ -140,7 +140,7 @@ export default function AuthPage({ initialMode = 'login' }) {
     setIsLoading(true);
     setUnverifiedEmail(null);
     try {
-      await login({ email, password });
+      const loggedInUser = await login({ email, password });
       if (rememberMe) {
         localStorage.setItem('nalanda_remembered_email', email);
       } else {
@@ -150,7 +150,8 @@ export default function AuthPage({ initialMode = 'login' }) {
       setFocusState('celebrating');
       setSpeechText('Welcome aboard! 🚀✨');
       triggerConfetti();
-      addToast(`Welcome back, ${email.split('@')[0]}! Logged in successfully.`, 'success');
+      // The account's own name - not the part of the email before the @, which is not a name.
+      addToast(`Welcome back, ${loggedInUser?.name?.split(' ')[0] || 'there'}! Logged in successfully.`, 'success');
       setTimeout(() => {
         setFocusState('idle');
         navigate('/student/dashboard');

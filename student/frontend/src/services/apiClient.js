@@ -42,7 +42,12 @@ try {
 
 let refreshPromise = null;
 
-export function setAccessToken(token) {
+// Counts sign-ins, verifications and sign-outs. A refresh already in flight when
+// one of them finished describes the session from before it, and must not
+// replace the token the newer one issued.
+let sessionEpoch = 0;
+
+function storeAccessToken(token) {
   accessToken = token;
   try {
     if (token) sessionStorage.setItem('nalanda_access_token', token);
@@ -50,6 +55,24 @@ export function setAccessToken(token) {
   } catch {
     // sessionStorage unavailable (e.g. private mode) - in-memory token still works for this tab session.
   }
+}
+
+/** Sets the token a sign-in, verification or sign-out produced. */
+export function setAccessToken(token) {
+  sessionEpoch += 1;
+  storeAccessToken(token);
+}
+
+/**
+ * Waits for a session refresh that is already in flight.
+ *
+ * Every page load starts one to restore the previous session. A sign-in sent
+ * while it is still travelling can finish first, and the refresh's response -
+ * the previous account's cookie and token - then lands on top of it. Signing in
+ * only once any refresh has settled keeps the newer session last.
+ */
+export async function settleSessionRefresh() {
+  if (refreshPromise) await refreshPromise;
 }
 
 export function getAccessToken() {
@@ -105,6 +128,13 @@ async function rawRequest(path, { method = 'GET', body, skipAuth = false, isRetr
     }
   }
 
+  // Course content refused because the student profile is incomplete. Whatever
+  // screen asked, the remedy is the same, so it is announced once here for the
+  // student context to act on instead of every page learning the code.
+  if (res.status === 403 && code === 'PROFILE_INCOMPLETE' && typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('nalanda-profile-incomplete'));
+  }
+
   throw new ApiError(payload?.error?.message || 'Something went wrong. Please try again.', {
     status: res.status,
     code: code || 'UNKNOWN_ERROR',
@@ -114,22 +144,28 @@ async function rawRequest(path, { method = 'GET', body, skipAuth = false, isRetr
 
 async function refreshAccessToken() {
   if (!refreshPromise) {
+    const startedAt = sessionEpoch;
+    // A sign-in or sign-out finished while this was in flight: its token stands.
+    const superseded = () => startedAt !== sessionEpoch;
     refreshPromise = fetch(`${API_BASE_URL}/auth/refresh`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
     })
       .then(async (res) => {
+        if (superseded()) return Boolean(accessToken);
         if (!res.ok) {
-          setAccessToken(null);
+          storeAccessToken(null);
           return false;
         }
         const payload = await res.json();
-        setAccessToken(payload?.data?.accessToken || null);
+        if (superseded()) return Boolean(accessToken);
+        storeAccessToken(payload?.data?.accessToken || null);
         return Boolean(payload?.data?.accessToken);
       })
       .catch(() => {
-        setAccessToken(null);
+        if (superseded()) return Boolean(accessToken);
+        storeAccessToken(null);
         return false;
       })
       .finally(() => {
@@ -143,6 +179,7 @@ export const apiClient = {
   get: (path) => rawRequest(path, { method: 'GET' }),
   post: (path, body, opts) => rawRequest(path, { method: 'POST', body, ...opts }),
   patch: (path, body) => rawRequest(path, { method: 'PATCH', body }),
+  put: (path, body) => rawRequest(path, { method: 'PUT', body }),
   delete: (path) => rawRequest(path, { method: 'DELETE' }),
   tryRefreshSession: refreshAccessToken,
 };

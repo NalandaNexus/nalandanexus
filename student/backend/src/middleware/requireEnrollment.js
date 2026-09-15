@@ -1,6 +1,7 @@
 import { AppError } from '../utils/AppError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { Enrollment } from '../models/Enrollment.js';
+import { assertProfileComplete } from '../services/studentProfile.service.js';
 
 /**
  * Object-level authorization gate for paid course content (master doc
@@ -28,6 +29,12 @@ export function requireEnrollment(resolveCourseId) {
         'COURSE_NOT_PURCHASED'
       );
     }
+
+    // Holding the course is not enough on its own: an enrolled student must also
+    // have completed the profile a course requires. Checked after the enrolment,
+    // so a student who does not own the course still hears only that, and here
+    // rather than in each handler, so no content route can skip it.
+    await assertProfileComplete(req.user);
 
     req.enrollment = enrollment;
     req.courseId = courseId;

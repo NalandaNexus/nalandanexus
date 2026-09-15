@@ -429,6 +429,10 @@ class TeacherApiService {
   }
 
   // ---- Search ----
+  /** One of this teacher's own students, by enrollment number. 404 for anyone else - by design. */
+  findStudentByEnrollmentNumber(enrollmentNumber) {
+    return get(`/students/enrollment-number/${encodeURIComponent(enrollmentNumber)}`).then((r) => r.data);
+  }
   search(q) {
     return get('/search', { q }).then((r) => r.data);
   }

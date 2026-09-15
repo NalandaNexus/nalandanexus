@@ -47,8 +47,8 @@ async function makeCourse(slug, title) {
 test('a student only sees lectures for the batch they were placed in', async () => {
   const course = await makeCourse('prarambh', 'PRARAMBH — The Awakening');
 
-  const alice = await registerAndLogin(request, { name: 'Alice PB1', email: 'alice.pb1@example.com' });
-  const bob = await registerAndLogin(request, { name: 'Bob PB2', email: 'bob.pb2@example.com' });
+  const alice = await registerAndLogin(request, { completeProfile: true, name: 'Alice PB1', email: 'alice.pb1@example.com' });
+  const bob = await registerAndLogin(request, { completeProfile: true, name: 'Bob PB2', email: 'bob.pb2@example.com' });
 
   await Enrollment.create({
     enrollmentId: 'ENR-2026-900001',
@@ -82,7 +82,7 @@ test('a student only sees lectures for the batch they were placed in', async () 
 
 test('a student awaiting batch placement still sees course-wide sessions only', async () => {
   const course = await makeCourse('unplaced-course', 'Unplaced Course');
-  const carol = await registerAndLogin(request, { name: 'Carol Unplaced', email: 'carol.unplaced@example.com' });
+  const carol = await registerAndLogin(request, { completeProfile: true, name: 'Carol Unplaced', email: 'carol.unplaced@example.com' });
 
   await Enrollment.create({
     enrollmentId: 'ENR-2026-900003',
@@ -104,7 +104,7 @@ test('a student awaiting batch placement still sees course-wide sessions only', 
 
 test('a student not enrolled in the course sees none of its lectures', async () => {
   const course = await makeCourse('private-course', 'Private Course');
-  const dave = await registerAndLogin(request, { name: 'Dave Outsider', email: 'dave.outsider@example.com' });
+  const dave = await registerAndLogin(request, { completeProfile: true, name: 'Dave Outsider', email: 'dave.outsider@example.com' });
 
   const future = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
   await LiveClass.create({ courseId: course._id, batchId: PB1, title: 'Paid Batch Lecture', instructor: 'T', scheduledAt: future, joinUrl: 'https://example.com/z' });
@@ -127,7 +127,7 @@ test('an enrollment identifier is unique, and its shape is the documented one', 
 
 test('an issued enrollment identifier cannot be overwritten', async () => {
   const course = await makeCourse('immutable-course', 'Immutable Course');
-  const erin = await registerAndLogin(request, { name: 'Erin Fixed', email: 'erin.fixed@example.com' });
+  const erin = await registerAndLogin(request, { completeProfile: true, name: 'Erin Fixed', email: 'erin.fixed@example.com' });
 
   const enrollment = await Enrollment.create({
     enrollmentId: 'ENR-2026-950001',
@@ -146,7 +146,7 @@ test('an issued enrollment identifier cannot be overwritten', async () => {
 test('two enrollments cannot share an identifier', async () => {
   const courseA = await makeCourse('dup-a', 'Dup A');
   const courseB = await makeCourse('dup-b', 'Dup B');
-  const frank = await registerAndLogin(request, { name: 'Frank Dup', email: 'frank.dup@example.com' });
+  const frank = await registerAndLogin(request, { completeProfile: true, name: 'Frank Dup', email: 'frank.dup@example.com' });
   const userId = frank.user.id || frank.user._id;
 
   await Enrollment.create({ enrollmentId: 'ENR-2026-960001', userId, courseId: courseA._id, status: 'active' });
@@ -166,7 +166,7 @@ test('two enrollments cannot share an identifier', async () => {
  */
 test('a student is shown their business enrollment identity, batch and teacher', async () => {
   const course = await makeCourse('identity-course', 'Identity Course');
-  const gina = await registerAndLogin(request, { name: 'Gina Identity', email: 'gina.identity@example.com' });
+  const gina = await registerAndLogin(request, { completeProfile: true, name: 'Gina Identity', email: 'gina.identity@example.com' });
 
   const created = await Enrollment.create({
     enrollmentId: 'ENR-2026-970001',
@@ -192,7 +192,7 @@ test('a student is shown their business enrollment identity, batch and teacher',
 
 test('an unplaced student is told so honestly rather than shown a wrong batch', async () => {
   const course = await makeCourse('pending-course', 'Pending Course');
-  const hank = await registerAndLogin(request, { name: 'Hank Pending', email: 'hank.pending@example.com' });
+  const hank = await registerAndLogin(request, { completeProfile: true, name: 'Hank Pending', email: 'hank.pending@example.com' });
 
   await Enrollment.create({
     enrollmentId: 'ENR-2026-980001',

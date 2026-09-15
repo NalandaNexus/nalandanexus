@@ -79,6 +79,12 @@ async function startFakeStudentPortal() {
     submissions: [],
     gradesDelivered: [],
     activityByUser: {},
+    // The students the lookup-by-enrollment-number endpoint knows about, and
+    // every question it was asked - so a test can prove what left this portal.
+    lookupStudents: [],
+    lookupStatus: 200,
+    lookupIgnoresScope: false,
+    lookups: [],
     calls: [],
   };
 
@@ -158,6 +164,29 @@ async function startFakeStudentPortal() {
       });
     }
 
+    if (url.pathname === '/api/internal/students/lookup') {
+      if (state.requireServiceKey && req.headers['x-internal-service-key'] !== 'test_service_key') {
+        return send(401, { success: false, message: 'Bad service key' });
+      }
+      let body = '';
+      req.on('data', (c) => (body += c));
+      return req.on('end', () => {
+        const parsed = body ? JSON.parse(body) : {};
+        state.lookups.push(parsed);
+        if (state.lookupStatus !== 200) return send(state.lookupStatus, { success: false });
+        const found = state.lookupStudents.find((s) => s.enrollmentNumber === parsed.enrollmentNumber) || null;
+        // `lookupIgnoresScope` stands in for a misbehaving peer, to prove the
+        // teacher portal checks the answer rather than trusting it.
+        if (!found || state.lookupIgnoresScope || !parsed.scope) return send(200, { success: true, data: found });
+        // Otherwise like the real endpoint: cut down to the scope, or null.
+        const ids = new Set(parsed.scope.enrollmentIds || []);
+        const linked = (parsed.scope.userIds || []).includes(found.userId);
+        const enrollments = found.enrollments.filter((e) => (e.enrollmentId ? ids.has(e.enrollmentId) : linked));
+        if (!enrollments.length && !linked) return send(200, { success: true, data: null });
+        return send(200, { success: true, data: { ...found, enrollments } });
+      });
+    }
+
     // Every other bridge call (announcements, materials, ...) is a best-effort
     // side channel that must never fail the action that triggered it.
     return send(200, { success: true, data: null });
@@ -178,6 +207,10 @@ async function startFakeStudentPortal() {
       state.submissions = [];
       state.gradesDelivered = [];
       state.activityByUser = {};
+      state.lookupStudents = [];
+      state.lookupStatus = 200;
+      state.lookupIgnoresScope = false;
+      state.lookups = [];
       state.calls = [];
     },
     close: () => new Promise((resolve) => server.close(resolve)),

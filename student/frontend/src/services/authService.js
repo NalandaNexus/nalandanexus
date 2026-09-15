@@ -1,4 +1,4 @@
-import { apiClient, setAccessToken } from './apiClient';
+import { apiClient, setAccessToken, settleSessionRefresh } from './apiClient';
 
 export const authService = {
   /**
@@ -14,6 +14,7 @@ export const authService = {
   },
 
   async verifyEmail(token) {
+    await settleSessionRefresh();
     const res = await apiClient.post('/auth/verify-email', { token }, { skipAuth: true });
     setAccessToken(res.data.accessToken);
     return res.data.user;
@@ -25,12 +26,16 @@ export const authService = {
   },
 
   async login({ email, password }) {
+    // Every sign-in waits for the page-load session refresh to settle first, so
+    // the previous account's refreshed cookie cannot land after this one's.
+    await settleSessionRefresh();
     const res = await apiClient.post('/auth/login', { email, password }, { skipAuth: true });
     setAccessToken(res.data.accessToken);
     return res.data.user;
   },
 
   async googleAuth(idToken) {
+    await settleSessionRefresh();
     const res = await apiClient.post('/auth/google', { idToken }, { skipAuth: true });
     setAccessToken(res.data.accessToken);
     return res.data.user;
@@ -42,6 +47,9 @@ export const authService = {
   },
 
   async logout() {
+    // A refresh still in flight would rotate the session this is about to revoke,
+    // leaving its replacement alive after sign-out.
+    await settleSessionRefresh();
     try {
       await apiClient.post('/auth/logout');
     } finally {

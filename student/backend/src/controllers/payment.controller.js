@@ -8,6 +8,7 @@ import { createRazorpayOrder, verifyPaymentSignature, verifyWebhookSignature } f
 import { createEnrollment, getActiveEnrollment } from '../services/enrollment.service.js';
 import { assertStageAccessible } from '../services/progression/access.service.js';
 import { pushPaymentToAdmin } from '../services/adminPaymentBridge.service.js';
+import { summarizeProfileCompletion } from '../services/studentProfile.service.js';
 import { env } from '../config/env.js';
 
 /**
@@ -41,7 +42,8 @@ export const createOrder = asyncHandler(async (req, res) => {
     return sendSuccess(res, {
       status: 201,
       message: 'Enrolled successfully (free course).',
-      data: { free: true, enrollment },
+      // Where to send the student next: the profile form if it is owed.
+      data: { free: true, enrollment, studentProfile: await summarizeProfileCompletion(req.user) },
     });
   }
 
@@ -91,7 +93,12 @@ export const verifyPayment = asyncHandler(async (req, res) => {
   const order = await Order.findOne({ razorpayOrderId: razorpay_order_id, userId: req.user._id });
   if (!order) throw AppError.notFound('Order not found', 'ORDER_NOT_FOUND');
   if (order.status === 'paid') {
-    return sendSuccess(res, { message: 'Payment already verified.', data: { alreadyPaid: true } });
+    // A refresh after paying lands here, and still needs to know whether the
+    // profile form comes before the course.
+    return sendSuccess(res, {
+      message: 'Payment already verified.',
+      data: { alreadyPaid: true, studentProfile: await summarizeProfileCompletion(req.user) },
+    });
   }
 
   const isValid = verifyPaymentSignature({
@@ -119,7 +126,11 @@ export const verifyPayment = asyncHandler(async (req, res) => {
   return sendSuccess(res, {
     status: 201,
     message: 'Payment verified. You are now enrolled!',
-    data: { enrollment, order: { id: order._id, status: order.status } },
+    data: {
+      enrollment,
+      order: { id: order._id, status: order.status },
+      studentProfile: await summarizeProfileCompletion(req.user),
+    },
   });
 });
 

@@ -44,6 +44,21 @@ export const studentApiService = {
     return res.data;
   },
 
+  /** The profile a course requires: its four fields, the enrollment number, and what is still missing. */
+  async getProfileCompletion() {
+    const res = await apiClient.get('/student/profile/completion');
+    return res.data;
+  },
+
+  /**
+   * Saves full name, parent/guardian name, class and phone number - nothing
+   * else is accepted. Returns the whole response, because its message is what
+   * the student is shown.
+   */
+  async completeProfile({ fullName, guardianName, grade, phone }) {
+    return apiClient.put('/student/profile/completion', { fullName, guardianName, grade, phone });
+  },
+
   async uploadAvatar(file) {
     const formData = new FormData();
     formData.append('avatar', file);

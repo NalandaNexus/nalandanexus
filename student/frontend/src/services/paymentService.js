@@ -34,7 +34,7 @@ export const paymentService = {
 
     if (orderRes.data.free) {
       onStatus?.('enrolled-free');
-      return { free: true, enrollment: orderRes.data.enrollment };
+      return { free: true, enrollment: orderRes.data.enrollment, studentProfile: orderRes.data.studentProfile };
     }
 
     await loadRazorpayCheckout();
@@ -61,7 +61,7 @@ export const paymentService = {
               razorpay_signature: response.razorpay_signature,
             });
             onStatus?.('verified');
-            resolve({ free: false, enrollment: verifyRes.data.enrollment });
+            resolve({ free: false, enrollment: verifyRes.data.enrollment, studentProfile: verifyRes.data.studentProfile });
           } catch (err) {
             onStatus?.('verification-failed');
             reject(err);

@@ -476,3 +476,29 @@ export default {
   exportCampaign,
   updateCoupon,
   deleteCoupon, publishCourseToStudents, unpublishCourseFromStudents };
+
+/**
+ * One student by enrollment number, from the service that owns student identity.
+ *
+ * Throws on failure, like the coupon calls: an admin searching for a student
+ * must be told the service is unavailable, not shown an empty result that reads
+ * as "no such student".
+ */
+export async function lookupStudentByEnrollmentNumber(enrollmentNumber, { includePayments = false } = {}) {
+  try {
+    const body = await couponCall('/api/internal/students/lookup', {
+      method: 'POST',
+      body: JSON.stringify({ enrollmentNumber, includePayments }),
+    });
+    return body?.data || null;
+  } catch (err) {
+    // The shared transport's own message is about coupons; say what failed here.
+    if (err?.code === 'STUDENT_SERVICE_UNAVAILABLE') {
+      throw ApiError.serviceUnavailable(
+        'The Student service is unavailable, so students cannot be looked up right now. Please try again in a moment.',
+        'STUDENT_SERVICE_UNAVAILABLE'
+      );
+    }
+    throw err;
+  }
+}
