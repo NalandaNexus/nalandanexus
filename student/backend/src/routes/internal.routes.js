@@ -17,6 +17,8 @@ import {
   unpublishBridgedCourseSchema,
   upsertBridgedResourceSchema,
   retractBridgedResourceSchema,
+  upsertBridgedFacultySchema,
+  retractBridgedFacultySchema,
   gradeBridgedTaskSubmissionSchema,
   adminListCouponsSchema,
   adminCreateCampaignSchema,
@@ -72,6 +74,11 @@ router.patch('/courses/:sourceId/unpublish', validate(unpublishBridgedCourseSche
 router.post('/resources', validate(upsertBridgedResourceSchema), internalController.upsertBridgedResource);
 router.patch('/resources', validate(upsertBridgedResourceSchema), internalController.upsertBridgedResource);
 router.delete('/resources/:sourceId', validate(retractBridgedResourceSchema), internalController.retractBridgedResource);
+
+// The teaching faculty the About page introduces. The admin portal owns teacher
+// identity; this is where it publishes the part the public may see.
+router.post('/faculty', validate(upsertBridgedFacultySchema), internalController.upsertBridgedFaculty);
+router.delete('/faculty/:sourceId', validate(retractBridgedFacultySchema), internalController.retractBridgedFaculty);
 
 router.patch(
   '/task-submissions/:sourceId/grade',

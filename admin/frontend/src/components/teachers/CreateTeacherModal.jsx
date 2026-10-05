@@ -21,6 +21,12 @@ export default function CreateTeacherModal({ isOpen, onClose, onTeacherCreated }
     phone: '',
     department: 'Computer Science & Engineering',
     subject: '',
+    // Shown on the public About page only when this is on (see the fields below).
+    showOnWebsite: false,
+    websiteRole: '',
+    websiteCategory: '',
+    expertise: '',
+    experienceNote: '',
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -41,7 +47,14 @@ export default function CreateTeacherModal({ isOpen, onClose, onTeacherCreated }
     setErrorMsg('');
 
     try {
-      const response = await adminApi.createTeacher(formData);
+      const response = await adminApi.createTeacher({
+        ...formData,
+        // One line per point, the way an admin types a list.
+        expertise: formData.expertise
+          .split('\n')
+          .map((line) => line.trim())
+          .filter(Boolean),
+      });
       if (response.success) {
         setSuccessResult(response.data);
         setWarnings(response.meta?.warnings || []);
@@ -260,6 +273,84 @@ export default function CreateTeacherModal({ isOpen, onClose, onTeacherCreated }
                 />
               </div>
 
+            </div>
+
+            {/* What the student site shows. Published to the student portal on
+                save, and withdrawn again if this is switched off or the teacher
+                is suspended - see services/studentFacultyBridge.service.js. */}
+            <div className="pt-4 border-t border-[#EDEAE0] space-y-3">
+              <label className="flex items-start gap-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  id="teacher-show-on-website"
+                  checked={formData.showOnWebsite}
+                  onChange={(e) => setFormData({ ...formData, showOnWebsite: e.target.checked })}
+                  className="mt-0.5 w-4 h-4 rounded border-[#DFDACB] text-[#22355E] focus:ring-[#22355E]"
+                />
+                <span>
+                  <span className="block text-xs font-semibold text-[#2B2B28]">Show on the student website</span>
+                  <span className="block text-[11px] text-[#9B9690]">
+                    Adds them to the Nalanda Nexus Network section on the public About page. Email and phone are never published.
+                  </span>
+                </span>
+              </label>
+
+              {formData.showOnWebsite && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="teacher-website-role" className="block text-xs font-semibold text-[#2B2B28] mb-1">
+                      Public Role
+                    </label>
+                    <input
+                      id="teacher-website-role"
+                      type="text"
+                      placeholder="e.g. Communication Specialist"
+                      value={formData.websiteRole}
+                      onChange={(e) => setFormData({ ...formData, websiteRole: e.target.value })}
+                      className="w-full bg-[#F7F5EE] border border-[#DFDACB] rounded-xl px-3.5 py-2 text-xs text-[#2B2B28] placeholder-[#9B9690] focus:outline-none focus:border-[#22355E]"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="teacher-website-category" className="block text-xs font-semibold text-[#2B2B28] mb-1">
+                      Website Tab
+                    </label>
+                    <input
+                      id="teacher-website-category"
+                      type="text"
+                      placeholder="e.g. Communication"
+                      value={formData.websiteCategory}
+                      onChange={(e) => setFormData({ ...formData, websiteCategory: e.target.value })}
+                      className="w-full bg-[#F7F5EE] border border-[#DFDACB] rounded-xl px-3.5 py-2 text-xs text-[#2B2B28] placeholder-[#9B9690] focus:outline-none focus:border-[#22355E]"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label htmlFor="teacher-expertise" className="block text-xs font-semibold text-[#2B2B28] mb-1">
+                      Expertise <span className="font-normal text-[#9B9690]">(one per line)</span>
+                    </label>
+                    <textarea
+                      id="teacher-expertise"
+                      rows={3}
+                      placeholder={'Content Writer\nScript Writer'}
+                      value={formData.expertise}
+                      onChange={(e) => setFormData({ ...formData, expertise: e.target.value })}
+                      className="w-full bg-[#F7F5EE] border border-[#DFDACB] rounded-xl px-3.5 py-2 text-xs text-[#2B2B28] placeholder-[#9B9690] focus:outline-none focus:border-[#22355E]"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label htmlFor="teacher-experience" className="block text-xs font-semibold text-[#2B2B28] mb-1">
+                      Experience
+                    </label>
+                    <input
+                      id="teacher-experience"
+                      type="text"
+                      placeholder="e.g. 5 years of national and international experience."
+                      value={formData.experienceNote}
+                      onChange={(e) => setFormData({ ...formData, experienceNote: e.target.value })}
+                      className="w-full bg-[#F7F5EE] border border-[#DFDACB] rounded-xl px-3.5 py-2 text-xs text-[#2B2B28] placeholder-[#9B9690] focus:outline-none focus:border-[#22355E]"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
             <p className="text-[11px] text-[#9B9690]">A Teacher ID is auto-assigned on creation.</p>
 

@@ -9,6 +9,7 @@ import { notifyAllAdmins } from './notification.service.js';
 import { emitEvent } from '../sockets/index.js';
 import * as emailService from './email.service.js';
 import { provisionTeacherAccount, resetTeacherCredentials, setTeacherAccountStatus } from './teacherBridge.service.js';
+import { publishFacultyToStudents, retractFacultyFromStudents } from './studentFacultyBridge.service.js';
 import { env } from '../config/env.js';
 
 const SORTABLE_FIELDS = ['name', 'email', 'department', 'status', 'rating', 'createdAt', 'lastActive'];
@@ -27,6 +28,28 @@ async function nextTeacherId() {
     id = teacherIdFor(parseInt(id.split('-')[1], 10) + 1);
   }
   return id;
+}
+
+/**
+ * Puts the teacher's public profile on the student site, or takes it down.
+ *
+ * Called after every change that could affect what the About page shows. A
+ * teacher who is suspended, deactivated or deleted is withdrawn whatever the
+ * flag says - a public page must never introduce somebody who no longer teaches
+ * here. Best-effort like the other bridges, with the real outcome recorded on
+ * the teacher rather than assumed; the caller still has to save.
+ */
+async function syncFacultyProfile(teacher) {
+  const shouldShow = Boolean(teacher.showOnWebsite) && teacher.status === 'ACTIVE' && !teacher.deletedAt;
+  const result = shouldShow
+    ? await publishFacultyToStudents(teacher)
+    : await retractFacultyFromStudents(String(teacher._id));
+
+  teacher.facultySyncedAt = new Date();
+  // NOT_CONFIGURED is not a failure: this deployment simply has no student
+  // portal wired up, and claiming "failed" would be a false alarm.
+  teacher.facultySyncStatus = result.synced ? 'synced' : result.reason === 'NOT_CONFIGURED' ? null : 'failed';
+  return result;
 }
 
 export async function listTeachers(query) {
@@ -112,6 +135,12 @@ export async function createTeacher(data, actor, req) {
   teacher.credentialEmailSentAt = new Date();
   teacher.emailDeliveryStatus = emailResult.delivered ? 'sent' : emailResult.stubbed ? 'stubbed' : 'failed';
   if (!emailResult.delivered) warnings.push('EMAIL_DELIVERY_FAILED');
+
+  // Only if the admin asked for it - a new teacher is not public by default.
+  if (teacher.showOnWebsite) {
+    const facultyResult = await syncFacultyProfile(teacher);
+    if (!facultyResult.synced && facultyResult.reason !== 'NOT_CONFIGURED') warnings.push('WEBSITE_PROFILE_NOT_PUBLISHED');
+  }
 
   await teacher.save();
 
@@ -200,6 +229,11 @@ export async function updateTeacher(id, data, actor, req) {
   Object.assign(teacher, data);
   await teacher.save();
 
+  // The public profile follows what the admin just set - including being taken
+  // down when they switch it off.
+  await syncFacultyProfile(teacher);
+  await teacher.save();
+
   await recordAuditLog({ actor, action: 'teacher.updated', entityType: 'Teacher', entityId: teacher._id, metadata: { fields: Object.keys(data) }, req });
   emitEvent.teacherUpdated(teacher);
   return teacher;
@@ -219,6 +253,8 @@ export async function deleteTeacher(id, actor, req) {
   // login - confirmed live via a QA pass that without this, a "deleted"
   // teacher could still log in and use the app indefinitely.
   const portalSync = await setTeacherAccountStatus({ email: teacher.email, status: 'inactive' });
+  await syncFacultyProfile(teacher);
+  await teacher.save();
   await recordAuditLog({
     actor,
     action: 'teacher.deleted',
@@ -275,6 +311,8 @@ export async function suspendTeacher(id, reason, actor, req) {
   // Locks the REAL Teacher Portal login too, not just admin's own
   // governance record - see teacherBridge.service.js#setTeacherAccountStatus.
   const portalSync = await setTeacherAccountStatus({ email: teacher.email, status: 'suspended' });
+  await syncFacultyProfile(teacher);
+  await teacher.save();
   await recordAuditLog({
     actor,
     action: 'teacher.suspended',
@@ -305,6 +343,8 @@ export async function reactivateTeacher(id, actor, req) {
   await teacher.save();
 
   const portalSync = await setTeacherAccountStatus({ email: teacher.email, status: 'active' });
+  await syncFacultyProfile(teacher);
+  await teacher.save();
   await recordAuditLog({
     actor,
     action: 'teacher.reactivated',

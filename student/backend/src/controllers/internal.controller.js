@@ -14,6 +14,7 @@ import {
 import { CouponCampaign } from '../models/CouponCampaign.js';
 import { CourseMaterial } from '../models/CourseMaterial.js';
 import { Resource } from '../models/Resource.js';
+import { Faculty } from '../models/Faculty.js';
 import { Task } from '../models/Task.js';
 import { LiveClass } from '../models/LiveClass.js';
 import { Message } from '../models/Message.js';
@@ -715,6 +716,55 @@ export const retractBridgedResource = asyncHandler(async (req, res) => {
   }
 
   return sendSuccess(res, { message: 'Removed.', data: { id: resource._id } });
+});
+
+// --- Faculty (admin -> student, the people the About page introduces) -----
+
+/**
+ * Publishes (creates or updates) one teacher's public profile.
+ *
+ * Keyed on the admin portal's own Teacher id, so the same teacher delivered
+ * twice updates one record instead of adding another. Nothing in this service
+ * edits faculty: the admin portal owns teacher identity and this is its
+ * read-only projection, carrying only what a visitor may see.
+ */
+export const upsertBridgedFaculty = asyncHandler(async (req, res) => {
+  const { sourceId, name, role, category, expertise, experience, avatar, order } = req.body;
+
+  const faculty = await Faculty.findOneAndUpdate(
+    { source: 'admin-portal', sourceId },
+    {
+      $set: {
+        name,
+        role: role || null,
+        category: category || null,
+        expertise: expertise || [],
+        experience: experience || null,
+        avatar: avatar || null,
+        order,
+        isPublished: true,
+        source: 'admin-portal',
+        sourceId,
+      },
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  );
+
+  return sendSuccess(res, { status: 201, message: 'Published to the faculty list.', data: faculty });
+});
+
+/**
+ * Removes a published profile - an admin turned it off, or suspended or deleted
+ * the teacher. Idempotent: removing one that was never published is a success,
+ * which is what lets the admin portal call it on every change without tracking
+ * whether it is there.
+ */
+export const retractBridgedFaculty = asyncHandler(async (req, res) => {
+  const faculty = await Faculty.findOneAndDelete({ source: 'admin-portal', sourceId: req.params.sourceId });
+  if (!faculty) {
+    return sendSuccess(res, { message: 'Already removed.', data: { sourceId: req.params.sourceId } });
+  }
+  return sendSuccess(res, { message: 'Removed.', data: { id: faculty._id } });
 });
 
 /**

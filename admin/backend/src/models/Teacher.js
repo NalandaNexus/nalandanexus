@@ -30,6 +30,23 @@ const teacherSchema = new Schema(
     coursesCount: { type: Number, default: 0 },
     lastActive: { type: Date },
     avatar: { type: String },
+
+    // --- public profile, shown on the student site's About page -------------
+    //
+    // Published to the student portal by services/studentFacultyBridge.service.js
+    // while `showOnWebsite` is on and the teacher is active, and withdrawn as
+    // soon as it is off or they are suspended or deleted. Only these fields ever
+    // leave this database: email, phone, credentials and governance state do not
+    // belong on a public page.
+    showOnWebsite: { type: Boolean, default: false, index: true },
+    websiteRole: { type: String, trim: true, maxlength: 160, default: null },
+    websiteCategory: { type: String, trim: true, maxlength: 80, default: null },
+    expertise: { type: [String], default: [] },
+    experienceNote: { type: String, trim: true, maxlength: 240, default: null },
+    websiteOrder: { type: Number, default: 0 },
+    facultySyncedAt: { type: Date, default: null },
+    facultySyncStatus: { type: String, enum: ['synced', 'failed', null], default: null },
+
     invitation: { type: invitationSchema, default: undefined },
     suspensionReason: { type: String },
     resetTokenHash: { type: String, select: false },

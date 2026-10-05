@@ -9,6 +9,17 @@ export const listTeachersQuery = {
   }),
 };
 
+// The public profile an admin may set on a teacher, shown on the student site's
+// About page. Shared by create and update so the two cannot drift apart.
+const publicProfileFields = {
+  showOnWebsite: z.boolean().optional(),
+  websiteRole: z.string().trim().max(160).optional().nullable(),
+  websiteCategory: z.string().trim().max(80).optional().nullable(),
+  expertise: z.array(z.string().trim().min(1).max(160)).max(12).optional(),
+  experienceNote: z.string().trim().max(240).optional().nullable(),
+  websiteOrder: z.coerce.number().int().min(0).max(9999).optional(),
+};
+
 export const createTeacherSchema = {
   body: z.object({
     name: z.string().trim().min(2).max(120),
@@ -17,6 +28,7 @@ export const createTeacherSchema = {
     department: z.string().trim().max(100).optional(),
     subject: z.string().trim().max(100).optional(),
     qualification: z.string().trim().max(200).optional(),
+    ...publicProfileFields,
   }),
 };
 
@@ -28,6 +40,7 @@ export const updateTeacherSchema = {
       department: z.string().trim().max(100).optional(),
       subject: z.string().trim().max(100).optional(),
       qualification: z.string().trim().max(200).optional(),
+      ...publicProfileFields,
     })
     .strict(),
 };

@@ -19,11 +19,28 @@ export default function TeacherProfileDrawer({
   onResetPassword,
   onResendInvite,
   onResendCredentials,
+  onUpdateWebsiteProfile,
 }) {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'security'
+  // Held per teacher, so opening another drawer shows their values rather than
+  // whatever was typed for the last one.
+  const [websiteDraft, setWebsiteDraftState] = useState(null);
+  const [isSavingWebsite, setIsSavingWebsite] = useState(false);
+  const setWebsiteDraft = (id, fields) => setWebsiteDraftState({ id, fields });
 
   if (!isOpen || !teacher) return null;
+
+  const websiteProfile =
+    websiteDraft?.id === teacher.id
+      ? websiteDraft.fields
+      : {
+          showOnWebsite: Boolean(teacher.showOnWebsite),
+          websiteRole: teacher.websiteRole || '',
+          websiteCategory: teacher.websiteCategory || '',
+          expertise: (teacher.expertise || []).join('\n'),
+          experienceNote: teacher.experienceNote || '',
+        };
 
   const isInvited = teacher.status === 'INVITED';
   const isSuspended = teacher.status === 'SUSPENDED';
@@ -145,6 +162,120 @@ export default function TeacherProfileDrawer({
                     </strong>
                   </div>
                 </div>
+              </div>
+
+              {/* What the public About page shows. Saving publishes it to the
+                  student portal, or withdraws it when switched off. */}
+              <div className="bg-[#F7F5EE] p-4 rounded-xl border border-[#DFDACB] space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <h4 className="font-bold text-[#22355E] text-xs uppercase tracking-wider">Student Website Profile</h4>
+                  {teacher.facultySyncStatus === 'failed' && (
+                    <span className="text-[10px] font-bold text-[#C1352B] bg-[#C1352B]/10 px-2 py-0.5 rounded-full">
+                      Not published yet
+                    </span>
+                  )}
+                  {teacher.facultySyncStatus === 'synced' && teacher.showOnWebsite && (
+                    <span className="text-[10px] font-bold text-[#5C7A5E] bg-[#5C7A5E]/10 px-2 py-0.5 rounded-full">Published</span>
+                  )}
+                </div>
+
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    id="drawer-show-on-website"
+                    checked={websiteProfile.showOnWebsite}
+                    onChange={(e) => setWebsiteDraft(teacher.id, { ...websiteProfile, showOnWebsite: e.target.checked })}
+                    className="mt-0.5 w-4 h-4 rounded border-[#DFDACB] text-[#22355E] focus:ring-[#22355E]"
+                  />
+                  <span>
+                    <span className="block text-xs font-semibold text-[#2B2B28]">Show in the Nalanda Nexus Network</span>
+                    <span className="block text-[11px] text-[#9B9690]">
+                      Email, phone and account details are never published. A suspended teacher is withdrawn automatically.
+                    </span>
+                  </span>
+                </label>
+
+                {websiteProfile.showOnWebsite && (
+                  <div className="space-y-2.5">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <div>
+                        <label htmlFor="drawer-website-role" className="block text-[11px] font-semibold text-[#2B2B28] mb-1">
+                          Public Role
+                        </label>
+                        <input
+                          id="drawer-website-role"
+                          type="text"
+                          placeholder="e.g. Cyber Specialist"
+                          value={websiteProfile.websiteRole}
+                          onChange={(e) => setWebsiteDraft(teacher.id, { ...websiteProfile, websiteRole: e.target.value })}
+                          className="w-full bg-white border border-[#DFDACB] rounded-lg px-3 py-1.5 text-xs text-[#2B2B28] placeholder-[#9B9690] focus:outline-none focus:border-[#22355E]"
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="drawer-website-category" className="block text-[11px] font-semibold text-[#2B2B28] mb-1">
+                          Website Tab
+                        </label>
+                        <input
+                          id="drawer-website-category"
+                          type="text"
+                          placeholder="e.g. Cyber Security"
+                          value={websiteProfile.websiteCategory}
+                          onChange={(e) => setWebsiteDraft(teacher.id, { ...websiteProfile, websiteCategory: e.target.value })}
+                          className="w-full bg-white border border-[#DFDACB] rounded-lg px-3 py-1.5 text-xs text-[#2B2B28] placeholder-[#9B9690] focus:outline-none focus:border-[#22355E]"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label htmlFor="drawer-expertise" className="block text-[11px] font-semibold text-[#2B2B28] mb-1">
+                        Expertise <span className="font-normal text-[#9B9690]">(one per line)</span>
+                      </label>
+                      <textarea
+                        id="drawer-expertise"
+                        rows={3}
+                        value={websiteProfile.expertise}
+                        onChange={(e) => setWebsiteDraft(teacher.id, { ...websiteProfile, expertise: e.target.value })}
+                        className="w-full bg-white border border-[#DFDACB] rounded-lg px-3 py-1.5 text-xs text-[#2B2B28] placeholder-[#9B9690] focus:outline-none focus:border-[#22355E]"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="drawer-experience" className="block text-[11px] font-semibold text-[#2B2B28] mb-1">
+                        Experience
+                      </label>
+                      <input
+                        id="drawer-experience"
+                        type="text"
+                        value={websiteProfile.experienceNote}
+                        onChange={(e) => setWebsiteDraft(teacher.id, { ...websiteProfile, experienceNote: e.target.value })}
+                        className="w-full bg-white border border-[#DFDACB] rounded-lg px-3 py-1.5 text-xs text-[#2B2B28] placeholder-[#9B9690] focus:outline-none focus:border-[#22355E]"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  disabled={isSavingWebsite}
+                  onClick={async () => {
+                    setIsSavingWebsite(true);
+                    try {
+                      await onUpdateWebsiteProfile(teacher, {
+                        showOnWebsite: websiteProfile.showOnWebsite,
+                        websiteRole: websiteProfile.websiteRole,
+                        websiteCategory: websiteProfile.websiteCategory,
+                        expertise: websiteProfile.expertise
+                          .split('\n')
+                          .map((line) => line.trim())
+                          .filter(Boolean),
+                        experienceNote: websiteProfile.experienceNote,
+                      });
+                    } finally {
+                      setIsSavingWebsite(false);
+                    }
+                  }}
+                  className="w-full px-3 py-2 rounded-lg bg-[#22355E] hover:bg-[#1A2A4A] disabled:opacity-60 text-white text-xs font-semibold transition-colors"
+                >
+                  {isSavingWebsite ? 'Saving…' : 'Save website profile'}
+                </button>
               </div>
 
               {teacher.suspensionReason && (

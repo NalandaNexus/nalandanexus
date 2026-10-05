@@ -136,6 +136,26 @@ export default function TeachersPage() {
     }
   };
 
+  /**
+   * Saves what the public About page shows for this teacher. The backend
+   * publishes it to the student portal, or withdraws it when it is switched
+   * off - see admin/backend/src/services/studentFacultyBridge.service.js.
+   */
+  const handleUpdateWebsiteProfile = async (teacher, profile) => {
+    try {
+      const updated = await adminApi.updateTeacher(teacher.id, profile);
+      showToast(
+        profile.showOnWebsite
+          ? `${teacher.name} now appears on the student website.`
+          : `${teacher.name} was removed from the student website.`
+      );
+      fetchTeachers();
+      if (selectedTeacher?.id === teacher.id) setSelectedTeacher({ ...selectedTeacher, ...(updated || profile) });
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
+
   const handleReactivate = async (teacher) => {
     try {
       await adminApi.reactivateTeacher(teacher.id);
@@ -279,6 +299,7 @@ export default function TeachersPage() {
         onResetPassword={handleResetPassword}
         onResendInvite={handleResendInvite}
         onResendCredentials={handleResendCredentials}
+        onUpdateWebsiteProfile={handleUpdateWebsiteProfile}
       />
 
       <DeleteModal
