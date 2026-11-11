@@ -1,11 +1,22 @@
 ﻿import { io } from 'socket.io-client';
 
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:5002';
+// The socket server is the API's own origin. VITE_SOCKET_URL still wins when
+// set, but a deployment that sets only VITE_TEACHER_API_URL no longer leaves
+// every live update pointed at localhost (the student portal derives its
+// socket the same way).
+const SOCKET_URL =
+  import.meta.env.VITE_SOCKET_URL ||
+  (import.meta.env.VITE_TEACHER_API_URL || 'http://localhost:5002/api/teacher').replace(/\/api(\/teacher)?\/?$/, '');
 
 class SocketService {
   constructor() {
     this.socket = null;
     this.isConnected = false;
+    // The last connection status, replayed to anyone who subscribes later. The
+    // socket is opened during the session check, before the layout mounts, so
+    // its 'connect' usually fires before the "Live" badge is listening - which
+    // left the badge on "Reconnecting..." while the socket was connected.
+    this.lastStatus = null;
     this.listeners = new Map();
     // classId -> subscriber count. Multiple independent hooks (e.g. the
     // dashboard's "stay subscribed to all my classes" and the leaderboard's
@@ -132,6 +143,14 @@ class SocketService {
       this.listeners.set(event, new Set());
     }
     this.listeners.get(event).add(callback);
+    if (event === 'connection:status' && this.lastStatus) {
+      const replay = this.lastStatus;
+      // Delivered asynchronously, like a real status change, and only if the
+      // subscriber is still there by then.
+      queueMicrotask(() => {
+        if (this.listeners.get(event)?.has(callback)) callback(replay);
+      });
+    }
 
     // Return cleanup function
     return () => {
@@ -158,7 +177,8 @@ class SocketService {
   }
 
   emitStatusChange(status, detail = null) {
-    this.dispatch('connection:status', { status, isConnected: this.isConnected, detail });
+    this.lastStatus = { status, isConnected: this.isConnected, detail };
+    this.dispatch('connection:status', this.lastStatus);
   }
 
   disconnect() {
@@ -167,6 +187,7 @@ class SocketService {
       this.socket = null;
       this.isConnected = false;
     }
+    this.lastStatus = null;
     this.listeners.clear();
   }
 }

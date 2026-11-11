@@ -56,7 +56,9 @@ export function isAbortError(err) {
  */
 const DEFAULT_TIMEOUT_MS = 20000;
 const COLD_START_TIMEOUT_MS = 45000;
-const COLD_START_PATHS = ['/auth/me', '/auth/login'];
+// Lesson-video calls are proxied to the student service, which sleeps when
+// idle too, so they get the same budget as a cold sign-in.
+const COLD_START_PATHS = ['/auth/me', '/auth/login', '/lesson-videos'];
 
 function timeoutFor(path) {
   return COLD_START_PATHS.some((p) => path.startsWith(p)) ? COLD_START_TIMEOUT_MS : DEFAULT_TIMEOUT_MS;
@@ -157,8 +159,15 @@ async function request(path, { method = 'GET', body, query, isFormData = false, 
 const get = (path, query, signal) => request(path, { method: 'GET', query, signal });
 const post = (path, body, signal) => request(path, { method: 'POST', body: body ?? {}, signal });
 const patch = (path, body) => request(path, { method: 'PATCH', body: body ?? {} });
+const put = (path, body) => request(path, { method: 'PUT', body: body ?? {} });
 const del = (path) => request(path, { method: 'DELETE' });
 const postForm = (path, formData) => request(path, { method: 'POST', body: formData, isFormData: true });
+
+// A course video belongs to one lesson or one module.
+function courseVideoPath(slug, target) {
+  const node = target.moduleId ? `modules/${encodeURIComponent(target.moduleId)}` : `lessons/${encodeURIComponent(target.lessonId)}`;
+  return `/lesson-videos/courses/${encodeURIComponent(slug)}/${node}`;
+}
 
 class TeacherApiService {
   // ---- Auth ----
@@ -410,6 +419,24 @@ class TeacherApiService {
   }
   archiveCourse(courseId) {
     return del(`/courses/${courseId}`).then((r) => r.data);
+  }
+
+  // ---- Lesson videos (assigned courses only; enforced by the backend) ----
+  getLessonVideoCourses() {
+    return get('/lesson-videos/courses').then((r) => r.data || []);
+  }
+  getLessonVideos(slug) {
+    return get(`/lesson-videos/courses/${encodeURIComponent(slug)}`).then((r) => r.data);
+  }
+  inspectLessonVideo(url, { signal } = {}) {
+    return post('/lesson-videos/inspect', { url }, signal).then((r) => r.data);
+  }
+  // target is { lessonId } or { moduleId }.
+  saveCourseVideo(slug, target, payload) {
+    return put(courseVideoPath(slug, target), payload).then((r) => r.data);
+  }
+  removeCourseVideo(slug, target, payload = {}) {
+    return request(courseVideoPath(slug, target), { method: 'DELETE', body: payload }).then((r) => r.data);
   }
 
   // ---- Exams ----

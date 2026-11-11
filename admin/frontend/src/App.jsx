@@ -28,6 +28,7 @@ const CourseGovernancePage = lazy(() => import('./pages/CourseGovernancePage'));
 const BatchesPage = lazy(() => import('./pages/BatchesPage'));
 const CouponsPage = lazy(() => import('./pages/CouponsPage'));
 const CourseSubjectsPage = lazy(() => import('./pages/CourseSubjectsPage'));
+const LessonVideosPage = lazy(() => import('./pages/LessonVideosPage'));
 const ProgressionPage = lazy(() => import('./pages/ProgressionPage'));
 const StageEligibilityPage = lazy(() => import('./pages/StageEligibilityPage'));
 const StudentEligibilityPage = lazy(() => import('./pages/StudentEligibilityPage'));
@@ -140,6 +141,7 @@ export default function App() {
                 <Route path="batches" element={<BatchesPage />} />
                 <Route path="coupons" element={<CouponsPage />} />
                 <Route path="course-subjects" element={<CourseSubjectsPage />} />
+                <Route path="lesson-videos" element={<LessonVideosPage />} />
                 <Route path="progression" element={<ProgressionPage />} />
                 <Route path="stage-eligibility" element={<StageEligibilityPage />} />
                 <Route path="student-eligibility" element={<StudentEligibilityPage />} />

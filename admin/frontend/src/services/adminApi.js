@@ -68,7 +68,9 @@ function toResourceFormData(resourceData) {
  */
 const DEFAULT_TIMEOUT_MS = 20000;
 const COLD_START_TIMEOUT_MS = 45000;
-const COLD_START_PATHS = ['/auth/me', '/auth/login'];
+// Lesson-video calls are proxied to the student service, which sleeps when
+// idle too, so they get the same budget as a cold sign-in.
+const COLD_START_PATHS = ['/auth/me', '/auth/login', '/lesson-videos'];
 
 function timeoutFor(path) {
   return COLD_START_PATHS.some((p) => path.startsWith(p)) ? COLD_START_TIMEOUT_MS : DEFAULT_TIMEOUT_MS;
@@ -100,6 +102,12 @@ function transportError(message, code) {
   error.code = code;
   error.isRetryable = true;
   return error;
+}
+
+// A course video belongs to one lesson or one module.
+function courseVideoPath(slug, target) {
+  const node = target.moduleId ? `modules/${encodeURIComponent(target.moduleId)}` : `lessons/${encodeURIComponent(target.lessonId)}`;
+  return `/lesson-videos/courses/${encodeURIComponent(slug)}/${node}`;
 }
 
 async function request(path, { method = 'GET', body, query, isFormData = false, signal } = {}) {
@@ -528,6 +536,34 @@ export const adminApi = {
 
   async setCourseSubjects(slug, payload) {
     const json = await request(`/course-content/${encodeURIComponent(slug)}/subjects`, { method: 'PATCH', body: payload });
+    return json.data;
+  },
+
+  // Lesson videos (YouTube). Proxied to the student service, which owns
+  // lessons and validates every link; this portal gates and audits.
+  async getLessonVideoCourses() {
+    const json = await request('/lesson-videos/courses');
+    return json.data || [];
+  },
+
+  async getLessonVideos(slug) {
+    const json = await request(`/lesson-videos/courses/${encodeURIComponent(slug)}`);
+    return json.data || null;
+  },
+
+  async inspectLessonVideo(url, { signal } = {}) {
+    const json = await request('/lesson-videos/inspect', { method: 'POST', body: { url }, signal });
+    return json.data || null;
+  },
+
+  // target is { lessonId } or { moduleId }.
+  async saveCourseVideo(slug, target, payload) {
+    const json = await request(courseVideoPath(slug, target), { method: 'PUT', body: payload });
+    return json.data;
+  },
+
+  async removeCourseVideo(slug, target, payload = {}) {
+    const json = await request(courseVideoPath(slug, target), { method: 'DELETE', body: payload });
     return json.data;
   },
 
