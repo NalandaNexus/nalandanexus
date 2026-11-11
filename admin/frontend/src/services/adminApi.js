@@ -298,6 +298,18 @@ export const adminApi = {
     return request(`/teachers/${id}`, { method: 'DELETE' });
   },
 
+  /** Replaces the courses assigned to a teacher (by catalogue slug). The Teacher Portal's student visibility follows. */
+  async setTeacherCourses(id, courseSlugs) {
+    return request(`/teachers/${id}/courses`, { method: 'PUT', body: { courseSlugs } });
+  },
+
+  /** Uploads a teacher's profile photo (stored durably server-side). */
+  async uploadTeacherPhoto(id, file) {
+    const form = new FormData();
+    form.append('photo', file);
+    return request(`/teachers/${id}/photo`, { method: 'POST', body: form, isFormData: true });
+  },
+
   async resendInvite(id) {
     return request(`/teachers/${id}/resend-invite`, { method: 'POST' });
   },

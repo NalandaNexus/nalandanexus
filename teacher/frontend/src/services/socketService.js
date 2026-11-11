@@ -73,6 +73,13 @@ class SocketService {
         'announcement:admin_removed',
         'course.assigned',
         'course.unassigned',
+        // An administrator added or removed a catalogue course (PRARAMBH, GARUD,
+        // YODDHA) for this teacher - courseRoster.service.js#setTeacherCourses.
+        'course.access_changed',
+        // Students enrolled in (or left) a course this teacher has - a purchase,
+        // a coupon, a profile edit or a refund reached the student portal and was
+        // applied here. courseRoster.service.js.
+        'course.roster_updated',
         'class.rescheduled',
         'class.started',
         'class.completed',

@@ -23,6 +23,7 @@ import { Analytics } from "@vercel/analytics/react"
 const TeacherLayout = lazy(() => import('./components/TeacherLayout'));
 const TeacherLoginPage = lazy(() => import('./pages/TeacherLoginPage'));
 const ForcedPasswordResetPage = lazy(() => import('./pages/ForcedPasswordResetPage'));
+const SetupPasswordPage = lazy(() => import('./pages/SetupPasswordPage'));
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const ClassesPage = lazy(() => import('./pages/ClassesPage'));
 const CoursesPage = lazy(() => import('./pages/CoursesPage'));
@@ -124,6 +125,9 @@ export default function App() {
               <Routes>
                 {/* Public Authentication Route (100% untouched) */}
                 <Route path="/login" element={<TeacherLoginPage />} />
+
+                {/* Public: where the link in a new teacher's onboarding email lands. */}
+                <Route path="/setup-password" element={<SetupPasswordPage />} />
 
                 {/* Mandatory first-login reset for an admin-provisioned temp password */}
                 <Route

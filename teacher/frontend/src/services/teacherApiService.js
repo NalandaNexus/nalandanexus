@@ -177,6 +177,14 @@ class TeacherApiService {
   changePassword(currentPassword, newPassword) {
     return post('/auth/change-password', { currentPassword, newPassword }).then((r) => r.data);
   }
+  /** Public: who an emailed password-setup link is for. Rejects with SETUP_LINK_INVALID for any bad link. */
+  inspectPasswordSetup(token) {
+    return get(`/auth/setup-password/${encodeURIComponent(token)}`).then((r) => r.data);
+  }
+  /** Public: redeems a single-use link and sets the password. Does not sign anyone in. */
+  completePasswordSetup(token, password) {
+    return post('/auth/setup-password', { token, password }).then((r) => r.data);
+  }
 
   // ---- Profile ----
   getProfile() {
@@ -380,6 +388,19 @@ class TeacherApiService {
   }
   getAssignedCourses() {
     return get('/courses/assigned').then((r) => r.data);
+  }
+  /**
+   * The students enrolled in one course the teacher has been assigned.
+   * Returns the whole envelope ({ data: { course, students }, meta }) so the page
+   * can page through it. A course that was not assigned answers 404, exactly as
+   * one that does not exist.
+   */
+  getAssignedCourseStudents(slug, params = {}) {
+    return get(`/courses/assigned/${encodeURIComponent(slug)}/students`, params);
+  }
+  /** Recovery only: the roster keeps itself current. Re-reads one assigned course from the student portal. */
+  refreshAssignedCourseStudents(slug) {
+    return post(`/courses/assigned/${encodeURIComponent(slug)}/refresh`).then((r) => r.data);
   }
   createCourse(payload) {
     return post('/courses', payload).then((r) => r.data);

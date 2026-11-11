@@ -18,10 +18,14 @@ import settingsRoutes from './settings.routes.js';
 import reportRoutes from './report.routes.js';
 import systemHealthRoutes from './systemHealth.routes.js';
 import academicsRoutes from './academics.routes.js';
+import fileRoutes from './file.routes.js';
 
 const router = Router();
 
 router.use('/auth', authRoutes);
+// Uploaded images (teacher photos), stored in the database. Public by design -
+// see routes/file.routes.js.
+router.use('/files', fileRoutes);
 router.use('/', dashboardRoutes); // /overview, /leaderboard, /live-telemetry (kept flat for frontend compatibility)
 router.use('/teachers', teacherRoutes);
 router.use('/students', studentRoutes);

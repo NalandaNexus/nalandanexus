@@ -53,12 +53,52 @@ const teacherSchema = new Schema(
     resetTokenExpiresAt: { type: Date, select: false },
     // Set on creation: whether the real Teacher Portal login (a separate
     // service/database - see services/teacherBridge.service.js) was
-    // successfully provisioned, and whether the credentials email actually
+    // successfully provisioned, and whether the onboarding email actually
     // went out. Never silently claim success on either — see spec item 41.
     portalProvisioned: { type: Boolean, default: false },
     credentialEmailSent: { type: Boolean, default: false },
     credentialEmailSentAt: { type: Date, default: null },
-    emailDeliveryStatus: { type: String, enum: ['sent', 'failed', 'stubbed', null], default: null },
+    // 'sent' means the email provider ACCEPTED the message - not that it reached
+    // an inbox; that is not tracked. 'failed' carries why in emailDeliveryError,
+    // 'stubbed' means no provider is configured, 'not_sent' means nothing was
+    // attempted (the Teacher Portal login could not be created, so a link would
+    // lead nowhere).
+    emailDeliveryStatus: { type: String, enum: ['sent', 'failed', 'stubbed', 'not_sent', null], default: null },
+    emailDeliveryError: { type: String, default: null, maxlength: 400 },
+    emailLastAttemptAt: { type: Date, default: null },
+    emailAttempts: { type: Number, default: 0 },
+    emailProviderMessageId: { type: String, default: null },
+
+    // The password-setup link last issued. Only WHEN it stops working is kept
+    // here: the token itself is never stored in this database (only the Teacher
+    // Portal holds its hash), and the email is the only place it exists.
+    setupLinkExpiresAt: { type: Date, default: null },
+    // Where the teacher signs in, as the Teacher Portal reported it.
+    portalLoginUrl: { type: String, default: null },
+
+    // --- what they teach ----------------------------------------------------
+    // The courses an administrator assigned, by the student catalogue's slug
+    // (prarambh, garud, yoddha). A teacher sees the students enrolled in exactly
+    // these. Several teachers can hold the same course. The title is a snapshot
+    // for display; the slug is the identity.
+    assignedCourses: {
+      type: [
+        {
+          _id: false,
+          slug: { type: String, required: true, lowercase: true, trim: true },
+          title: { type: String, trim: true },
+          assignedAt: { type: Date, default: Date.now },
+        },
+      ],
+      default: [],
+    },
+    // Whether the Teacher Portal last accepted that set. A failure is recorded
+    // and shown, not assumed away - the teacher would see no students.
+    courseSyncStatus: { type: String, enum: ['synced', 'failed', null], default: null },
+    courseSyncedAt: { type: Date, default: null },
+    courseSyncError: { type: String, default: null, maxlength: 300 },
+
+    designation: { type: String, trim: true, maxlength: 160 },
     deletedAt: { type: Date, default: null, index: true },
   },
   { timestamps: true }

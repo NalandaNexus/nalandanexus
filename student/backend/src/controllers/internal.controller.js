@@ -480,6 +480,13 @@ export const listEnrolledStudents = asyncHandler(async (req, res) => {
     .sort({ enrolledAt: -1 })
     .lean();
 
+  // The student's institution-wide number, so the teacher portal's course
+  // roster shows the same identifier the student and the admin portal do.
+  const profiles = await StudentProfile.find({ userId: { $in: enrollments.map((e) => e.userId?._id).filter(Boolean) } })
+    .select('userId enrollmentNumber')
+    .lean();
+  const numberByUser = new Map(profiles.map((p) => [String(p.userId), p.enrollmentNumber || null]));
+
   const students = enrollments
     .filter((e) => e.userId) // drop any enrollment whose user was hard-deleted
     .map((e) => ({
@@ -494,6 +501,7 @@ export const listEnrolledStudents = asyncHandler(async (req, res) => {
       name: e.userId.name,
       email: e.userId.email,
       avatar: e.userId.avatar || null,
+      enrollmentNumber: numberByUser.get(String(e.userId._id)) || null,
       enrolledAt: e.enrolledAt,
       progressPercent: e.progressPercent,
     }));
