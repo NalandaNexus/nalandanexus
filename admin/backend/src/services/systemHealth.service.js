@@ -60,15 +60,27 @@ export async function getSystemHealth() {
  * address (that is answered per email, and recorded on each teacher). Never
  * includes the key.
  */
+// Domains nobody but their owner can verify, so Resend refuses them as a sender.
+const PUBLIC_MAILBOX_DOMAINS = new Set(['gmail.com', 'googlemail.com', 'yahoo.com', 'outlook.com', 'hotmail.com', 'live.com', 'icloud.com', 'rediffmail.com']);
+
+function senderDomain(from) {
+  const address = (String(from).match(/<([^>]+)>/)?.[1] || String(from)).trim();
+  return address.split('@')[1]?.toLowerCase() || '';
+}
+
 function emailProviderCheck() {
-  const configured = Boolean(env.email.sendgridApiKey);
-  return {
-    name: 'Email provider (SendGrid)',
-    status: configured ? 'HEALTHY' : 'DEGRADED',
-    detail: configured
-      ? `Key configured · sending as ${env.email.from}`
-      : 'SENDGRID_API_KEY is not set - no email can be sent (teacher setup emails are logged, not delivered)',
-  };
+  const name = 'Email provider (Resend)';
+  if (!env.email.resendApiKey) {
+    return { name, status: 'DEGRADED', detail: 'RESEND_API_KEY is not set - no email can be sent (teacher setup emails are logged, not delivered)' };
+  }
+  const domain = senderDomain(env.email.from);
+  if (PUBLIC_MAILBOX_DOMAINS.has(domain)) {
+    return { name, status: 'DEGRADED', detail: `EMAIL_FROM is a @${domain} address, which Resend refuses as a sender. Use an address on a domain verified in Resend, and put the ${domain} address in EMAIL_REPLY_TO.` };
+  }
+  if (domain === 'resend.dev') {
+    return { name, status: 'DEGRADED', detail: `Sending as ${env.email.from} (Resend's test sender) - it only delivers to the Resend account owner's own inbox. Verify a domain in Resend and set EMAIL_FROM to an address on it.` };
+  }
+  return { name, status: 'HEALTHY', detail: `Key configured · sending as ${env.email.from}${env.email.replyTo ? ` · replies to ${env.email.replyTo}` : ''}` };
 }
 
 export default { getSystemHealth };

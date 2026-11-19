@@ -93,12 +93,16 @@ export const env = {
     mockMode: process.env.PAYMENTS_MOCK_MODE === 'true' || process.env.NODE_ENV === 'test',
   },
 
-  // Sent via SendGrid's HTTPS API (not SMTP) - Render blocks outbound SMTP
+  // Sent via Resend's HTTPS API (not SMTP) - Render blocks outbound SMTP
   // ports (25/465/587) on free-tier web services, so raw SMTP can never work
   // there regardless of credentials; HTTPS (443) is never blocked.
   email: {
-    sendgridApiKey: process.env.SENDGRID_API_KEY || '',
-    from: process.env.SMTP_FROM || 'Nalanda Nexus <no-reply@nalandanexus.edu>',
+    resendApiKey: process.env.RESEND_API_KEY || '',
+    // Must be an address on a domain verified in Resend (a @gmail.com address
+    // never can be). onboarding@resend.dev only reaches the account owner.
+    from: process.env.EMAIL_FROM || 'Nalanda Nexus <onboarding@resend.dev>',
+    // Replies land here, so a Gmail inbox can stay the point of contact.
+    replyTo: process.env.EMAIL_REPLY_TO || 'nalandanexus@gmail.com',
   },
 
   support: {

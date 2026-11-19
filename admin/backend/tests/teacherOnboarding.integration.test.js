@@ -9,7 +9,7 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
  *
  * Three stand-ins record what actually leaves this service: the Teacher Portal,
  * the student catalogue (the only place PRARAMBH / GARUD / YODDHA exist), and
- * SendGrid. That is the only honest way to test the claims that matter - that no
+ * Resend. That is the only honest way to test the claims that matter - that no
  * password is ever sent or emailed, that the link in the email is the one the
  * Teacher Portal was given, and that a failure anywhere is recorded rather than
  * reported as success.
@@ -20,7 +20,7 @@ let server;
 let base;
 let teacherPortal;
 let studentPortal;
-let sendgrid;
+let mailer;
 let Teacher;
 let cookie;
 
@@ -98,12 +98,12 @@ before(async () => {
     return json(res, 200, { success: true, data: null });
   });
 
-  sendgrid = await startPeer((call, res, state) => {
-    if (state.status && state.status !== 202) {
-      return json(res, state.status, { errors: [{ message: state.errorMessage || 'rejected', field: 'from' }] });
+  mailer = await startPeer((call, res, state) => {
+    // Resend's shapes: 200 { id } on acceptance, { statusCode, name, message } on refusal.
+    if (state.status && state.status !== 200) {
+      return json(res, state.status, { statusCode: state.status, name: 'validation_error', message: state.errorMessage || 'rejected' });
     }
-    res.writeHead(202, { 'X-Message-Id': `msg-${uniq()}` });
-    res.end();
+    json(res, 200, { id: `msg-${uniq()}` });
   });
 
   mongod = await MongoMemoryServer.create();
@@ -117,9 +117,10 @@ before(async () => {
   process.env.STUDENT_BACKEND_SERVICE_KEY = 'student_key';
   process.env.TEACHER_BACKEND_URL = teacherPortal.url;
   process.env.TEACHER_BACKEND_SERVICE_KEY = 'teacher_key';
-  process.env.SENDGRID_API_KEY = 'SG.test-key';
-  process.env.SENDGRID_API_URL = `${sendgrid.url}/v3/mail/send`;
-  process.env.SMTP_FROM = 'Nalanda Nexus <no-reply@example.test>';
+  process.env.RESEND_API_KEY = 're_test_key';
+  process.env.RESEND_API_URL = `${mailer.url}/emails`;
+  process.env.EMAIL_FROM = 'Nalanda Nexus <no-reply@example.test>';
+  process.env.EMAIL_REPLY_TO = 'office@example.test';
   process.env.RATE_LIMIT_MAX = '100000';
   process.env.AUTH_RATE_LIMIT_MAX = '100000';
 
@@ -140,20 +141,20 @@ before(async () => {
 
 after(async () => {
   await new Promise((r) => server.close(r));
-  await Promise.all([teacherPortal.close(), studentPortal.close(), sendgrid.close()]);
+  await Promise.all([teacherPortal.close(), studentPortal.close(), mailer.close()]);
   const mongoose = (await import('mongoose')).default;
   await mongoose.connection.close();
   await mongod.stop();
 });
 
 beforeEach(() => {
-  for (const peer of [teacherPortal, studentPortal, sendgrid]) {
+  for (const peer of [teacherPortal, studentPortal, mailer]) {
     peer.state.calls = [];
     peer.state.down = false;
   }
   Object.assign(teacherPortal.state, { provisionStatus: null, coursesStatus: null, teacherCode: null, accounts: new Map() });
   Object.assign(studentPortal.state, { catalogStatus: null });
-  Object.assign(sendgrid.state, { status: null, errorMessage: null });
+  Object.assign(mailer.state, { status: null, errorMessage: null });
 });
 
 async function call(path, { method = 'GET', body, headers = {}, form } = {}) {
@@ -187,9 +188,9 @@ const input = (over = {}) => ({
 
 const create = (over) => call('/api/admin/teachers', { method: 'POST', body: input(over) });
 const portalCall = (method, url) => teacherPortal.state.calls.find((c) => c.method === method && c.url === url);
-const lastMail = () => sendgrid.state.calls.at(-1);
-const mailText = (m) => m.body.content.find((c) => c.type === 'text/plain').value;
-const mailHtml = (m) => m.body.content.find((c) => c.type === 'text/html').value;
+const lastMail = () => mailer.state.calls.at(-1);
+const mailText = (m) => m.body.text;
+const mailHtml = (m) => m.body.html;
 const ageLastAttempt = (id) => Teacher.updateOne({ _id: id }, { emailLastAttemptAt: new Date(Date.now() - 60 * 1000) });
 
 // ---------------------------------------------------------------------------
@@ -208,7 +209,7 @@ test('creating a teacher needs a name, an email, a subject or department, and at
     assert.equal(res.status, 422, `${label}: ${JSON.stringify(res.body)}`);
   }
   assert.equal(teacherPortal.state.calls.length, 0, 'nothing reached the Teacher Portal');
-  assert.equal(sendgrid.state.calls.length, 0, 'and nothing was emailed');
+  assert.equal(mailer.state.calls.length, 0, 'and nothing was emailed');
 });
 
 test('a department alone satisfies "subject / department"; designation, phone and photo are optional', async () => {
@@ -301,15 +302,16 @@ test('the email carries the login URL, the Teacher ID, the assigned courses and 
   const mail = lastMail();
   const text = mailText(mail);
 
-  assert.equal(mail.body.personalizations[0].to[0].email, res.body.data.email);
+  assert.deepEqual(mail.body.to, [res.body.data.email]);
   assert.match(res.body.data.teacherId, /^TCH-\d{4,}$/);
   assert.ok(text.includes(`Teacher ID: ${res.body.data.teacherId}`));
   assert.ok(text.includes(`${PORTAL}/login`), 'the Teacher Portal login page');
   assert.ok(text.includes('GARUD') && text.includes('YODDHA'));
   assert.match(text, /First sign-in/);
   assert.match(text, /never send passwords by email/);
-  assert.equal(mail.body.from.email, 'no-reply@example.test');
-  assert.equal(mail.body.tracking_settings.click_tracking.enable, false, 'a one-time link is not rewritten through a tracker');
+  assert.equal(mail.body.from, 'Nalanda Nexus <no-reply@example.test>');
+  assert.equal(mail.body.reply_to, 'office@example.test', 'replies go to the office inbox');
+  assert.equal(mail.headers.authorization, 'Bearer re_test_key');
   assert.match(mailHtml(mail), /Set your password/);
 });
 
@@ -352,8 +354,8 @@ test('a delivered email is recorded with the provider message id and time', asyn
 });
 
 test('a provider rejection is recorded with the provider\'s own reason, and surfaced', async () => {
-  sendgrid.state.status = 403;
-  sendgrid.state.errorMessage = 'The from address does not match a verified Sender Identity.';
+  mailer.state.status = 403;
+  mailer.state.errorMessage = 'The gmail.com domain is not verified. Please, add and verify your domain on https://resend.com/domains';
   const res = await create({});
 
   assert.equal(res.status, 201, 'the teacher is still created');
@@ -361,24 +363,24 @@ test('a provider rejection is recorded with the provider\'s own reason, and surf
   const t = await Teacher.findById(res.body.data._id).lean();
   assert.equal(t.emailDeliveryStatus, 'failed');
   assert.equal(t.credentialEmailSent, false);
-  assert.match(t.emailDeliveryError, /403.*verified Sender Identity/);
+  assert.match(t.emailDeliveryError, /403.*gmail.com domain is not verified/);
   assert.equal(res.body.data.emailDeliveryStatus, 'failed');
-  assert.match(res.body.data.emailDeliveryError, /Sender Identity/);
+  assert.match(res.body.data.emailDeliveryError, /resend\.com\/domains/);
 });
 
 test('with no email provider configured the status says so, not "sent"', async () => {
   const { env } = await import('../src/config/env.js');
-  const key = env.email.sendgridApiKey;
-  env.email.sendgridApiKey = '';
+  const key = env.email.resendApiKey;
+  env.email.resendApiKey = '';
   try {
     const res = await create({});
     const t = await Teacher.findById(res.body.data._id).lean();
     assert.equal(t.emailDeliveryStatus, 'stubbed');
     assert.match(t.emailDeliveryError, /No email provider/);
     assert.ok(res.body.meta.warnings.includes('EMAIL_DELIVERY_FAILED'));
-    assert.equal(sendgrid.state.calls.length, 0);
+    assert.equal(mailer.state.calls.length, 0);
   } finally {
-    env.email.sendgridApiKey = key;
+    env.email.resendApiKey = key;
   }
 });
 
@@ -387,7 +389,7 @@ test('if the Teacher Portal login cannot be created, no email is sent - its link
   const res = await create({});
   assert.equal(res.status, 201);
   assert.ok(res.body.meta.warnings.includes('PORTAL_PROVISIONING_FAILED'));
-  assert.equal(sendgrid.state.calls.length, 0);
+  assert.equal(mailer.state.calls.length, 0);
   const t = await Teacher.findById(res.body.data._id).lean();
   assert.equal(t.portalProvisioned, false);
   assert.equal(t.emailDeliveryStatus, 'not_sent');
@@ -403,7 +405,7 @@ test('resend issues a brand-new link: the Teacher Portal is told, the old hash i
   const id = created.body.data._id;
   const firstHash = portalCall('POST', '/api/internal/teachers').body.setupTokenHash;
   await ageLastAttempt(id);
-  sendgrid.state.calls = [];
+  mailer.state.calls = [];
 
   const res = await call(`/api/admin/teachers/${id}/resend-credentials`, { method: 'POST' });
   assert.equal(res.status, 200, JSON.stringify(res.body));
@@ -430,15 +432,15 @@ test('resend cannot be hammered: a second one straight away is refused', async (
   const res = await call(`/api/admin/teachers/${created.body.data._id}/resend-credentials`, { method: 'POST' });
   assert.equal(res.status, 429);
   assert.equal(res.body.code, 'RESEND_TOO_SOON');
-  assert.equal(sendgrid.state.calls.length, 1, 'only the creation email went out');
+  assert.equal(mailer.state.calls.length, 1, 'only the creation email went out');
 });
 
 test('resending after a failed email delivers it, and the status turns to sent', async () => {
-  sendgrid.state.status = 403;
+  mailer.state.status = 403;
   const created = await create({});
   assert.equal((await Teacher.findById(created.body.data._id).lean()).emailDeliveryStatus, 'failed');
 
-  sendgrid.state.status = null;
+  mailer.state.status = null;
   await ageLastAttempt(created.body.data._id);
   const res = await call(`/api/admin/teachers/${created.body.data._id}/resend-credentials`, { method: 'POST' });
   assert.equal(res.status, 200);
@@ -452,7 +454,7 @@ test('resend creates the Teacher Portal login if the original attempt never did,
   teacherPortal.state.provisionStatus = 422;
   const created = await create({});
   assert.equal((await Teacher.findById(created.body.data._id).lean()).portalProvisioned, false);
-  assert.equal(sendgrid.state.calls.length, 0);
+  assert.equal(mailer.state.calls.length, 0);
 
   teacherPortal.state.provisionStatus = null;
   teacherPortal.state.calls = [];
@@ -468,19 +470,19 @@ test('resend creates the Teacher Portal login if the original attempt never did,
   assert.equal(t.portalProvisioned, true);
   assert.equal(t.courseSyncStatus, 'synced');
   assert.equal(t.emailDeliveryStatus, 'sent');
-  assert.equal(sendgrid.state.calls.length, 1);
+  assert.equal(mailer.state.calls.length, 1);
 });
 
 test('when the Teacher Portal cannot be reached, resend says so and sends nothing', async () => {
   const created = await create({});
   await ageLastAttempt(created.body.data._id);
-  sendgrid.state.calls = [];
+  mailer.state.calls = [];
   teacherPortal.state.down = true;
 
   const res = await call(`/api/admin/teachers/${created.body.data._id}/resend-credentials`, { method: 'POST' });
   assert.equal(res.status, 200);
   assert.ok(res.body.meta.warnings.includes('PORTAL_PROVISIONING_FAILED'));
-  assert.equal(sendgrid.state.calls.length, 0, 'a link that was never issued must not be emailed');
+  assert.equal(mailer.state.calls.length, 0, 'a link that was never issued must not be emailed');
   assert.equal((await Teacher.findById(created.body.data._id).lean()).emailDeliveryStatus, 'not_sent');
 });
 

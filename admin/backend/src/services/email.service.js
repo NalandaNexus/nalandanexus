@@ -2,13 +2,6 @@ import { env } from '../config/env.js';
 
 const SEND_TIMEOUT_MS = 15000;
 
-/** Splits "Name <email@x.com>" into its parts; falls back to treating the whole string as the address. */
-function parseFrom(from) {
-  const match = from.match(/^(.*)<(.+)>$/);
-  if (match) return { name: match[1].trim().replace(/^"|"$/g, ''), email: match[2].trim() };
-  return { email: from.trim() };
-}
-
 const escapeHtml = (value) =>
   String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -17,12 +10,11 @@ const escapeHtml = (value) =>
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 
-/** What SendGrid said was wrong, in a line - its error body is JSON with an `errors` array. */
+/** What Resend said was wrong, in a line - its error body is JSON: { statusCode, name, message }. */
 function describeProviderError(status, body) {
   try {
     const parsed = JSON.parse(body);
-    const first = parsed?.errors?.[0];
-    if (first?.message) return `HTTP ${status}: ${first.message}`.slice(0, 380);
+    if (parsed?.message) return `HTTP ${status}: ${parsed.message}`.slice(0, 380);
   } catch {
     // Not JSON - fall through to the raw text.
   }
@@ -30,7 +22,7 @@ function describeProviderError(status, body) {
 }
 
 /**
- * Sends an email via SendGrid's HTTPS API if configured; otherwise logs it
+ * Sends an email via Resend's HTTPS API if configured; otherwise logs it
  * (dev/demo mode). Never throws - a failed notification email should not
  * break the calling request. Returns a real, honest outcome either way, so a
  * caller can record WHY a message did not go (a bad key, an unverified sender
@@ -44,21 +36,22 @@ function describeProviderError(status, body) {
  * `delivered` means the provider ACCEPTED the message. Whether it then reaches an
  * inbox is not something this call can know.
  *
- * Uses SendGrid's plain HTTPS API (not SMTP) because Render blocks outbound
+ * Uses Resend's plain HTTPS API (not SMTP) because Render blocks outbound
  * SMTP ports (25/465/587) on free-tier web services - confirmed live via a
  * "Connection timeout" on every SMTP send attempt regardless of credentials.
  * HTTPS (443) is never blocked, and Node's built-in fetch avoids adding a
  * new dependency for this.
+ *
+ * Click and open tracking are off unless turned on for the domain in Resend -
+ * leave them off: a one-time credential link must not be rewritten through a
+ * tracking redirect (it breaks the link and tells a third party where it points).
  */
 export async function send({ to, subject, text, html }) {
-  if (!env.email.sendgridApiKey) {
+  if (!env.email.resendApiKey) {
     // eslint-disable-next-line no-console
     console.log(`[email:stub] To: ${to} | Subject: ${subject}`);
-    return { delivered: false, stubbed: true, reason: 'NOT_CONFIGURED', detail: 'No email provider is configured on this server (SENDGRID_API_KEY).' };
+    return { delivered: false, stubbed: true, reason: 'NOT_CONFIGURED', detail: 'No email provider is configured on this server (RESEND_API_KEY).' };
   }
-
-  const content = [{ type: 'text/plain', value: text || ' ' }];
-  if (html) content.push({ type: 'text/html', value: html });
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), SEND_TIMEOUT_MS);
@@ -66,17 +59,17 @@ export async function send({ to, subject, text, html }) {
     const res = await fetch(env.email.apiUrl, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${env.email.sendgridApiKey}`,
+        Authorization: `Bearer ${env.email.resendApiKey}`,
         'Content-Type': 'application/json',
+        'User-Agent': 'nalanda-nexus-admin',
       },
       body: JSON.stringify({
-        personalizations: [{ to: [{ email: to }] }],
-        from: parseFrom(env.email.from),
+        from: env.email.from,
+        to: [to],
+        ...(env.email.replyTo ? { reply_to: env.email.replyTo } : {}),
         subject,
-        content,
-        // A one-time credential link should not be rewritten through a tracking
-        // redirect: it breaks the link and tells a third party where it points.
-        tracking_settings: { click_tracking: { enable: false, enable_text: false }, open_tracking: { enable: false } },
+        text: text || ' ',
+        ...(html ? { html } : {}),
       }),
       signal: controller.signal,
     });
@@ -89,7 +82,8 @@ export async function send({ to, subject, text, html }) {
       return { delivered: false, error: true, reason: 'PROVIDER_REJECTED', status: res.status, detail };
     }
 
-    return { delivered: true, messageId: res.headers.get('x-message-id') || null };
+    const accepted = await res.json().catch(() => null);
+    return { delivered: true, messageId: accepted?.id || null };
   } catch (err) {
     const timedOut = err.name === 'AbortError';
     // eslint-disable-next-line no-console

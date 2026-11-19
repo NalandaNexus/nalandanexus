@@ -109,8 +109,9 @@ Settings (all optional except the email key):
 
 | Service | Variable | Purpose |
 | :--- | :--- | :--- |
-| admin | `SENDGRID_API_KEY` | Without it no email is sent (status shows *Email not configured*). |
-| admin | `SMTP_FROM` | Must be a **verified sender** in SendGrid, or every send is rejected (403). |
+| admin, student | `RESEND_API_KEY` | Without it no email is sent (status shows *Email not configured*). |
+| admin, student | `EMAIL_FROM` | Must be an address on a **domain verified in Resend**, or every send is rejected (403). A `@gmail.com` address can never be the sender; `onboarding@resend.dev` only reaches the Resend account owner. |
+| admin, student | `EMAIL_REPLY_TO` | Where replies go (default `nalandanexus@gmail.com`). |
 | admin | `TEACHER_PORTAL_URL` | Leave unset: the Teacher service reports its own `CLIENT_URL`. Override only for a custom domain. |
 | admin | `TEACHER_SETUP_LINK_TTL_HOURS` | Link lifetime, 1–168 (default 72). |
 | teacher | `CLIENT_URL` | Must be the address the Teacher Portal frontend is served from — the email links there. |

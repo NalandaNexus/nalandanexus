@@ -68,7 +68,7 @@ before(async () => {
   process.env.STUDENT_BACKEND_SERVICE_KEY = 'lookup_key';
   process.env.TEACHER_BACKEND_URL = 'http://127.0.0.1:1';
   process.env.TEACHER_BACKEND_SERVICE_KEY = 'unused';
-  process.env.SENDGRID_API_KEY = 'unused-in-tests';
+  process.env.RESEND_API_KEY = 'unused-in-tests';
 
   const { connectDatabase } = await import('../src/config/db.js');
   await connectDatabase();
