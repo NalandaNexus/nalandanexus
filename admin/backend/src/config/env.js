@@ -79,21 +79,14 @@ export const env = {
   teacherSetupLinkTtlHours: Math.min(168, Math.max(1, parseInt(process.env.TEACHER_SETUP_LINK_TTL_HOURS, 10) || 72)),
 
   // Email (optional - if unset, emails are logged to console instead of
-  // sent). Sent via Resend's HTTPS API (not SMTP) - Render blocks outbound
+  // sent). Sent via SendGrid's HTTPS API (not SMTP) - Render blocks outbound
   // SMTP ports (25/465/587) on free-tier web services, so raw SMTP can never
   // work there regardless of credentials; HTTPS (443) is never blocked.
   email: {
-    resendApiKey: process.env.RESEND_API_KEY || '',
-    // Overridable so tests can stand in for Resend; production never sets it.
-    apiUrl: process.env.RESEND_API_URL || 'https://api.resend.com/emails',
-    // Must be an address on a domain verified in Resend. A @gmail.com address
-    // can never be a sender (nobody but Google can verify gmail.com), and
-    // Resend's own onboarding@resend.dev only delivers to the Resend account
-    // owner's inbox - fine for a first test, useless for real teachers.
-    from: process.env.EMAIL_FROM || 'Nalanda Nexus <onboarding@resend.dev>',
-    // Where a reply goes. This is how a Gmail inbox stays the point of contact
-    // while the mail itself is sent from a verified domain.
-    replyTo: process.env.EMAIL_REPLY_TO || 'nalandanexus@gmail.com',
+    sendgridApiKey: process.env.SENDGRID_API_KEY || '',
+    // Overridable so tests can stand in for SendGrid; production never sets it.
+    apiUrl: process.env.SENDGRID_API_URL || 'https://api.sendgrid.com/v3/mail/send',
+    from: process.env.SMTP_FROM || 'Nalanda Nexus <nalandanexus@gmail.com>',
   },
 };
 

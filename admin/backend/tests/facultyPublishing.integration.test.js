@@ -54,7 +54,7 @@ before(async () => {
   // tests exercise faculty publishing without depending on it.
   process.env.TEACHER_BACKEND_URL = 'http://127.0.0.1:1';
   process.env.TEACHER_BACKEND_SERVICE_KEY = 'unused';
-  process.env.RESEND_API_KEY = 'unused-in-tests';
+  process.env.SENDGRID_API_KEY = 'unused-in-tests';
 
   const { connectDatabase } = await import('../src/config/db.js');
   await connectDatabase();
