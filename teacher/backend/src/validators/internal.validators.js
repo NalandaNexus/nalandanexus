@@ -1,4 +1,5 @@
 import { body, param, query } from 'express-validator';
+import { normalizeEmail } from '../services/credentials.service.js';
 
 export const teacherForCourseValidator = [
   param('studentCourseSlug').trim().notEmpty(),
@@ -28,7 +29,7 @@ const setupLinkRules = [
 
 export const provisionTeacherValidator = [
   body('name').trim().notEmpty().isLength({ max: 120 }),
-  body('email').trim().isEmail().normalizeEmail(),
+  body('email').trim().isEmail().customSanitizer(normalizeEmail),
   body('phone').optional({ nullable: true }).trim().isLength({ max: 20 }),
   // Legacy: an administrator-issued temporary password. New callers send a setup
   // link instead; one of the two is required.
@@ -47,7 +48,7 @@ export const provisionTeacherValidator = [
 ];
 
 export const resetCredentialsValidator = [
-  body('email').trim().isEmail().normalizeEmail(),
+  body('email').trim().isEmail().customSanitizer(normalizeEmail),
   // Legacy: reset to an administrator-issued temporary password.
   body('newPassword').optional().isString().isLength({ min: 8, max: 100 }),
   ...setupLinkRules,
@@ -64,21 +65,21 @@ export const resetCredentialsValidator = [
  * catalogue's course slug. Sent as a set every time, so it replaces.
  */
 export const setTeacherCoursesValidator = [
-  body('teacherEmail').trim().isEmail().normalizeEmail(),
+  body('teacherEmail').trim().isEmail().customSanitizer(normalizeEmail),
   body('courses').isArray({ max: 50 }),
   body('courses.*.slug').isString().trim().matches(/^[a-z0-9-]{1,100}$/i).withMessage('A course slug is required'),
   body('courses.*.title').optional({ nullable: true }).isString().trim().isLength({ max: 200 }),
 ];
 
 export const setAccountStatusValidator = [
-  body('email').trim().isEmail().normalizeEmail(),
+  body('email').trim().isEmail().customSanitizer(normalizeEmail),
   body('status').isIn(['active', 'inactive', 'suspended']),
 ];
 
 export const sourceIdParamValidator = [param('sourceId').trim().notEmpty().isLength({ max: 64 })];
 
 export const assignCourseValidator = [
-  body('teacherEmail').trim().isEmail().normalizeEmail(),
+  body('teacherEmail').trim().isEmail().customSanitizer(normalizeEmail),
   body('title').trim().notEmpty().isLength({ max: 200 }),
   body('courseCode').optional({ nullable: true }).trim().isLength({ max: 40 }),
   body('description').optional({ nullable: true }).trim().isLength({ max: 4000 }),
@@ -162,7 +163,7 @@ export const portalStudentValidator = [
  * shared across services - never by one of this database's ObjectIds, which
  * Admin has no way to know and must not be able to guess at.
  */
-const emailRule = (field) => body(field).trim().notEmpty().isEmail().withMessage('A valid teacher email is required').normalizeEmail();
+const emailRule = (field) => body(field).trim().notEmpty().isEmail().withMessage('A valid teacher email is required').customSanitizer(normalizeEmail);
 
 export const adminCreateBatchValidator = [
   body('courseSlug').trim().notEmpty().withMessage('A course is required').isLength({ max: 200 }).matches(/^[a-z0-9-]+$/i),
@@ -191,7 +192,7 @@ export const adminReassignBatchValidator = [
 
 export const adminListBatchesValidator = [
   query('courseSlug').optional().trim().isLength({ max: 200 }).matches(/^[a-z0-9-]+$/i),
-  query('teacherEmail').optional().trim().isEmail().normalizeEmail(),
+  query('teacherEmail').optional().trim().isEmail().customSanitizer(normalizeEmail),
   query('status').optional().isIn(['all', 'active', 'archived']),
   query('search').optional().trim().isLength({ max: 120 }),
 ];

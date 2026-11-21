@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import { SchoolClass } from '../models/SchoolClass.js';
 import { Student } from '../models/Student.js';
 import { Teacher } from '../models/Teacher.js';
-import { User } from '../models/User.js';
+import { findTeacherUserByEmail } from './credentials.service.js';
 import { ApiError } from '../utils/ApiError.js';
 import { logAudit } from './audit.service.js';
 import { createClass, updateClass, getClassById, getClassAggregateStatsMap } from './class.service.js';
@@ -26,7 +26,7 @@ import { fetchStudentCourseCatalog } from './studentBridge.service.js';
 
 /** Cross-service teacher identity is the email, matching assignedCourse.service.js. */
 async function resolveTeacherByEmail(email) {
-  const user = await User.findOne({ email: String(email || '').toLowerCase().trim(), role: 'teacher' });
+  const { user } = await findTeacherUserByEmail(email);
   if (!user) throw ApiError.unprocessable(`No teacher account exists for ${email}.`, 'TEACHER_NOT_FOUND');
   const teacher = await Teacher.findOne({ user: user._id });
   if (!teacher) throw ApiError.unprocessable(`${email} has no teacher profile.`, 'TEACHER_PROFILE_MISSING');

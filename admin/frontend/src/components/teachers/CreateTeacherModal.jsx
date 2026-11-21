@@ -36,8 +36,8 @@ const EMPTY_FORM = {
 
 const WARNING_COPY = {
   PORTAL_PROVISIONING_FAILED:
-    "The Teacher Portal login could not be created, so no email was sent (its link would lead nowhere). Use 'Resend setup email' from the teacher's profile once the Teacher Portal is reachable.",
-  EMAIL_DELIVERY_FAILED: "The setup email could not be delivered — see the reason below. Fix the cause, then use 'Resend setup email' from the teacher's profile.",
+    "The Teacher Portal login could not be created, so no email was sent (its password would not have worked). Use 'Resend login details' from the teacher's profile once the Teacher Portal is reachable.",
+  EMAIL_DELIVERY_FAILED: "The sign-in email could not be delivered — see the reason below. Fix the cause, then use 'Resend login details' from the teacher's profile.",
   COURSE_SYNC_FAILED: "The Teacher Portal did not accept the course assignment, so the teacher would not see their students yet. Open the teacher's profile and save their courses again to retry.",
   TEACHER_ID_MISMATCH: 'The Teacher Portal could not use the Teacher ID shown here; check the ID in the email the teacher received.',
   WEBSITE_PROFILE_NOT_PUBLISHED: 'The public website profile could not be published yet.',
@@ -166,12 +166,12 @@ export default function CreateTeacherModal({ isOpen, onClose, onTeacherCreated }
               <p className="text-xs text-[#2B2B28] mt-1 leading-relaxed">
                 {successResult.emailDeliveryStatus === 'sent' ? (
                   <>
-                    A password-setup email was sent to <strong className="font-semibold text-[#22355E]">{successResult.email}</strong>. No password was
-                    generated for anyone to see — the teacher chooses their own through the link.
+                    Sign-in details were emailed to <strong className="font-semibold text-[#22355E]">{successResult.email}</strong>: their email, Teacher ID and a
+                    temporary password, which they must change when they first sign in. The password is shown to no one else.
                   </>
                 ) : (
                   <>
-                    The account for <strong className="font-semibold text-[#22355E]">{successResult.email}</strong> was created, but the setup email has not been
+                    The account for <strong className="font-semibold text-[#22355E]">{successResult.email}</strong> was created, but the sign-in email has not been
                     delivered yet.
                   </>
                 )}
@@ -218,15 +218,9 @@ export default function CreateTeacherModal({ isOpen, onClose, onTeacherCreated }
                 <span className="font-mono text-[#9B9690]">{successResult.courseSyncStatus || '—'}</span>
               </div>
               <div className="flex items-center justify-between text-[#2B2B28]">
-                <span>Setup email:</span>
+                <span>Sign-in email:</span>
                 <EmailStatusBadge teacher={successResult} />
               </div>
-              {successResult.setupLinkExpiresAt && (
-                <div className="flex items-center justify-between text-[#2B2B28]">
-                  <span>Setup link expires:</span>
-                  <span className="font-mono text-[#9B9690]">{new Date(successResult.setupLinkExpiresAt).toLocaleString()}</span>
-                </div>
-              )}
             </div>
 
             <div className="pt-3 border-t border-[#EDEAE0] flex justify-end">
@@ -243,7 +237,7 @@ export default function CreateTeacherModal({ isOpen, onClose, onTeacherCreated }
               </div>
               <div>
                 <h3 className="text-base font-bold text-[#22355E]">Create Teacher Profile</h3>
-                <p className="text-xs text-[#9B9690]">Creates the Teacher Portal login and emails a secure link for the teacher to set their password</p>
+                <p className="text-xs text-[#9B9690]">Creates the Teacher Portal login and emails the teacher their sign-in details</p>
               </div>
             </div>
 
@@ -331,8 +325,8 @@ export default function CreateTeacherModal({ isOpen, onClose, onTeacherCreated }
             <div className="p-3 rounded-xl bg-[#22355E]/5 border border-[#22355E]/15 flex items-start gap-2 text-[11px] text-[#2B2B28] leading-relaxed">
               <Info className="w-4 h-4 text-[#22355E] flex-shrink-0 mt-0.5" />
               <span>
-                A Teacher ID is generated automatically and works as the username. No password is created for you to share: the teacher receives an email with a
-                single-use, time-limited link to choose their own.
+                A Teacher ID is generated automatically and works as the username. The teacher is emailed a temporary password that nobody else sees, and
+                chooses their own the first time they sign in.
               </span>
             </div>
 
@@ -401,7 +395,7 @@ export default function CreateTeacherModal({ isOpen, onClose, onTeacherCreated }
                 ) : (
                   <>
                     <Mail className="w-3.5 h-3.5" />
-                    <span>Create & Send Setup Email</span>
+                    <span>Create & Email Login Details</span>
                   </>
                 )}
               </button>

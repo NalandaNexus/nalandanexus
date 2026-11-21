@@ -3,9 +3,9 @@ import { sendSuccess } from '../utils/ApiResponse.js';
 import { resolveTeacherForCourseSlug, deliverExternalStudentMessage } from '../services/externalMessage.service.js';
 import { placeEnrollment } from '../services/batchPlacement.service.js';
 import * as adminBatch from '../services/adminBatch.service.js';
-import { createTeacherAccount, issuePasswordSetupLink, resetCredentials, setAccountStatus } from '../services/auth.service.js';
+import { provisionTeacherAccount, issuePasswordSetupLink, resetCredentials, setAccountStatus } from '../services/auth.service.js';
+import { portalUrl } from '../utils/portalUrl.js';
 import { setTeacherCourses } from '../services/courseRoster.service.js';
-import { env } from '../config/env.js';
 import { assignCourse, unassignCourse } from '../services/assignedCourse.service.js';
 import { AdminAnnouncement } from '../models/AdminAnnouncement.js';
 import { Teacher } from '../models/Teacher.js';
@@ -58,26 +58,24 @@ export const getTeacherForCourse = catchAsync(async (req, res) => {
 });
 
 /**
- * Called by admin/backend right after it creates its own governance Teacher
- * record, to actually provision the real login here.
+ * Admin's "issue this teacher's login": called when Admin creates a teacher and
+ * when it resends their credentials. Idempotent - an email that already has a
+ * teacher login here is re-linked (reactivated, new temporary password, same
+ * Teacher ID and history) rather than refused; see
+ * auth.service.js#provisionTeacherAccount for why refusing broke logins.
  *
- * Admin sends the SHA-256 of a setup-link token and its expiry; no password
- * travels at all, and the account is given a random one nobody knows. The
- * person chooses their own through the emailed link (auth.service.js
- * #completePasswordSetup). The older `tempPassword` form is still accepted so an
- * Admin deployment that has not been updated keeps working; `mustChangePassword`
- * is derived here, never client-supplied, so that path can only ever create a
- * forced-reset account.
+ * `tempPassword` travels only on this shared-secret, server-to-server channel.
+ * It is hashed once, stored, and read back and checked before this answers, so
+ * `verified: true` means the login accepts exactly that password - Admin emails
+ * it only then. The password is never echoed back. `mustChangePassword` is set
+ * here, never client-supplied. The older setup-link form is still accepted.
  */
 export const provisionTeacher = catchAsync(async (req, res) => {
   const { name, email, phone, tempPassword, title, department, subject, teacherId: requestedTeacherId, avatarUrl, setupTokenHash, setupTokenExpiresAt } = req.body;
-  const setup = setupTokenHash ? { tokenHash: setupTokenHash, expiresAt: new Date(setupTokenExpiresAt) } : null;
-  const { user, teacher } = await createTeacherAccount({
+  const setup = !tempPassword && setupTokenHash ? { tokenHash: setupTokenHash, expiresAt: new Date(setupTokenExpiresAt) } : null;
+  const { user, teacher, relinked } = await provisionTeacherAccount({
     name,
     email,
-    // With a setup link the account is given a random password nobody knows and
-    // the person chooses their own; the legacy temp-password path still forces a
-    // change at first login.
     password: setup ? undefined : tempPassword,
     phone,
     title,
@@ -86,22 +84,24 @@ export const provisionTeacher = catchAsync(async (req, res) => {
     requestedTeacherId,
     avatarUrl,
     setup,
-    mustChangePassword: !setup,
   });
   sendSuccess(res, {
-    statusCode: 201,
-    message: 'Teacher account provisioned.',
-    // The Teacher ID actually issued (it can differ from the one requested) and
-    // where this portal lives, so the onboarding email links to the real login
-    // page rather than to this API.
-    data: { userId: user._id, teacherId: teacher._id, teacherCode: teacher.teacherId, portalUrl: portalUrl() },
+    statusCode: relinked ? 200 : 201,
+    message: relinked ? 'Existing teacher login re-linked and re-issued.' : 'Teacher account provisioned.',
+    // The Teacher ID actually issued (it can differ from the one requested, and a
+    // re-linked login keeps its own) and where this portal lives, so the email
+    // links to the real login page rather than to this API.
+    data: {
+      userId: user._id,
+      teacherId: teacher._id,
+      teacherCode: teacher.teacherId,
+      email: user.email,
+      portalUrl: portalUrl(),
+      relinked,
+      verified: true,
+    },
   });
 });
-
-/** The Teacher Portal's own address - CLIENT_URL here is the origin its frontend is served from. */
-function portalUrl() {
-  return String(env.clientUrl || '').split(',')[0].trim().replace(/\/+$/, '') || null;
-}
 
 /**
  * Replaces the set of courses an administrator has assigned to one teacher, and

@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import CuteLamp from '../components/CuteLamp';
 import { useTeacherAuth } from '../context/TeacherAuthContext';
-import { ADMIN_PORTAL_URL, STUDENT_PORTAL_URL } from '../services/teacherApiService';
+import { ADMIN_PORTAL_URL, STUDENT_PORTAL_URL, teacherApiService } from '../services/teacherApiService';
 
 const TEACHER_LAMP_STATES = [
   {
@@ -166,6 +166,34 @@ export default function TeacherLoginPage() {
   const [errorMsg, setErrorMsg] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [forgotModalOpen, setForgotModalOpen] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotState, setForgotState] = useState({ status: 'idle', message: '' }); // idle | sending | sent | error
+
+  const openForgotModal = () => {
+    // Start from whatever is in the sign-in box, unless it is a Teacher ID.
+    setForgotEmail(/@/.test(email) ? email.trim() : '');
+    setForgotState({ status: 'idle', message: '' });
+    setForgotModalOpen(true);
+  };
+
+  const handleForgotSubmit = async (e) => {
+    e.preventDefault();
+    const value = forgotEmail.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+      setForgotState({ status: 'error', message: 'Enter the email address your faculty account uses.' });
+      return;
+    }
+    setForgotState({ status: 'sending', message: '' });
+    try {
+      const message = await teacherApiService.requestPasswordReset(value);
+      setForgotState({
+        status: 'sent',
+        message: message || 'If an active Teacher Portal account uses that email address, a reset link is on its way. It works once and expires in 1 hour.',
+      });
+    } catch (err) {
+      setForgotState({ status: 'error', message: err?.message || 'The request could not be sent. Please try again.' });
+    }
+  };
 
   const currentTheme = TEACHER_LAMP_STATES[stateIndex];
   const isOn = currentTheme.lamp === 'ON';
@@ -338,7 +366,7 @@ export default function TeacherLoginPage() {
                       </label>
                       <button
                         type="button"
-                        onClick={() => setForgotModalOpen(true)}
+                        onClick={openForgotModal}
                         className="text-xs text-cyan-400 hover:text-cyan-300 transition-colors"
                       >
                         Forgot password?
@@ -475,9 +503,42 @@ export default function TeacherLoginPage() {
               <GraduationCap className="w-5 h-5 text-cyan-400" />
               Faculty Credential Recovery
             </h3>
-            <p className="text-xs text-slate-300 leading-relaxed mb-4">
-              To reset your institutional faculty password, contact your Admin — they can issue a new set of login credentials from the Teacher Management console.
-            </p>
+            {forgotState.status === 'sent' ? (
+              <p role="status" className="text-xs text-emerald-300 leading-relaxed mb-4">
+                {forgotState.message}
+              </p>
+            ) : (
+              <form onSubmit={handleForgotSubmit} noValidate className="space-y-3 mb-4">
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Enter your faculty email address and we'll email you a link to choose a new password. You can also ask your Admin to email you new
+                  sign-in details.
+                </p>
+                <div className="relative">
+                  <Mail className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="email"
+                    autoComplete="email"
+                    value={forgotEmail}
+                    onChange={(e) => setForgotEmail(e.target.value)}
+                    placeholder="you@school.edu"
+                    aria-label="Faculty email address"
+                    className="w-full pl-10 pr-3 py-2.5 rounded-xl bg-slate-950/70 border border-slate-700 focus:border-cyan-500 focus:outline-none text-sm text-slate-100"
+                  />
+                </div>
+                {forgotState.status === 'error' && (
+                  <p role="alert" className="text-xs text-rose-300 leading-relaxed">
+                    {forgotState.message}
+                  </p>
+                )}
+                <button
+                  type="submit"
+                  disabled={forgotState.status === 'sending'}
+                  className="w-full py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-60 text-white text-xs font-bold"
+                >
+                  {forgotState.status === 'sending' ? 'Sending…' : 'Email me a reset link'}
+                </button>
+              </form>
+            )}
             <div className="flex justify-end gap-2">
               <button
                 type="button"

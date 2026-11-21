@@ -36,16 +36,9 @@ export function EmailStatusBadge({ teacher }) {
   );
 }
 
-function expiryLabel(teacher) {
-  if (!teacher.setupLinkExpiresAt) return null;
-  const at = new Date(teacher.setupLinkExpiresAt);
-  return at.getTime() < Date.now() ? `Expired ${at.toLocaleString()}` : `Expires ${at.toLocaleString()}`;
-}
-
-/** Full onboarding detail, with the one action that fixes it: send a new link. */
+/** Full onboarding detail, with the one action that fixes it: send new sign-in details. */
 export function OnboardingPanel({ teacher, onResend, busy = false, canResend = true }) {
   const s = emailStatusOf(teacher);
-  const expiry = expiryLabel(teacher);
   const portalOk = teacher.portalProvisioned;
 
   return (
@@ -63,8 +56,6 @@ export function OnboardingPanel({ teacher, onResend, busy = false, canResend = t
         <dd className="text-[#2B2B28] font-mono">{teacher.emailLastAttemptAt ? new Date(teacher.emailLastAttemptAt).toLocaleString() : '—'}</dd>
         <dt className="text-[#9B9690]">Attempts</dt>
         <dd className="text-[#2B2B28] font-mono">{teacher.emailAttempts || 0}</dd>
-        <dt className="text-[#9B9690]">Setup link</dt>
-        <dd className="text-[#2B2B28] font-mono">{expiry || '—'}</dd>
       </dl>
 
       {teacher.emailDeliveryError && teacher.emailDeliveryStatus !== 'sent' && (
@@ -72,8 +63,8 @@ export function OnboardingPanel({ teacher, onResend, busy = false, canResend = t
       )}
 
       <p className="text-[10px] text-[#9B9690] leading-relaxed">
-        The email contains a single-use link for the teacher to choose their own password. No password is ever sent or shown. “Sent” means the email
-        provider accepted it; inbox delivery is not tracked.
+        The email contains the teacher's email, Teacher ID and a temporary password they must change at first sign-in. It is sent only once the
+        Teacher Portal has confirmed that password works. “Sent” means the email provider accepted it; inbox delivery is not tracked.
       </p>
 
       {onResend && (
@@ -82,10 +73,10 @@ export function OnboardingPanel({ teacher, onResend, busy = false, canResend = t
           disabled={busy || !canResend}
           onClick={onResend}
           className="w-full py-2 px-3 rounded-xl bg-[#22355E] hover:bg-[#1A2A4A] disabled:opacity-60 text-white text-xs font-semibold transition-colors flex items-center justify-center gap-2"
-          title="Sends a new link. Any earlier link stops working; the teacher's current password is unchanged until they use the new one."
+          title="Emails a new temporary password. Any earlier password stops working, and the teacher chooses a new one when they sign in."
         >
           <RotateCcw className={`w-3.5 h-3.5 ${busy ? 'animate-spin' : ''}`} />
-          <span>{busy ? 'Sending…' : 'Resend setup email'}</span>
+          <span>{busy ? 'Sending…' : 'Resend login details'}</span>
         </button>
       )}
     </div>

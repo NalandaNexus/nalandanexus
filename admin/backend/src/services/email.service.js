@@ -112,23 +112,27 @@ export function teacherInvitationEmail({ name, activationUrl, expiresAt }) {
   };
 }
 
+const istTime = (date) => new Date(date).toLocaleString('en-IN', { dateStyle: 'long', timeStyle: 'short', timeZone: 'Asia/Kolkata' });
+
 /**
- * The onboarding email for a new teacher: who they are, what they were assigned,
- * and a single-use link to choose their own password.
+ * The login details for a teacher: Teacher ID, login email, a temporary
+ * password, and where to sign in.
  *
- * There is no password in it, and none exists to send - the account is created
- * with one nobody knows, and this link is the only way to set the real one. The
- * link is the only secret, it works once, and it stops working at `expiresAt`.
+ * Sent only after the Teacher service has confirmed that its login accepts
+ * exactly this password (teacher.service.js#issueCredentials), so what this
+ * email says is what the Teacher Portal checks. The password must be changed at
+ * first sign-in, and stops working the moment it is.
  *
- * `isResend` only changes the wording ("a new link; earlier ones no longer work").
+ * Every value is escaped for the HTML part. The password is set apart in a
+ * monospace block so it is copied whole and without surrounding text.
+ * `isResend` only changes the wording ("earlier passwords no longer work").
  */
-export function teacherOnboardingEmail({ name, teacherId, loginUrl, setupUrl, expiresAt, courses = [], isResend = false }) {
-  const when = expiresAt.toLocaleString('en-IN', { dateStyle: 'long', timeStyle: 'short', timeZone: 'Asia/Kolkata' });
+export function teacherCredentialsEmail({ name, teacherId, email, tempPassword, loginUrl, courses = [], isResend = false }) {
   const courseLine = courses.length ? courses.map((c) => c.title || String(c.slug).toUpperCase()).join(', ') : null;
   const e = escapeHtml;
 
   const intro = isResend
-    ? 'Here is a new link to set up your Nalanda Nexus Teacher Portal account. Any earlier link no longer works.'
+    ? 'Here are new sign-in details for your Nalanda Nexus Teacher Portal account. Any password sent to you before this one no longer works.'
     : 'An administrator has created a Teacher Portal account for you on Nalanda Nexus.';
 
   const text = [
@@ -136,19 +140,17 @@ export function teacherOnboardingEmail({ name, teacherId, loginUrl, setupUrl, ex
     '',
     intro,
     '',
+    `Sign in at: ${loginUrl}`,
+    `Email: ${email}`,
     `Teacher ID: ${teacherId}`,
+    `Temporary password: ${tempPassword}`,
     courseLine ? `Assigned course(s): ${courseLine}` : null,
     '',
-    'Set your password (this link works once):',
-    setupUrl,
-    `It expires on ${when} IST.`,
+    'You can sign in with either your email address or your Teacher ID. Type or paste the temporary password exactly as shown - it is case-sensitive.',
     '',
-    'First sign-in:',
-    '  1. Open the link above and choose a password.',
-    `  2. Go to ${loginUrl}`,
-    '  3. Sign in with your email address or Teacher ID, and the password you chose.',
+    'For your security you will be asked to choose a new password as soon as you sign in. The temporary password stops working once you do.',
     '',
-    'For your security we never send passwords by email. If the link has expired, ask your administrator to send a new one. If you were not expecting this message, you can ignore it.',
+    'Forgot your password later? Use "Forgot password?" on the sign-in page. If you were not expecting this message, you can ignore it.',
     '',
     '— Nalanda Nexus',
   ]
@@ -158,20 +160,52 @@ export function teacherOnboardingEmail({ name, teacherId, loginUrl, setupUrl, ex
   const html = `<div style="font-family:Arial,Helvetica,sans-serif;color:#1a1a1a;max-width:560px">
       <p>Hi ${e(name)},</p>
       <p>${e(intro)}</p>
-      <p><strong>Teacher ID:</strong> ${e(teacherId)}${courseLine ? `<br/><strong>Assigned course(s):</strong> ${e(courseLine)}` : ''}</p>
-      <p><a href="${e(setupUrl)}" style="display:inline-block;background:#22355E;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:bold">Set your password</a></p>
-      <p style="font-size:13px;color:#555">This link works once and expires on ${e(when)} IST. If the button does not work, copy this address into your browser:<br/><span style="word-break:break-all">${e(setupUrl)}</span></p>
-      <p><strong>First sign-in</strong></p>
-      <ol style="padding-left:18px">
-        <li>Open the link above and choose a password.</li>
-        <li>Go to <a href="${e(loginUrl)}">${e(loginUrl)}</a></li>
-        <li>Sign in with your email address or Teacher ID, and the password you chose.</li>
-      </ol>
-      <p style="font-size:13px;color:#555">For your security we never send passwords by email. If the link has expired, ask your administrator to send a new one. If you were not expecting this message, you can ignore it.</p>
+      <table style="border-collapse:collapse;margin:8px 0 16px">
+        <tr><td style="padding:4px 12px 4px 0;color:#555">Email</td><td style="padding:4px 0"><strong>${e(email)}</strong></td></tr>
+        <tr><td style="padding:4px 12px 4px 0;color:#555">Teacher ID</td><td style="padding:4px 0"><strong>${e(teacherId)}</strong></td></tr>
+        <tr><td style="padding:4px 12px 4px 0;color:#555">Temporary password</td><td style="padding:4px 0"><code style="font-family:Consolas,Menlo,monospace;font-size:16px;background:#f1f3f7;padding:4px 8px;border-radius:4px;letter-spacing:1px">${e(tempPassword)}</code></td></tr>
+        ${courseLine ? `<tr><td style="padding:4px 12px 4px 0;color:#555">Assigned course(s)</td><td style="padding:4px 0">${e(courseLine)}</td></tr>` : ''}
+      </table>
+      <p><a href="${e(loginUrl)}" style="display:inline-block;background:#22355E;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:bold">Sign in to the Teacher Portal</a></p>
+      <p style="font-size:13px;color:#555">Sign in with your email address or Teacher ID. The temporary password is case-sensitive. If the button does not work, open <span style="word-break:break-all">${e(loginUrl)}</span>.</p>
+      <p style="font-size:13px;color:#555">For your security you will be asked to choose a new password as soon as you sign in; the temporary password stops working once you do. Forgot your password later? Use "Forgot password?" on the sign-in page. If you were not expecting this message, you can ignore it.</p>
       <p>— Nalanda Nexus</p>
     </div>`;
 
-  return { subject: isResend ? 'Your new Nalanda Nexus Teacher Portal setup link' : 'Set up your Nalanda Nexus Teacher Portal account', text, html };
+  return {
+    subject: isResend ? 'Your new Nalanda Nexus Teacher Portal sign-in details' : 'Your Nalanda Nexus Teacher Portal account is ready',
+    text,
+    html,
+  };
+}
+
+/** A teacher's self-service "forgot password" link, requested from the Teacher Portal's sign-in page. */
+export function teacherPasswordResetEmail({ name, teacherId, resetUrl, expiresAt }) {
+  const e = escapeHtml;
+  const until = istTime(expiresAt);
+  const text = [
+    `Hi ${name},`,
+    '',
+    `Someone asked to reset the password for your Nalanda Nexus Teacher Portal account${teacherId ? ` (${teacherId})` : ''}.`,
+    '',
+    'Choose a new password here (this link works once):',
+    resetUrl,
+    `It expires on ${until} IST.`,
+    '',
+    'Your current password keeps working until you use the link. Using it signs you out everywhere else.',
+    'If you did not ask for this, ignore this email - nothing changes.',
+    '',
+    '— Nalanda Nexus',
+  ].join('\n');
+  const html = `<div style="font-family:Arial,Helvetica,sans-serif;color:#1a1a1a;max-width:560px">
+      <p>Hi ${e(name)},</p>
+      <p>Someone asked to reset the password for your Nalanda Nexus Teacher Portal account${teacherId ? ` (<strong>${e(teacherId)}</strong>)` : ''}.</p>
+      <p><a href="${e(resetUrl)}" style="display:inline-block;background:#22355E;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:bold">Choose a new password</a></p>
+      <p style="font-size:13px;color:#555">This link works once and expires on ${e(until)} IST. If the button does not work, copy this address into your browser:<br/><span style="word-break:break-all">${e(resetUrl)}</span></p>
+      <p style="font-size:13px;color:#555">Your current password keeps working until you use the link. Using it signs you out everywhere else. If you did not ask for this, ignore this email - nothing changes.</p>
+      <p>— Nalanda Nexus</p>
+    </div>`;
+  return { subject: 'Reset your Nalanda Nexus Teacher Portal password', text, html };
 }
 
 export function passwordResetEmail({ name, resetUrl, expiresAt }) {
@@ -181,4 +215,4 @@ export function passwordResetEmail({ name, resetUrl, expiresAt }) {
   };
 }
 
-export default { send, teacherInvitationEmail, teacherOnboardingEmail, passwordResetEmail };
+export default { send, teacherInvitationEmail, teacherCredentialsEmail, teacherPasswordResetEmail, passwordResetEmail };

@@ -1,10 +1,11 @@
 import { body, param } from 'express-validator';
-import { TEACHER_ID_PATTERN } from '../services/auth.service.js';
+import { TEACHER_ID_PATTERN, normalizeEmail } from '../services/credentials.service.js';
 
 // The `email` field carries either an email address or a Teacher ID (TCH-0001): the login
-// box is labelled "Faculty Email / Educator ID" and the onboarding email gives
-// out the ID. An email is validated and normalised exactly as it always was -
-// accounts were stored in that normalised form, so it must not change.
+// box is labelled "Faculty Email / Educator ID" and the credentials email gives
+// out both. An email is trimmed and lower-cased - the canonical form every
+// teacher login is stored and looked up under (services/credentials.service.js,
+// which also still finds accounts stored under the older normalised form).
 const isTeacherId = (value) => TEACHER_ID_PATTERN.test(String(value || '').trim());
 
 export const loginValidator = [
@@ -17,9 +18,13 @@ export const loginValidator = [
     .if((value) => !isTeacherId(value))
     .isEmail()
     .withMessage('Enter a valid email address or Teacher ID')
-    .normalizeEmail(),
+    .customSanitizer(normalizeEmail),
   body('password').notEmpty().withMessage('Password is required').isLength({ min: 1, max: 200 }),
   body('rememberMe').optional().isBoolean().toBoolean(),
+];
+
+export const forgotPasswordValidator = [
+  body('email').trim().notEmpty().withMessage('Email is required').bail().isEmail().withMessage('Enter a valid email address').customSanitizer(normalizeEmail),
 ];
 
 export const changePasswordValidator = [
@@ -50,4 +55,4 @@ export const completePasswordSetupValidator = [
     .withMessage('Password must contain a number'),
 ];
 
-export default { loginValidator, changePasswordValidator, inspectPasswordSetupValidator, completePasswordSetupValidator };
+export default { loginValidator, forgotPasswordValidator, changePasswordValidator, inspectPasswordSetupValidator, completePasswordSetupValidator };

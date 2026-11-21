@@ -1,6 +1,6 @@
 import { CourseAccess } from '../models/CourseAccess.js';
 import { CourseEnrollment } from '../models/CourseEnrollment.js';
-import { User } from '../models/User.js';
+import { findTeacherUserByEmail } from './credentials.service.js';
 import { Teacher } from '../models/Teacher.js';
 import { ApiError } from '../utils/ApiError.js';
 import { parsePagination, buildPaginationMeta } from '../utils/pagination.js';
@@ -42,7 +42,7 @@ function log(entry) {
 const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 async function resolveTeacherByEmail(email) {
-  const user = await User.findOne({ email: String(email).toLowerCase().trim(), role: 'teacher' }).select('_id name').lean();
+  const { user } = await findTeacherUserByEmail(email, { select: '_id name' });
   if (!user) return null;
   const teacher = await Teacher.findOne({ user: user._id });
   return teacher ? { user, teacher } : null;

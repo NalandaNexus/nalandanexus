@@ -9,9 +9,10 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
  *
  * Three stand-ins record what actually leaves this service: the Teacher Portal,
  * the student catalogue (the only place PRARAMBH / GARUD / YODDHA exist), and
- * SendGrid. That is the only honest way to test the claims that matter - that no
- * password is ever sent or emailed, that the link in the email is the one the
- * Teacher Portal was given, and that a failure anywhere is recorded rather than
+ * SendGrid. That is the only honest way to test the claims that matter - that
+ * the password in the email is exactly the one the Teacher Portal stored, that
+ * nothing is emailed until the Teacher Portal has confirmed it, that the password
+ * appears nowhere else, and that a failure anywhere is recorded rather than
  * reported as success.
  */
 
@@ -24,9 +25,10 @@ let sendgrid;
 let Teacher;
 let cookie;
 
-const sha256 = (v) => crypto.createHash('sha256').update(v).digest('hex');
 const uniq = () => crypto.randomBytes(3).toString('hex');
 const PORTAL = 'https://teacher.example.test';
+
+let SEQ = 0;
 
 function startPeer(handler) {
   const state = { calls: [], down: false };
@@ -40,7 +42,7 @@ function startPeer(handler) {
       } catch {
         body = { raw };
       }
-      const call = { method: req.method, url: req.url, headers: req.headers, raw, body };
+      const call = { method: req.method, url: req.url, headers: req.headers, raw, body, seq: (SEQ += 1) };
       state.calls.push(call);
       if (state.down) return req.socket.destroy();
       handler(call, res, state);
@@ -68,8 +70,14 @@ before(async () => {
     state.accounts ||= new Map();
     if (method === 'POST' && url === '/api/internal/teachers') {
       if (state.provisionStatus && state.provisionStatus !== 201) return json(res, state.provisionStatus, { success: false });
-      state.accounts.set(body.email, body);
-      return json(res, 201, { success: true, data: { userId: 'u1', teacherId: 't1', teacherCode: state.teacherCode || body.teacherId, portalUrl: PORTAL } });
+      // Like the real Teacher service: an email it already has is re-linked (keeping its Teacher ID), not refused.
+      const existing = state.accounts.get(body.email);
+      const teacherCode = existing?.teacherCode || state.teacherCode || body.teacherId;
+      state.accounts.set(body.email, { ...body, teacherCode });
+      return json(res, existing ? 200 : 201, {
+        success: true,
+        data: { userId: 'u1', teacherId: 't1', teacherCode, portalUrl: PORTAL, relinked: Boolean(existing), verified: state.verified !== false },
+      });
     }
     if (method === 'PATCH' && url === '/api/internal/teachers/credentials') {
       if (!state.accounts.has(body.email)) return json(res, 404, { success: false, error: { code: 'ACCOUNT_NOT_FOUND' } });
@@ -151,7 +159,7 @@ beforeEach(() => {
     peer.state.calls = [];
     peer.state.down = false;
   }
-  Object.assign(teacherPortal.state, { provisionStatus: null, coursesStatus: null, teacherCode: null, accounts: new Map() });
+  Object.assign(teacherPortal.state, { provisionStatus: null, coursesStatus: null, teacherCode: null, verified: null, accounts: new Map() });
   Object.assign(studentPortal.state, { catalogStatus: null });
   Object.assign(sendgrid.state, { status: null, errorMessage: null });
 });
@@ -255,48 +263,63 @@ test('only an authenticated administrator can create a teacher', async () => {
 });
 
 // ---------------------------------------------------------------------------
-// Credentials: a link, never a password
+// Credentials: a temporary password, emailed only once the login accepts it
 // ---------------------------------------------------------------------------
 
-test('no password is generated, sent to the Teacher Portal, emailed or returned', async () => {
+const tempPasswordIn = (text) => (text.match(/Temporary password: (\S+)/) || [])[1];
+
+test('the emailed temporary password is exactly the one the Teacher Portal stored, and it is returned nowhere', async () => {
   const res = await create({});
   assert.equal(res.status, 201, JSON.stringify(res.body));
 
   const provisioning = portalCall('POST', '/api/internal/teachers');
   assert.ok(provisioning, 'the Teacher Portal login was created');
   assert.equal(provisioning.headers['x-internal-service-key'], 'teacher_key');
-  assert.ok(!('tempPassword' in provisioning.body) && !('password' in provisioning.body));
-  assert.match(provisioning.body.setupTokenHash, /^[a-f0-9]{64}$/);
+  const sent = provisioning.body.tempPassword;
+  assert.ok(sent && sent.length >= 12, 'a temporary password was issued to the login');
+  assert.ok(!('setupTokenHash' in provisioning.body));
 
   const mail = lastMail();
-  assert.ok(!/password\s*:/i.test(mailText(mail)), 'the email carries no password');
-  const everything = JSON.stringify([res.body, provisioning.body, mail.body]);
-  assert.ok(!/tempPassword|tempPasswordFallback|passwordHash/.test(everything));
-  assert.ok(!('passwordHash' in res.body.data) && !('tempPasswordFallback' in res.body.data));
+  assert.equal(tempPasswordIn(mailText(mail)), sent, 'the email carries exactly the password the login was given');
+  assert.ok(mailHtml(mail).includes(sent));
 
+  // Nowhere else: not in the API response, not on the record.
+  assert.ok(!JSON.stringify(res.body).includes(sent));
+  assert.ok(!/tempPassword|passwordHash/.test(JSON.stringify(res.body)));
   const stored = await Teacher.findById(res.body.data._id).select('+passwordHash').lean();
-  assert.ok(stored.passwordHash, 'a hash exists, of a random value nobody was told');
+  assert.ok(!JSON.stringify(stored).includes(sent));
+  assert.ok(stored.passwordHash, 'this record holds only an unusable hash; the Teacher Portal authenticates');
 });
 
-test('the emailed link is the one the Teacher Portal was given, and it expires', async () => {
-  const res = await create({ name: 'Anita Rao' });
-  const provisioning = portalCall('POST', '/api/internal/teachers');
-  const text = mailText(lastMail());
+test('the email is sent only after the Teacher Portal has answered that the login is verified', async () => {
+  const res = await create({});
+  const order = [...teacherPortal.state.calls, ...sendgrid.state.calls].sort((a, b) => a.seq - b.seq).map((c) => (c.url === '/api/internal/teachers' ? 'provision' : c.url.includes('mail') ? 'email' : 'other'));
+  assert.ok(order.indexOf('provision') < order.indexOf('email'), order.join(','));
+  assert.equal(res.body.data.portalProvisioned, true);
 
-  const [, token] = text.match(/setup-password\?token=([a-f0-9]{64})/) || [];
-  assert.ok(token, `a 64-character token link is in the email:\n${text}`);
-  assert.ok(text.includes(`${PORTAL}/setup-password?token=`), 'it points at the Teacher Portal, not at this API');
-  assert.equal(sha256(token), provisioning.body.setupTokenHash, 'the Teacher Portal holds exactly the hash of the emailed token');
-
-  const hours = (new Date(provisioning.body.setupTokenExpiresAt) - Date.now()) / 36e5;
-  assert.ok(hours > 71 && hours <= 72.01, `expires in about 72h, got ${hours}`);
-  assert.equal(new Date(res.body.data.setupLinkExpiresAt).toISOString(), new Date(provisioning.body.setupTokenExpiresAt).toISOString());
-
-  assert.ok(!(await Teacher.findById(res.body.data._id).lean()).setupTokenHash, 'this database never stores the token or its hash');
-  assert.ok(!JSON.stringify(await Teacher.findById(res.body.data._id).lean()).includes(token));
+  teacherPortal.state.verified = false;
+  const unverified = await create({});
+  assert.ok(unverified.body.meta.warnings.includes('PORTAL_PROVISIONING_FAILED'));
+  assert.equal(sendgrid.state.calls.length, 1, 'an unverified login gets no email');
 });
 
-test('the email carries the login URL, the Teacher ID, the assigned courses and first-login instructions', async () => {
+test('temporary passwords are strong, unambiguous, and different every time', async () => {
+  const { generateTempPassword } = await import('../src/utils/tempPassword.js');
+  const seen = new Set();
+  for (let i = 0; i < 300; i += 1) {
+    const p = generateTempPassword();
+    assert.equal(p.length, 14);
+    assert.match(p, /[A-Z]/);
+    assert.match(p, /[a-z]/);
+    assert.match(p, /\d/);
+    assert.match(p, /[@#$%*+=?]/);
+    assert.doesNotMatch(p, /[0O1lIioS5Z2&<>"'\s]/, `no look-alike or mail-hostile characters: ${p}`);
+    seen.add(p);
+  }
+  assert.equal(seen.size, 300);
+});
+
+test('the email carries the login URL, email, Teacher ID, temporary password, courses and the first-login change', async () => {
   const res = await create({});
   const mail = lastMail();
   const text = mailText(mail);
@@ -304,13 +327,14 @@ test('the email carries the login URL, the Teacher ID, the assigned courses and 
   assert.equal(mail.body.personalizations[0].to[0].email, res.body.data.email);
   assert.match(res.body.data.teacherId, /^TCH-\d{4,}$/);
   assert.ok(text.includes(`Teacher ID: ${res.body.data.teacherId}`));
-  assert.ok(text.includes(`${PORTAL}/login`), 'the Teacher Portal login page');
+  assert.ok(text.includes(`Email: ${res.body.data.email}`));
+  assert.ok(text.includes(`Sign in at: ${PORTAL}/login`), 'the Teacher Portal login page, not this API');
   assert.ok(text.includes('GARUD') && text.includes('YODDHA'));
-  assert.match(text, /First sign-in/);
-  assert.match(text, /never send passwords by email/);
+  assert.match(text, /choose a new password as soon as you sign in/);
+  assert.match(text, /Forgot password\?/);
   assert.equal(mail.body.from.email, 'no-reply@example.test');
-  assert.equal(mail.body.tracking_settings.click_tracking.enable, false, 'a one-time link is not rewritten through a tracker');
-  assert.match(mailHtml(mail), /Set your password/);
+  assert.equal(mail.body.tracking_settings.click_tracking.enable, false, 'the sign-in link is not rewritten through a tracker');
+  assert.match(mailHtml(mail), /Sign in to the Teacher Portal/);
 });
 
 test('a teacher id the Teacher Portal changes is adopted, so the email shows one the login accepts', async () => {
@@ -320,19 +344,51 @@ test('a teacher id the Teacher Portal changes is adopted, so the email shows one
   assert.ok(mailText(lastMail()).includes('TCH-0777'));
 });
 
-test('names are escaped in the HTML email', async () => {
-  const { teacherOnboardingEmail } = await import('../src/services/email.service.js');
-  const { html, text } = teacherOnboardingEmail({
+test('names and the password are escaped in the HTML email', async () => {
+  const { teacherCredentialsEmail } = await import('../src/services/email.service.js');
+  const { html, text } = teacherCredentialsEmail({
     name: '<img src=x onerror=alert(1)>',
     teacherId: 'TCH-0001',
+    email: 'a@b.test',
+    tempPassword: 'Ab3#<x>&',
     loginUrl: `${PORTAL}/login`,
-    setupUrl: `${PORTAL}/setup-password?token=${'a'.repeat(64)}`,
-    expiresAt: new Date(Date.now() + 36e5),
     courses: [{ slug: 'garud', title: '"><script>x</script>' }],
   });
   assert.ok(!html.includes('<img src=x') && !html.includes('<script>'));
   assert.ok(html.includes('&lt;img src=x'));
+  assert.ok(html.includes('Ab3#&lt;x&gt;&amp;'));
   assert.ok(text.includes('<img src=x'), 'plain text is plain text');
+  assert.ok(text.includes('Temporary password: Ab3#<x>&'));
+});
+
+// ---------------------------------------------------------------------------
+// The production failure: a deleted teacher created again
+// ---------------------------------------------------------------------------
+
+test('a deleted teacher created again is restored - same record and Teacher ID - and emailed a password their login accepts', async () => {
+  const email = `again.${uniq()}@nalanda.test`;
+  const first = await create({ email });
+  const id = first.body.data._id;
+  const teacherId = first.body.data.teacherId;
+  assert.equal((await call(`/api/admin/teachers/${id}`, { method: 'DELETE' })).status, 200);
+  assert.equal(teacherPortal.state.calls.find((c) => c.url === '/api/internal/teachers/status').body.status, 'inactive');
+
+  teacherPortal.state.calls = [];
+  sendgrid.state.calls = [];
+  const again = await create({ email: email.toUpperCase(), name: 'Priya M.' });
+  assert.equal(again.status, 201, JSON.stringify(again.body));
+  assert.equal(again.body.meta.restored, true);
+  assert.equal(again.body.meta.relinked, true, 'the Teacher Portal re-linked the login it already had');
+  assert.equal(again.body.data._id, id);
+  assert.equal(again.body.data.teacherId, teacherId);
+  assert.equal(again.body.data.name, 'Priya M.');
+  assert.equal(again.body.data.status, 'ACTIVE');
+  assert.equal(await Teacher.countDocuments({ email }), 1, 'one identity, not two');
+
+  const provisioned = portalCall('POST', '/api/internal/teachers').body.tempPassword;
+  assert.equal(tempPasswordIn(mailText(lastMail())), provisioned);
+  assert.equal(teacherPortal.state.accounts.get(email).tempPassword, provisioned, 'the login holds the emailed password');
+  assert.deepEqual(again.body.meta.warnings, []);
 });
 
 // ---------------------------------------------------------------------------
@@ -351,7 +407,7 @@ test('a delivered email is recorded with the provider message id and time', asyn
   assert.deepEqual(res.body.meta.warnings, []);
 });
 
-test('a provider rejection is recorded with the provider\'s own reason, and surfaced', async () => {
+test('a provider rejection is recorded with the provider\'s own reason, and the account is kept for a resend', async () => {
   sendgrid.state.status = 403;
   sendgrid.state.errorMessage = 'The from address does not match a verified Sender Identity.';
   const res = await create({});
@@ -361,15 +417,19 @@ test('a provider rejection is recorded with the provider\'s own reason, and surf
   const t = await Teacher.findById(res.body.data._id).lean();
   assert.equal(t.emailDeliveryStatus, 'failed');
   assert.equal(t.credentialEmailSent, false);
+  assert.equal(t.portalProvisioned, true);
   assert.match(t.emailDeliveryError, /403.*verified Sender Identity/);
   assert.equal(res.body.data.emailDeliveryStatus, 'failed');
-  assert.match(res.body.data.emailDeliveryError, /Sender Identity/);
+  assert.ok(!JSON.stringify(res.body).includes(portalCall('POST', '/api/internal/teachers').body.tempPassword), 'no password fallback in the response');
 });
 
-test('with no email provider configured the status says so, not "sent"', async () => {
+test('with no email provider configured the status says so, not "sent", and the password is not logged', async () => {
   const { env } = await import('../src/config/env.js');
   const key = env.email.sendgridApiKey;
   env.email.sendgridApiKey = '';
+  const logged = [];
+  const original = console.log;
+  console.log = (...args) => logged.push(args.join(' '));
   try {
     const res = await create({});
     const t = await Teacher.findById(res.body.data._id).lean();
@@ -377,13 +437,16 @@ test('with no email provider configured the status says so, not "sent"', async (
     assert.match(t.emailDeliveryError, /No email provider/);
     assert.ok(res.body.meta.warnings.includes('EMAIL_DELIVERY_FAILED'));
     assert.equal(sendgrid.state.calls.length, 0);
+    const pw = portalCall('POST', '/api/internal/teachers').body.tempPassword;
+    assert.ok(!logged.some((line) => line.includes(pw)), 'the stub log names the recipient and subject only');
   } finally {
+    console.log = original;
     env.email.sendgridApiKey = key;
   }
 });
 
-test('if the Teacher Portal login cannot be created, no email is sent - its link would lead nowhere', async () => {
-  teacherPortal.state.provisionStatus = 422;
+test('if the Teacher Portal login cannot be created, no email is sent - its password would not work', async () => {
+  teacherPortal.state.provisionStatus = 409;
   const res = await create({});
   assert.equal(res.status, 201);
   assert.ok(res.body.meta.warnings.includes('PORTAL_PROVISIONING_FAILED'));
@@ -398,27 +461,23 @@ test('if the Teacher Portal login cannot be created, no email is sent - its link
 // Resend
 // ---------------------------------------------------------------------------
 
-test('resend issues a brand-new link: the Teacher Portal is told, the old hash is replaced, and no password appears', async () => {
+test('resend issues a brand-new temporary password to the login, then emails exactly that one', async () => {
   const created = await create({});
   const id = created.body.data._id;
-  const firstHash = portalCall('POST', '/api/internal/teachers').body.setupTokenHash;
+  const first = portalCall('POST', '/api/internal/teachers').body.tempPassword;
   await ageLastAttempt(id);
+  teacherPortal.state.calls = [];
   sendgrid.state.calls = [];
 
   const res = await call(`/api/admin/teachers/${id}/resend-credentials`, { method: 'POST' });
   assert.equal(res.status, 200, JSON.stringify(res.body));
 
-  const patch = portalCall('PATCH', '/api/internal/teachers/credentials');
-  assert.ok(patch);
-  assert.ok(!('newPassword' in patch.body));
-  assert.notEqual(patch.body.setupTokenHash, firstHash, 'a fresh token, so the earlier link dies');
-
-  const text = mailText(lastMail());
-  const [, token] = text.match(/token=([a-f0-9]{64})/);
-  assert.equal(sha256(token), patch.body.setupTokenHash);
+  const again = portalCall('POST', '/api/internal/teachers').body.tempPassword;
+  assert.notEqual(again, first, 'a fresh password, so the earlier one dies');
+  assert.equal(tempPasswordIn(mailText(lastMail())), again);
   assert.match(lastMail().body.subject, /new/i);
-  assert.ok(!/password\s*:/i.test(text));
-  assert.ok(!JSON.stringify(res.body).includes('tempPassword'));
+  assert.match(mailText(lastMail()), /no longer works/);
+  assert.ok(!JSON.stringify(res.body).includes(again));
 
   const t = await Teacher.findById(id).lean();
   assert.equal(t.emailAttempts, 2);
@@ -431,6 +490,18 @@ test('resend cannot be hammered: a second one straight away is refused', async (
   assert.equal(res.status, 429);
   assert.equal(res.body.code, 'RESEND_TOO_SOON');
   assert.equal(sendgrid.state.calls.length, 1, 'only the creation email went out');
+});
+
+test('ten simultaneous resend clicks send exactly one email with one password', async () => {
+  const created = await create({});
+  await ageLastAttempt(created.body.data._id);
+  teacherPortal.state.calls = [];
+  sendgrid.state.calls = [];
+  const replies = await Promise.all(Array.from({ length: 10 }, () => call(`/api/admin/teachers/${created.body.data._id}/resend-credentials`, { method: 'POST' })));
+  assert.equal(replies.filter((r) => r.status === 200).length, 1, replies.map((r) => r.status).join(','));
+  assert.equal(replies.filter((r) => r.status === 429).length, 9);
+  assert.equal(teacherPortal.state.calls.filter((c) => c.url === '/api/internal/teachers').length, 1);
+  assert.equal(sendgrid.state.calls.length, 1);
 });
 
 test('resending after a failed email delivers it, and the status turns to sent', async () => {
@@ -446,6 +517,7 @@ test('resending after a failed email delivers it, and the status turns to sent',
   const t = await Teacher.findById(created.body.data._id).lean();
   assert.equal(t.emailDeliveryStatus, 'sent');
   assert.equal(t.emailDeliveryError, null);
+  assert.equal(await Teacher.countDocuments({ email: created.body.data.email }), 1, 'no duplicate account');
 });
 
 test('resend creates the Teacher Portal login if the original attempt never did, and sends the courses with it', async () => {
@@ -471,7 +543,7 @@ test('resend creates the Teacher Portal login if the original attempt never did,
   assert.equal(sendgrid.state.calls.length, 1);
 });
 
-test('when the Teacher Portal cannot be reached, resend says so and sends nothing', async () => {
+test('when the Teacher Portal cannot be reached, resend says so, sends nothing, and keeps the login marked as created', async () => {
   const created = await create({});
   await ageLastAttempt(created.body.data._id);
   sendgrid.state.calls = [];
@@ -480,25 +552,80 @@ test('when the Teacher Portal cannot be reached, resend says so and sends nothin
   const res = await call(`/api/admin/teachers/${created.body.data._id}/resend-credentials`, { method: 'POST' });
   assert.equal(res.status, 200);
   assert.ok(res.body.meta.warnings.includes('PORTAL_PROVISIONING_FAILED'));
-  assert.equal(sendgrid.state.calls.length, 0, 'a link that was never issued must not be emailed');
-  assert.equal((await Teacher.findById(created.body.data._id).lean()).emailDeliveryStatus, 'not_sent');
+  assert.equal(sendgrid.state.calls.length, 0, 'a password that was never issued must not be emailed');
+  const t = await Teacher.findById(created.body.data._id).lean();
+  assert.equal(t.emailDeliveryStatus, 'not_sent');
+  assert.equal(t.portalProvisioned, true, 'the earlier login still exists, with the earlier password');
+  assert.match(t.emailDeliveryError, /still works/);
 });
 
-test('"reset password" is the same single path: a new link, not a password', async () => {
+test('"reset password" is the same single path: a new temporary password, emailed', async () => {
   const created = await create({});
   await ageLastAttempt(created.body.data._id);
+  sendgrid.state.calls = [];
   const res = await call(`/api/admin/teachers/${created.body.data._id}/reset-password`, { method: 'POST' });
   assert.equal(res.status, 200, JSON.stringify(res.body));
-  assert.match(mailText(lastMail()), /setup-password\?token=[a-f0-9]{64}/);
+  assert.ok(tempPasswordIn(mailText(lastMail())));
 });
 
-test('a suspended teacher cannot be sent a link', async () => {
+test('a suspended teacher cannot be sent sign-in details', async () => {
   const created = await create({});
   await call(`/api/admin/teachers/${created.body.data._id}/suspend`, { method: 'POST', body: { reason: 'Policy review' } });
   await ageLastAttempt(created.body.data._id);
   const res = await call(`/api/admin/teachers/${created.body.data._id}/resend-credentials`, { method: 'POST' });
   assert.equal(res.status, 400);
   assert.equal(res.body.code, 'TEACHER_SUSPENDED');
+});
+
+// ---------------------------------------------------------------------------
+// The Teacher service's "forgot password" emails, sent from here
+// ---------------------------------------------------------------------------
+
+const relay = (body, key = 'student_key') =>
+  fetch(`${base}/api/internal/teacher-emails/password-reset`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(key ? { 'X-Internal-Service-Key': key } : {}) },
+    body: JSON.stringify(body),
+  }).then(async (r) => ({ status: r.status, body: await r.json() }));
+
+const resetBody = (email, over = {}) => ({
+  email,
+  name: 'Priya Menon',
+  teacherId: 'TCH-0001',
+  resetUrl: `${PORTAL}/setup-password?token=${'A'.repeat(43)}&purpose=reset`,
+  expiresAt: new Date(Date.now() + 36e5).toISOString(),
+  ...over,
+});
+
+test('a reset link from the Teacher service is emailed with the fixed template', async () => {
+  const created = await create({});
+  sendgrid.state.calls = [];
+  const res = await relay(resetBody(created.body.data.email));
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(res.body.data.delivered, true);
+  const mail = lastMail();
+  assert.equal(mail.body.personalizations[0].to[0].email, created.body.data.email);
+  assert.match(mail.body.subject, /Reset your Nalanda Nexus Teacher Portal password/);
+  assert.ok(mailText(mail).includes(`${PORTAL}/setup-password?token=${'A'.repeat(43)}&purpose=reset`));
+});
+
+test('the reset relay needs the service key, and refuses deleted teachers and links that point elsewhere', async () => {
+  const created = await create({});
+  sendgrid.state.calls = [];
+  assert.equal((await relay(resetBody(created.body.data.email), '')).status, 401);
+  assert.equal((await relay(resetBody(created.body.data.email), 'wrong')).status, 401);
+
+  const elsewhere = await relay(resetBody(created.body.data.email, { resetUrl: `https://evil.example/setup-password?token=${'A'.repeat(43)}` }));
+  assert.equal(elsewhere.body.data.delivered, false);
+  assert.equal(elsewhere.body.data.reason, 'BAD_LINK');
+  const otherPage = await relay(resetBody(created.body.data.email, { resetUrl: `${PORTAL}/login?token=${'A'.repeat(43)}` }));
+  assert.equal(otherPage.body.data.reason, 'BAD_LINK');
+
+  await call(`/api/admin/teachers/${created.body.data._id}`, { method: 'DELETE' });
+  const deleted = await relay(resetBody(created.body.data.email));
+  assert.equal(deleted.body.data.delivered, false);
+  assert.equal(deleted.body.data.reason, 'TEACHER_NOT_ACTIVE');
+  assert.equal(sendgrid.state.calls.length, 0);
 });
 
 // ---------------------------------------------------------------------------

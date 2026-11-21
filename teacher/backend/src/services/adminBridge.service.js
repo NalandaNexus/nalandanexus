@@ -13,9 +13,9 @@ function isConfigured() {
   return Boolean(env.adminBridge.url && env.adminBridge.serviceKey);
 }
 
-async function call(path, body, method = 'POST') {
+async function call(path, body, method = 'POST', timeoutMs = 5000) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(`${env.adminBridge.url}${path}`, {
       method,
@@ -126,4 +126,25 @@ export async function retractAnnouncementActivity(announcementId) {
   }
 }
 
-export default { pushAssignmentActivity, pushQuizActivity, pushAttendanceSummary, pushAnnouncementActivity, retractAnnouncementActivity };
+/**
+ * Asks Admin - the only service here that sends email - to deliver a teacher's
+ * self-service password-reset link. The link is built and its token hashed and
+ * stored on this side first; Admin only sends its fixed reset template and
+ * refuses a teacher it knows to be deleted or suspended.
+ *
+ * The budget covers a Render cold start (measured at 22-32s): the person has
+ * already been told to check their inbox, so a slow send is fine and a dropped
+ * one is not. Never throws; the outcome is returned for the audit log.
+ */
+export async function sendTeacherPasswordResetEmail({ email, name, teacherId, resetUrl, expiresAt }) {
+  if (!isConfigured()) return { delivered: false, reason: 'NOT_CONFIGURED' };
+  try {
+    const result = await call('/api/internal/teacher-emails/password-reset', { email, name, teacherId, resetUrl, expiresAt }, 'POST', 45000);
+    return { delivered: Boolean(result?.data?.delivered), reason: result?.data?.reason || null };
+  } catch (err) {
+    console.error('[adminBridge] Failed to request the password-reset email:', err.message);
+    return { delivered: false, reason: 'REQUEST_FAILED', error: err.message };
+  }
+}
+
+export default { sendTeacherPasswordResetEmail, pushAssignmentActivity, pushQuizActivity, pushAttendanceSummary, pushAnnouncementActivity, retractAnnouncementActivity };

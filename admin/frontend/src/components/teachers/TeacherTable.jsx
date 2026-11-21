@@ -297,10 +297,10 @@ export default function TeacherTable({
                                     onResendCredentials(teacher);
                                   }}
                                   className="w-full px-3.5 py-1.5 text-xs text-[#22355E] hover:bg-[#F7F5EE] flex items-center gap-2 font-medium"
-                                  title="Emails a new password-setup link. Any earlier link stops working; the teacher's current password is unchanged until they use it."
+                                  title="Emails a new temporary password. Any earlier password stops working, and the teacher chooses a new one when they sign in."
                                 >
                                   <RotateCcw className="w-3.5 h-3.5" />
-                                  <span>Resend Setup Email</span>
+                                  <span>Resend Login Details</span>
                                 </button>
                               )}
                               <button

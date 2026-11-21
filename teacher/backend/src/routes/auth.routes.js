@@ -1,10 +1,11 @@
 import { Router } from 'express';
 import * as authController from '../controllers/auth.controller.js';
 import { authenticate } from '../middleware/auth.js';
-import { authLimiter } from '../middleware/rateLimiter.js';
+import { authLimiter, passwordResetLimiter } from '../middleware/rateLimiter.js';
 import { validate } from '../middleware/validate.js';
 import {
   loginValidator,
+  forgotPasswordValidator,
   changePasswordValidator,
   inspectPasswordSetupValidator,
   completePasswordSetupValidator,
@@ -22,6 +23,8 @@ router.post('/change-password', authenticate, changePasswordValidator, validate,
 // credentials yet. The link's token is the credential - single use, expiring,
 // and stored only as a hash - and these share the login limiter so it cannot be
 // guessed at faster than a password could.
+// "Forgot password": always the same answer, whether or not the address has an account.
+router.post('/forgot-password', passwordResetLimiter, forgotPasswordValidator, validate, authController.forgotPassword);
 router.get('/setup-password/:token', authLimiter, inspectPasswordSetupValidator, validate, authController.inspectPasswordSetup);
 router.post('/setup-password', authLimiter, completePasswordSetupValidator, validate, authController.completePasswordSetup);
 

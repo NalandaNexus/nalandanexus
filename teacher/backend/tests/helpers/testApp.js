@@ -15,7 +15,7 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
  * (including the stand-in's port, which is only known after it listens) must be
  * set before the first dynamic import below.
  */
-export async function bootTestApp({ bridgeConfigured = true } = {}) {
+export async function bootTestApp({ bridgeConfigured = true, adminUrl = '' } = {}) {
   const student = await startFakeStudentPortal();
   const mongod = await MongoMemoryServer.create();
 
@@ -30,6 +30,8 @@ export async function bootTestApp({ bridgeConfigured = true } = {}) {
   process.env.RATE_LIMIT_MAX = '100000';
   process.env.STUDENT_BACKEND_URL = bridgeConfigured ? student.url : '';
   process.env.STUDENT_BACKEND_SERVICE_KEY = bridgeConfigured ? 'test_service_key' : '';
+  // Admin is where "forgot password" emails are sent from; a test that needs it passes a stand-in.
+  process.env.ADMIN_BACKEND_URL = adminUrl;
 
   const { connectDatabase, disconnectDatabase } = await import('../../src/config/db.js');
   await connectDatabase({ retries: 1 });

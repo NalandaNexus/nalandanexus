@@ -46,6 +46,18 @@ export const changePassword = catchAsync(async (req, res) => {
   sendSuccess(res, { message: 'Password updated successfully.', data: null });
 });
 
+/**
+ * Public: "Forgot password". The reply is identical whether or not the address
+ * belongs to an active teacher, and the email itself is sent after the reply.
+ */
+export const forgotPassword = catchAsync(async (req, res) => {
+  await authService.requestPasswordReset({ email: req.body.email, ip: req.ip });
+  sendSuccess(res, {
+    message: 'If an active Teacher Portal account uses that email address, a link to reset its password is on its way. The link works once and expires in 1 hour.',
+    data: null,
+  });
+});
+
 /** Public: what the password-setup page may show for a link, before anything is chosen. */
 export const inspectPasswordSetup = catchAsync(async (req, res) => {
   const details = await authService.inspectPasswordSetup(req.params.token);
@@ -58,4 +70,4 @@ export const completePasswordSetup = catchAsync(async (req, res) => {
   sendSuccess(res, { message: 'Your password has been set. You can now sign in.', data: { email, teacherId } });
 });
 
-export default { login, logout, logoutAllSessions, me, changePassword, inspectPasswordSetup, completePasswordSetup };
+export default { login, logout, logoutAllSessions, me, changePassword, forgotPassword, inspectPasswordSetup, completePasswordSetup };

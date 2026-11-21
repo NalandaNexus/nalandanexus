@@ -25,16 +25,18 @@ export const getById = catchAsync(async (req, res) => {
 });
 
 export const create = catchAsync(async (req, res) => {
-  const { teacher, warnings, setupLinkExpiresAt } = await teacherService.createTeacher(req.body, req.admin, req);
+  const { teacher, warnings, restored, relinked } = await teacherService.createTeacher(req.body, req.admin, req);
+  const verb = restored ? 'Teacher restored' : 'Teacher created';
   const message = warnings.length
-    ? 'Teacher created, but needs attention — see warnings.'
-    : 'Teacher created. A password-setup email has been sent.';
+    ? `${verb}, but needs attention — see warnings.`
+    : `${verb}. Their sign-in details (email, Teacher ID and a temporary password) have been emailed to them.`;
   return sendSuccess(res, {
     statusCode: 201,
-    // No password of any kind is returned: none was generated for anyone to see.
-    data: { ...safe(teacher), setupLinkExpiresAt },
+    // The temporary password is never part of a response: it exists only in the
+    // email the teacher receives. "Resend login details" issues a new one.
+    data: safe(teacher),
     message,
-    meta: { warnings },
+    meta: { warnings, restored: Boolean(restored), relinked: Boolean(relinked) },
   });
 });
 
@@ -70,13 +72,13 @@ export const resendInvite = catchAsync(async (req, res) => {
   return sendSuccess(res, { message: 'Invitation resent' });
 });
 
-/** Sends a new password-setup link. Also what "reset password" does - there is no other way to set one. */
+/** Issues and emails a new temporary password. Every earlier one stops working. */
 export const resendCredentials = catchAsync(async (req, res) => {
-  const { teacher, warnings, setupLinkExpiresAt } = await teacherService.resendCredentials(req.params.id, req.admin, req);
+  const { teacher, warnings } = await teacherService.resendCredentials(req.params.id, req.admin, req);
   const message = warnings.length
-    ? 'A new setup link could not be fully sent — see warnings.'
-    : 'A new password-setup email has been sent. Any earlier link no longer works.';
-  return sendSuccess(res, { data: { ...safe(teacher), setupLinkExpiresAt }, message, meta: { warnings } });
+    ? 'New sign-in details could not be fully sent — see warnings.'
+    : 'New sign-in details have been emailed. Any earlier temporary password no longer works.';
+  return sendSuccess(res, { data: safe(teacher), message, meta: { warnings } });
 });
 
 export const revokeInvite = catchAsync(async (req, res) => {

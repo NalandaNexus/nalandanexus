@@ -58,7 +58,9 @@ const DEFAULT_TIMEOUT_MS = 20000;
 const COLD_START_TIMEOUT_MS = 45000;
 // Lesson-video calls are proxied to the student service, which sleeps when
 // idle too, so they get the same budget as a cold sign-in.
-const COLD_START_PATHS = ['/auth/me', '/auth/login', '/lesson-videos'];
+// The public password pages are often the first thing a teacher opens after an
+// email, so they meet a sleeping backend as often as sign-in does.
+const COLD_START_PATHS = ['/auth/me', '/auth/login', '/auth/forgot-password', '/auth/setup-password', '/lesson-videos'];
 
 function timeoutFor(path) {
   return COLD_START_PATHS.some((p) => path.startsWith(p)) ? COLD_START_TIMEOUT_MS : DEFAULT_TIMEOUT_MS;
@@ -185,6 +187,13 @@ class TeacherApiService {
   }
   changePassword(currentPassword, newPassword) {
     return post('/auth/change-password', { currentPassword, newPassword }).then((r) => r.data);
+  }
+  /**
+   * Public: "Forgot password". The server answers the same way whether or not the
+   * address has an account, so the result is only the message to show.
+   */
+  requestPasswordReset(email) {
+    return post('/auth/forgot-password', { email }).then((r) => r.message);
   }
   /** Public: who an emailed password-setup link is for. Rejects with SETUP_LINK_INVALID for any bad link. */
   inspectPasswordSetup(token) {

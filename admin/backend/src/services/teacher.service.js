@@ -9,14 +9,19 @@ import { recordAuditLog } from './auditLog.service.js';
 import { notifyAllAdmins } from './notification.service.js';
 import { emitEvent } from '../sockets/index.js';
 import * as emailService from './email.service.js';
-import { provisionTeacherAccount, issueTeacherSetupLink, setTeacherCoursesOnPortal, setTeacherAccountStatus } from './teacherBridge.service.js';
+import { provisionTeacherAccount, setTeacherCoursesOnPortal, setTeacherAccountStatus } from './teacherBridge.service.js';
+import { generateTempPassword } from '../utils/tempPassword.js';
 import { fetchStudentCourseCatalog } from './studentCourseBridge.service.js';
 import { publishFacultyToStudents, retractFacultyFromStudents } from './studentFacultyBridge.service.js';
 import { env } from '../config/env.js';
 
 const SORTABLE_FIELDS = ['name', 'email', 'department', 'status', 'rating', 'createdAt', 'lastActive'];
 const INVITATION_TTL_HOURS = 24;
-/** A second "resend" inside this window is almost certainly a double click, and each one invalidates the link just sent. */
+/**
+ * A second "resend" inside this window is almost certainly a double click, and
+ * each one replaces the password just emailed - production saw ten resends in
+ * two seconds, which leaves the teacher with ten emails of which only one works.
+ */
 const RESEND_COOLDOWN_MS = 30 * 1000;
 
 function teacherIdFor(sequence) {
@@ -119,20 +124,15 @@ async function resolveCourses(slugs) {
   return wanted.map((slug) => ({ slug, title: bySlug.get(slug).title, assignedAt: new Date() }));
 }
 
-/** A fresh single-use setup link. Only the hash leaves this process (to the Teacher Portal); the raw token lives in one email. */
-function newSetupLink() {
-  const token = generateSecureToken(32);
-  return {
-    token,
-    tokenHash: hashToken(token),
-    expiresAt: new Date(Date.now() + env.teacherSetupLinkTtlHours * 60 * 60 * 1000),
-  };
-}
-
 /** The Teacher Portal's own address: an explicit override, else what it reported, else what we last learned. */
 function portalBase(teacher, reported) {
   const known = env.teacherPortalUrl || reported || (teacher.portalLoginUrl ? teacher.portalLoginUrl.replace(/\/login$/, '') : '');
   return String(known || '').replace(/\/+$/, '');
+}
+
+/** A password hash nobody can use: this record does not authenticate anyone (the Teacher Portal does). */
+async function unusablePasswordHash() {
+  return Teacher.hashPassword(crypto.randomBytes(32).toString('base64url'));
 }
 
 /** Records the outcome of an email attempt on the teacher exactly as it happened. The caller saves. */
@@ -152,23 +152,6 @@ function recordEmailOutcome(teacher, result) {
   }
 }
 
-/** Builds the onboarding email for a teacher and sends it. Returns the provider outcome, or a not-sent one if there is nowhere to link to. */
-async function sendOnboardingEmail(teacher, link, base, { isResend }) {
-  if (!base) {
-    return { delivered: false, notSent: true, reason: 'PORTAL_URL_UNKNOWN', detail: 'The Teacher Portal address is not known, so there is no page to link to. Set TEACHER_PORTAL_URL or check the Teacher service.' };
-  }
-  const { subject, text, html } = emailService.teacherOnboardingEmail({
-    name: teacher.name,
-    teacherId: teacher.teacherId,
-    loginUrl: `${base}/login`,
-    setupUrl: `${base}/setup-password?token=${link.token}`,
-    expiresAt: link.expiresAt,
-    courses: teacher.assignedCourses || [],
-    isResend,
-  });
-  return emailService.send({ to: teacher.email, subject, text, html });
-}
-
 /** Pushes the teacher's assigned set to the Teacher Portal and records whether it was accepted. The caller saves. */
 async function syncCoursesToPortal(teacher, warnings) {
   const result = await setTeacherCoursesOnPortal({
@@ -183,47 +166,27 @@ async function syncCoursesToPortal(teacher, warnings) {
 }
 
 /**
- * Creates a teacher: a governance record here, a real working login on
- * teacher/backend (a separate service - see teacherBridge.service.js), the
- * courses they were assigned, and a onboarding email with a link to set their
- * own password.
+ * Issues a teacher's sign-in details and emails them - the one sequence behind
+ * both creating a teacher and "Resend login details", in this order:
  *
- * No password is generated, shown, stored in plain text or emailed. The account
- * is created with a random one nobody knows; the emailed single-use link is the
- * only way to choose the real one. Every step that can fail records exactly what
- * happened and is returned as a warning, because a failure on any of them means
- * the teacher cannot get in or sees nothing yet (master doc §41) - none is
- * best-effort-and-silent.
+ *   1. generate a fresh temporary password;
+ *   2. have the Teacher service create the login, or re-link the one it already
+ *      has for this email, store the password's hash, and read it back;
+ *   3. only if that verified, email exactly that password.
  *
- * `courseSlugs` are verified against the live catalogue BEFORE anything is
- * created, so a bad course leaves no half-made teacher behind.
+ * Step 3 waiting on step 2 is the fix. Before, the email went out whatever the
+ * Teacher service answered, and it answered "email already taken" for every
+ * teacher who had been deleted here and created again - so those teachers were
+ * emailed a password their login never had, and were told "invalid email or
+ * password". The plaintext exists only in this function and the email: it is
+ * never stored, logged or returned.
+ *
+ * Mutates the teacher's provisioning state; the caller records the email
+ * outcome and saves.
  */
-export async function createTeacher(data, actor, req) {
-  const { courseSlugs, ...fields } = data;
-
-  const existing = await Teacher.findOne({ email: fields.email.toLowerCase() });
-  if (existing) throw ApiError.conflict('A teacher with this email already exists', 'TEACHER_EMAIL_EXISTS');
-
-  const courses = await resolveCourses(courseSlugs);
-
-  const teacherId = await nextTeacherId();
-  const link = newSetupLink();
-
-  const teacher = await Teacher.create({
-    ...fields,
-    email: fields.email.toLowerCase(),
-    teacherId,
-    status: 'ACTIVE',
-    // Nobody knows this: it is random and never leaves this function. The
-    // teacher sets their own through the emailed link.
-    passwordHash: await Teacher.hashPassword(crypto.randomBytes(32).toString('base64url')),
-    assignedCourses: courses,
-    setupLinkExpiresAt: link.expiresAt,
-  });
-
-  const warnings = [];
-
-  const provisionResult = await provisionTeacherAccount({
+async function issueCredentials(teacher, { isResend, warnings }) {
+  const tempPassword = generateTempPassword();
+  const portal = await provisionTeacherAccount({
     name: teacher.name,
     email: teacher.email,
     phone: teacher.phone,
@@ -232,47 +195,147 @@ export async function createTeacher(data, actor, req) {
     subject: teacher.subject,
     teacherId: teacher.teacherId,
     avatarUrl: teacher.avatar || undefined,
-    setupTokenHash: link.tokenHash,
-    setupTokenExpiresAt: link.expiresAt.toISOString(),
+    tempPassword,
   });
-  teacher.portalProvisioned = provisionResult.provisioned;
-  if (!provisionResult.provisioned) warnings.push('PORTAL_PROVISIONING_FAILED');
 
-  if (provisionResult.provisioned && provisionResult.portalUrl) teacher.portalLoginUrl = `${provisionResult.portalUrl}/login`;
-
-  // The Teacher ID in the email must be one the login accepts. The Teacher
-  // Portal keeps the one asked for unless it was already taken there.
-  if (provisionResult.provisioned && provisionResult.teacherCode && provisionResult.teacherCode !== teacher.teacherId) {
-    const clash = await Teacher.exists({ teacherId: provisionResult.teacherCode, _id: { $ne: teacher._id } });
-    if (clash) warnings.push('TEACHER_ID_MISMATCH');
-    else teacher.teacherId = provisionResult.teacherCode;
+  if (!portal.provisioned) {
+    // A resend that cannot reach the Teacher Portal changes nothing there: the
+    // last password sent still works, so the record keeps saying it has a login.
+    if (!isResend) teacher.portalProvisioned = false;
+    warnings.push('PORTAL_PROVISIONING_FAILED');
+    return {
+      portal,
+      email: {
+        delivered: false,
+        notSent: true,
+        reason: 'PORTAL_PROVISIONING_FAILED',
+        detail: isResend
+          ? 'The Teacher Portal could not be reached, so no new password was issued and nothing was emailed. The password sent before still works. Please try again in a moment.'
+          : 'The Teacher Portal login could not be created, so no email was sent - its password would not have worked. Use "Resend login details" once the Teacher Portal is reachable.',
+      },
+    };
   }
+
+  teacher.portalProvisioned = true;
+  if (portal.portalUrl) teacher.portalLoginUrl = `${portal.portalUrl}/login`;
+
+  // The Teacher ID in the email must be one the login accepts. A new login takes
+  // the one asked for unless it was taken there; a re-linked one keeps its own.
+  if (portal.teacherCode && portal.teacherCode !== teacher.teacherId) {
+    const clash = await Teacher.exists({ teacherId: portal.teacherCode, _id: { $ne: teacher._id } });
+    if (clash) warnings.push('TEACHER_ID_MISMATCH');
+    else teacher.teacherId = portal.teacherCode;
+  }
+
+  // The login exists now, so the courses can follow it. A resend only re-sends
+  // a set the Teacher Portal has not accepted yet.
+  if ((teacher.assignedCourses || []).length && (!isResend || teacher.courseSyncStatus !== 'synced')) {
+    await syncCoursesToPortal(teacher, warnings);
+  }
+
+  const base = portalBase(teacher, portal.portalUrl);
+  let email;
+  if (!base) {
+    email = {
+      delivered: false,
+      notSent: true,
+      reason: 'PORTAL_URL_UNKNOWN',
+      detail: 'The Teacher Portal address is not known, so there is no sign-in page to send the teacher to. Set TEACHER_PORTAL_URL, then use "Resend login details".',
+    };
+  } else {
+    const message = emailService.teacherCredentialsEmail({
+      name: teacher.name,
+      teacherId: teacher.teacherId,
+      email: teacher.email,
+      tempPassword,
+      loginUrl: `${base}/login`,
+      courses: teacher.assignedCourses || [],
+      isResend,
+    });
+    email = await emailService.send({ to: teacher.email, ...message });
+  }
+  if (!email.delivered) warnings.push('EMAIL_DELIVERY_FAILED');
+  return { portal, email };
+}
+
+/**
+ * Creates a teacher: a governance record here, a real working login on
+ * teacher/backend (a separate service - see teacherBridge.service.js), the
+ * courses they were assigned, and an email with their sign-in details.
+ *
+ * An email that belongs to a teacher who was deleted brings that teacher back -
+ * same record, same Teacher ID, their history intact - rather than being refused
+ * or creating a second identity for one person; the Teacher service likewise
+ * re-links its existing login. An email in use by a current teacher is refused.
+ *
+ * Every step that can fail records exactly what happened and is returned as a
+ * warning, because a failure on any of them means the teacher cannot get in or
+ * sees nothing yet (master doc §41) - none is best-effort-and-silent.
+ *
+ * `courseSlugs` are verified against the live catalogue BEFORE anything is
+ * created, so a bad course leaves no half-made teacher behind.
+ */
+export async function createTeacher(data, actor, req) {
+  const { courseSlugs, ...fields } = data;
+  const email = String(fields.email).trim().toLowerCase();
+
+  const existing = await Teacher.findOne({ email });
+  if (existing && !existing.deletedAt) throw ApiError.conflict('A teacher with this email already exists', 'TEACHER_EMAIL_EXISTS');
+
+  const courses = await resolveCourses(courseSlugs);
+
+  let teacher;
+  const restored = Boolean(existing);
+  if (existing) {
+    Object.assign(existing, fields, {
+      email,
+      deletedAt: null,
+      status: 'ACTIVE',
+      suspensionReason: undefined,
+      assignedCourses: courses,
+      passwordHash: await unusablePasswordHash(),
+      portalProvisioned: false,
+      credentialEmailSent: false,
+      emailDeliveryStatus: null,
+      emailDeliveryError: null,
+      emailProviderMessageId: null,
+      emailLastAttemptAt: null,
+      emailAttempts: 0,
+      setupLinkExpiresAt: null,
+      courseSyncStatus: null,
+      courseSyncError: null,
+    });
+    await existing.save();
+    teacher = existing;
+  } else {
+    teacher = await Teacher.create({
+      ...fields,
+      email,
+      teacherId: await nextTeacherId(),
+      status: 'ACTIVE',
+      passwordHash: await unusablePasswordHash(),
+      assignedCourses: courses,
+    });
+  }
+
+  const warnings = [];
+  const { portal, email: emailResult } = await issueCredentials(teacher, { isResend: false, warnings });
 
   await recordAuditLog({
     actor,
     action: 'teacher.provisioned',
     entityType: 'Teacher',
     entityId: teacher._id,
-    metadata: { email: teacher.email, provisioned: provisionResult.provisioned, reason: provisionResult.reason },
-    result: provisionResult.provisioned ? 'SUCCESS' : 'FAILURE',
+    metadata: { email: teacher.email, provisioned: portal.provisioned, relinked: Boolean(portal.relinked), reason: portal.reason, status: portal.status },
+    result: portal.provisioned ? 'SUCCESS' : 'FAILURE',
     req,
   });
 
-  // Only a teacher who actually has a login can use the courses and the link; a
-  // later "resend" retries both.
-  let emailResult;
-  if (provisionResult.provisioned) {
-    if (courses.length) await syncCoursesToPortal(teacher, warnings);
-    emailResult = await sendOnboardingEmail(teacher, link, portalBase(teacher, provisionResult.portalUrl), { isResend: false });
-  } else {
-    emailResult = { delivered: false, notSent: true, reason: 'PORTAL_PROVISIONING_FAILED', detail: 'The Teacher Portal login could not be created, so no email was sent (its link would lead nowhere). Use Resend once the Teacher Portal is reachable.' };
-    if (courses.length) {
-      teacher.courseSyncStatus = 'failed';
-      teacher.courseSyncError = 'Not sent: the Teacher Portal login could not be created.';
-    }
+  if (!portal.provisioned && courses.length) {
+    teacher.courseSyncStatus = 'failed';
+    teacher.courseSyncError = 'Not sent: the Teacher Portal login could not be created.';
   }
   recordEmailOutcome(teacher, emailResult);
-  if (!emailResult.delivered && provisionResult.provisioned) warnings.push('EMAIL_DELIVERY_FAILED');
 
   // Only if the admin asked for it - a new teacher is not public by default.
   if (teacher.showOnWebsite) {
@@ -284,7 +347,7 @@ export async function createTeacher(data, actor, req) {
 
   await recordAuditLog({
     actor,
-    action: 'teacher.created',
+    action: restored ? 'teacher.restored' : 'teacher.created',
     entityType: 'Teacher',
     entityId: teacher._id,
     metadata: {
@@ -292,6 +355,7 @@ export async function createTeacher(data, actor, req) {
       teacherId: teacher.teacherId,
       courses: courses.map((c) => c.slug),
       portalProvisioned: teacher.portalProvisioned,
+      relinked: Boolean(portal.relinked),
       emailDeliveryStatus: teacher.emailDeliveryStatus,
       courseSyncStatus: teacher.courseSyncStatus,
     },
@@ -299,84 +363,53 @@ export async function createTeacher(data, actor, req) {
   });
   emitEvent.teacherCreated(publicShape(teacher));
 
-  return { teacher, warnings, setupLinkExpiresAt: link.expiresAt };
+  return { teacher, warnings, restored, relinked: Boolean(portal.relinked) };
 }
 
 /**
- * Sends a teacher a NEW password-setup link: the one used when the original
- * email never arrived, expired, or was lost, and the one behind "reset password".
+ * "Resend login details": a NEW temporary password, issued to the Teacher
+ * Portal login and then emailed - for a teacher whose email never arrived, who
+ * lost it, or who is locked out. Every earlier temporary password stops working,
+ * and the teacher must choose a new one at sign-in.
  *
- * Replaces the pending link on the Teacher Portal, so any earlier one stops
- * working; changes nothing else - a teacher who is already working is not
- * locked out and keeps their password until they actually use the new link. If
- * the Teacher Portal login was never created (the original creation could not
- * reach it), this creates it. If the course set was not accepted last time, it
- * is sent again. Never reveals or generates a password. Same honesty contract
- * as creation: every outcome is recorded and surfaced, never assumed.
+ * If the Teacher Portal login was never created (the original creation could not
+ * reach it) this creates it; if it was deactivated, this re-links it. A burst of
+ * clicks sends one email: the cooldown is claimed atomically, so concurrent
+ * requests cannot all pass the check before any of them records an attempt.
  */
 export async function resendCredentials(id, actor, req) {
-  const teacher = await Teacher.findOne({ _id: id, deletedAt: null });
-  if (!teacher) throw ApiError.notFound('Teacher not found', 'TEACHER_NOT_FOUND');
-  if (teacher.status === 'SUSPENDED') throw ApiError.badRequest('Cannot resend credentials to a suspended teacher.', 'TEACHER_SUSPENDED');
+  const current = await Teacher.findOne({ _id: id, deletedAt: null });
+  if (!current) throw ApiError.notFound('Teacher not found', 'TEACHER_NOT_FOUND');
+  if (current.status === 'SUSPENDED') throw ApiError.badRequest('Cannot resend credentials to a suspended teacher.', 'TEACHER_SUSPENDED');
+  if (current.status === 'INACTIVE') throw ApiError.badRequest('Reactivate this teacher before sending them sign-in details.', 'TEACHER_INACTIVE');
 
-  const sinceLast = teacher.emailLastAttemptAt ? Date.now() - teacher.emailLastAttemptAt.getTime() : Infinity;
-  if (sinceLast < RESEND_COOLDOWN_MS) {
-    throw ApiError.tooMany('A setup email was only just sent. Please wait a few seconds before sending another.', 'RESEND_TOO_SOON');
+  const now = new Date();
+  const teacher = await Teacher.findOneAndUpdate(
+    {
+      _id: current._id,
+      deletedAt: null,
+      $or: [{ emailLastAttemptAt: null }, { emailLastAttemptAt: { $lte: new Date(now.getTime() - RESEND_COOLDOWN_MS) } }],
+    },
+    { $set: { emailLastAttemptAt: now } },
+    { new: true }
+  );
+  if (!teacher) {
+    throw ApiError.tooMany('Sign-in details were only just sent. Please wait a few seconds before sending them again.', 'RESEND_TOO_SOON');
   }
 
   const warnings = [];
-  const link = newSetupLink();
+  const { portal, email: emailResult } = await issueCredentials(teacher, { isResend: true, warnings });
 
-  let portal = await issueTeacherSetupLink({ email: teacher.email, setupTokenHash: link.tokenHash, setupTokenExpiresAt: link.expiresAt.toISOString() });
-  let reachedPortal = portal.issued;
-  let reportedUrl = portal.portalUrl;
-
-  // No account there yet (creation could not reach the Teacher Portal): make it.
-  if (!portal.issued && portal.status === 404) {
-    const created = await provisionTeacherAccount({
-      name: teacher.name,
-      email: teacher.email,
-      phone: teacher.phone,
-      title: teacher.designation,
-      department: teacher.department,
-      subject: teacher.subject,
-      teacherId: teacher.teacherId,
-      avatarUrl: teacher.avatar || undefined,
-      setupTokenHash: link.tokenHash,
-      setupTokenExpiresAt: link.expiresAt.toISOString(),
-    });
-    portal = created;
-    reachedPortal = created.provisioned;
-    reportedUrl = created.portalUrl;
-    if (created.provisioned && created.teacherCode && created.teacherCode !== teacher.teacherId) {
-      const clash = await Teacher.exists({ teacherId: created.teacherCode, _id: { $ne: teacher._id } });
-      if (clash) warnings.push('TEACHER_ID_MISMATCH');
-      else teacher.teacherId = created.teacherCode;
-    }
-  }
-
-  teacher.portalProvisioned = reachedPortal;
   await recordAuditLog({
     actor,
     action: 'teacher.provisioned',
     entityType: 'Teacher',
     entityId: teacher._id,
-    metadata: { email: teacher.email, provisioned: reachedPortal, reason: portal.reason, resend: true },
-    result: reachedPortal ? 'SUCCESS' : 'FAILURE',
+    metadata: { email: teacher.email, provisioned: portal.provisioned, relinked: Boolean(portal.relinked), reason: portal.reason, status: portal.status, resend: true },
+    result: portal.provisioned ? 'SUCCESS' : 'FAILURE',
     req,
   });
 
-  let emailResult;
-  if (reachedPortal) {
-    teacher.setupLinkExpiresAt = link.expiresAt;
-    if (reportedUrl) teacher.portalLoginUrl = `${reportedUrl}/login`;
-    if (teacher.courseSyncStatus !== 'synced' && (teacher.assignedCourses || []).length) await syncCoursesToPortal(teacher, warnings);
-    emailResult = await sendOnboardingEmail(teacher, link, portalBase(teacher, reportedUrl), { isResend: true });
-    if (!emailResult.delivered) warnings.push('EMAIL_DELIVERY_FAILED');
-  } else {
-    warnings.push('PORTAL_PROVISIONING_FAILED');
-    emailResult = { delivered: false, notSent: true, reason: 'PORTAL_UNREACHABLE', detail: 'The Teacher Portal could not be reached, so no new link was issued and no email was sent. Nothing was changed - please try again in a moment.' };
-  }
   recordEmailOutcome(teacher, emailResult);
   await teacher.save();
 
@@ -391,7 +424,45 @@ export async function resendCredentials(id, actor, req) {
   });
   emitEvent.teacherUpdated(publicShape(teacher));
 
-  return { teacher, warnings, setupLinkExpiresAt: reachedPortal ? link.expiresAt : null };
+  return { teacher, warnings };
+}
+
+/**
+ * Delivers a teacher's self-service password-reset link on the Teacher
+ * service's behalf (it has no mail sender of its own). The Teacher service has
+ * already checked the account, created the link and stored its hash; this only
+ * sends the fixed reset template.
+ *
+ * Refuses a teacher this portal knows to be deleted, suspended or inactive, and
+ * a link that does not point at the Teacher Portal's own password page, so the
+ * relay cannot be used to mail anything else to anyone.
+ */
+export async function sendTeacherPasswordResetEmail({ email, name, teacherId, resetUrl, expiresAt }) {
+  const address = String(email).trim().toLowerCase();
+  const record = await Teacher.findOne({ email: address }).select('status deletedAt portalLoginUrl name teacherId');
+  if (record && (record.deletedAt || record.status === 'SUSPENDED' || record.status === 'INACTIVE')) {
+    return { delivered: false, reason: 'TEACHER_NOT_ACTIVE' };
+  }
+
+  let url;
+  try {
+    url = new URL(resetUrl);
+  } catch {
+    return { delivered: false, reason: 'BAD_LINK' };
+  }
+  const expectedBase = portalBase(record || {}, null);
+  const pathOk = url.pathname === '/setup-password' && /^[A-Za-z0-9_-]{32,128}$/.test(url.searchParams.get('token') || '');
+  const originOk = /^https?:$/.test(url.protocol) && (!expectedBase || url.origin === new URL(expectedBase).origin);
+  if (!pathOk || !originOk) return { delivered: false, reason: 'BAD_LINK' };
+
+  const message = emailService.teacherPasswordResetEmail({
+    name: record?.name || name || 'there',
+    teacherId: record?.teacherId || teacherId || null,
+    resetUrl: url.toString(),
+    expiresAt,
+  });
+  const result = await emailService.send({ to: address, ...message });
+  return { delivered: Boolean(result.delivered), reason: result.delivered ? null : result.reason || 'NOT_SENT' };
 }
 
 /**
@@ -419,7 +490,7 @@ export async function setTeacherCourses(id, slugs, actor, req) {
   } else {
     teacher.courseSyncedAt = new Date();
     teacher.courseSyncStatus = 'failed';
-    teacher.courseSyncError = 'The Teacher Portal login has not been created yet. Send the setup email first; the courses are sent with it.';
+    teacher.courseSyncError = 'The Teacher Portal login has not been created yet. Use "Resend login details" first; the courses are sent with it.';
     warnings.push('COURSE_SYNC_FAILED');
   }
   await teacher.save();
@@ -616,6 +687,7 @@ export default {
   getTeacherAuthoredCourses,
   createTeacher,
   resendCredentials,
+  sendTeacherPasswordResetEmail,
   setTeacherCourses,
   updateTeacher,
   deleteTeacher,

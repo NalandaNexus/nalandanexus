@@ -94,10 +94,6 @@ export const env = {
   // to override that (a custom domain in front of it).
   teacherPortalUrl: stripTrailingSlash(process.env.TEACHER_PORTAL_URL || ''),
 
-  // How long a teacher's password-setup link works. Long enough that a new
-  // teacher who does not open their email on the day is not locked out, short
-  // enough that a forwarded or leaked link is not a standing credential.
-  teacherSetupLinkTtlHours: Math.min(168, Math.max(1, parseInt(process.env.TEACHER_SETUP_LINK_TTL_HOURS, 10) || 72)),
 
   // Email (optional - if unset, emails are logged to console instead of
   // sent). Sent via SendGrid's HTTPS API (not SMTP) - Render blocks outbound

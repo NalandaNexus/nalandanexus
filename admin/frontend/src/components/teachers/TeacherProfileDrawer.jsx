@@ -403,7 +403,7 @@ export default function TeacherProfileDrawer({
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-[#22355E]">Auth Mechanism:</span>
-                  <span className="text-[#9B9690] text-right">bcrypt; password set by the teacher via an emailed single-use link</span>
+                  <span className="text-[#9B9690] text-right">bcrypt; emailed temporary password, changed by the teacher at first sign-in</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-[#22355E]">Teacher ID (username):</span>
@@ -442,7 +442,7 @@ export default function TeacherProfileDrawer({
                   className="w-full py-2 px-3 rounded-xl bg-white border border-[#DFDACB] hover:bg-[#EDEAE0] text-[#22355E] font-semibold text-xs transition-colors flex items-center justify-center gap-2"
                 >
                   <KeyRound className="w-3.5 h-3.5" />
-                  <span>Send password reset link</span>
+                  <span>Email a new temporary password</span>
                 </button>
               </div>
             </div>
@@ -466,10 +466,10 @@ export default function TeacherProfileDrawer({
               type="button"
               onClick={() => onResendCredentials(teacher)}
               className="px-3 py-1.5 rounded-xl bg-[#22355E] text-white hover:bg-[#1A2A4A] text-xs font-semibold transition-colors flex items-center gap-1.5"
-              title="Emails a new password-setup link. Any earlier link stops working; the teacher's current password is unchanged until they use it."
+              title="Emails a new temporary password. Any earlier password stops working, and the teacher chooses a new one when they sign in."
             >
               <RotateCcw className="w-3.5 h-3.5" />
-              <span>Resend Setup Email</span>
+              <span>Resend Login Details</span>
             </button>
           )}
 

@@ -26,6 +26,8 @@ export default function SetupPasswordPage() {
   const [searchParams] = useSearchParams();
   // Captured once. Reading it again after the address is cleaned would find nothing.
   const [token] = useState(() => searchParams.get('token') || '');
+  // A "Forgot password" link rather than a first-time setup: only the wording differs.
+  const [isReset] = useState(() => searchParams.get('purpose') === 'reset');
 
   const [phase, setPhase] = useState('checking'); // checking | invalid | ready | done
   const [details, setDetails] = useState(null);
@@ -146,7 +148,8 @@ export default function SetupPasswordPage() {
           </div>
         </div>
         <p className="text-xs text-[#9B9690] leading-relaxed">
-          Ask your administrator to send a new setup email. If you have already chosen a password, you can sign in now.
+          Request a new link with “Forgot password?” on the sign-in page, or ask your administrator to email you new sign-in details. If you have
+          already chosen a password, you can sign in now.
         </p>
         <Link to="/login" className="block w-full text-center py-2.5 bg-[#22355E] hover:bg-[#314B82] text-white text-xs font-bold rounded-xl">
           Go to sign in
@@ -193,8 +196,10 @@ export default function SetupPasswordPage() {
           <KeyRound className="w-5 h-5" />
         </div>
         <div>
-          <h1 className="text-base font-bold text-[#EDEAE0]">Choose your password</h1>
-          <p className="text-xs text-[#9B9690] mt-0.5">Welcome{details?.name ? `, ${details.name}` : ''}. This link works once.</p>
+          <h1 className="text-base font-bold text-[#EDEAE0]">{isReset ? 'Choose a new password' : 'Choose your password'}</h1>
+          <p className="text-xs text-[#9B9690] mt-0.5">
+            {isReset ? `Hi${details?.name ? ` ${details.name}` : ''}. This link works once and signs you out everywhere else.` : `Welcome${details?.name ? `, ${details.name}` : ''}. This link works once.`}
+          </p>
         </div>
       </div>
 

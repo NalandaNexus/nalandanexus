@@ -14,6 +14,9 @@ const NEVER_SANITISE = new Set([
   'currentPassword',
   'newPassword',
   'confirmPassword',
+  // The temporary password Admin is about to email: stored any differently from
+  // what the email says, and the teacher is told their password is invalid.
+  'tempPassword',
   'token',
   'refreshToken',
   'accessToken',

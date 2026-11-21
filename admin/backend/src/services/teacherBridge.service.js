@@ -103,47 +103,42 @@ async function call(path, options) {
 }
 
 /**
- * Creates the real teacher/backend login. Returns a real status — never throws,
- * never silently succeeds.
+ * Issues the teacher's real Teacher Portal login with a temporary password -
+ * used when a teacher is created and when their credentials are resent.
+ * Returns a real status; never throws, never silently succeeds.
  *
- * No password is sent. What crosses is the SHA-256 of a setup-link token and
- * when it expires: the Teacher Portal creates the account with a random
- * password nobody knows, and the person sets their own through the link. On
- * success the answer carries the Teacher ID that was actually issued (the one
- * asked for, unless it was taken) and the address of the Teacher Portal's login
- * page, so the email links to somewhere real.
+ * The Teacher service creates the login, or re-links the one it already has for
+ * this email (a teacher deleted here and created again), stores the password's
+ * bcrypt hash, and reads it back before answering. Only an answer that says
+ * `verified` counts as provisioned: the caller emails the password only then,
+ * which is what keeps the email and the login from ever disagreeing.
+ *
+ * The plaintext crosses only this shared-secret, server-to-server call, and is
+ * not echoed back. On success the answer carries the Teacher ID the login
+ * actually has (a re-linked login keeps its own) and the Teacher Portal's
+ * address, so the email links to the real login page.
  */
-export async function provisionTeacherAccount({ name, email, phone, title, department, subject, teacherId, avatarUrl, setupTokenHash, setupTokenExpiresAt }) {
+export async function provisionTeacherAccount({ name, email, phone, title, department, subject, teacherId, avatarUrl, tempPassword }) {
   if (!isConfigured()) return { provisioned: false, reason: 'NOT_CONFIGURED' };
   try {
     const result = await call('/api/internal/teachers', {
       method: 'POST',
-      body: JSON.stringify({ name, email, phone, title, department, subject, teacherId, avatarUrl, setupTokenHash, setupTokenExpiresAt }),
+      body: JSON.stringify({ name, email, phone, title, department, subject, teacherId, avatarUrl, tempPassword }),
     });
-    return { provisioned: true, teacherCode: result?.data?.teacherCode || null, portalUrl: result?.data?.portalUrl || null };
+    const data = result?.data || {};
+    // An older Teacher service answers 201 without `verified`; its 201 still
+    // meant the account was created with this password.
+    if (data.verified === false) return { provisioned: false, reason: 'NOT_VERIFIED' };
+    return {
+      provisioned: true,
+      relinked: Boolean(data.relinked),
+      teacherCode: data.teacherCode || null,
+      portalUrl: data.portalUrl || null,
+    };
   } catch (err) {
+    // err.message carries the peer's status and error body - never the request body.
     console.error('[teacherBridge] Failed to provision Teacher Portal account:', err.message);
-    return { provisioned: false, reason: 'REQUEST_FAILED', error: err.message };
-  }
-}
-
-/**
- * Replaces a teacher's pending password-setup link on the Teacher Portal - the
- * backend leg of "resend". The old link stops working; the password and any
- * sessions are untouched until the new link is actually used. Same honesty
- * contract as provisioning: a real status is always returned.
- */
-export async function issueTeacherSetupLink({ email, setupTokenHash, setupTokenExpiresAt }) {
-  if (!isConfigured()) return { issued: false, reason: 'NOT_CONFIGURED' };
-  try {
-    const result = await call('/api/internal/teachers/credentials', {
-      method: 'PATCH',
-      body: JSON.stringify({ email, setupTokenHash, setupTokenExpiresAt }),
-    });
-    return { issued: true, teacherCode: result?.data?.teacherCode || null, portalUrl: result?.data?.portalUrl || null };
-  } catch (err) {
-    console.error('[teacherBridge] Failed to issue Teacher Portal setup link:', err.message);
-    return { issued: false, reason: 'REQUEST_FAILED', error: err.message, status: err.status };
+    return { provisioned: false, reason: 'REQUEST_FAILED', error: err.message, status: err.status };
   }
 }
 
@@ -322,7 +317,6 @@ export default {
   reassignBatchTeacher,
   listBatchStudents,
   provisionTeacherAccount,
-  issueTeacherSetupLink,
   setTeacherCoursesOnPortal,
   setTeacherAccountStatus,
   pushCourseAssignment,

@@ -99,9 +99,13 @@ An administrator creates a teacher in **Admin → Teachers → Create Teacher**.
 | :--- | :--- |
 | **Required** | Full name, email, subject *or* department, and at least one course (PRARAMBH / GARUD / YODDHA — read live from the student catalogue) |
 | **Optional** | Mobile number, designation, profile photo |
-| **Generated** | Teacher ID (`TCH-0001`, also accepted as the username at login). No password is generated for anyone to see or share. |
+| **Generated** | Teacher ID (`TCH-0001`, also accepted as the username at login) and a temporary password that only the teacher ever sees, in their email. |
 
-The teacher is emailed a **single-use, time-limited link** (72 hours by default) to choose their own password at the Teacher Portal's `/setup-password` page. No password is ever emailed or returned by an API. Admin shows whether the email was accepted by the provider (and, if not, the provider's own reason), and **Resend setup email** issues a new link and kills the old one.
+The teacher is emailed their **email, Teacher ID and a temporary password**, and must choose a new password the first time they sign in. The email is sent only after the Teacher service has created (or re-linked) the login and read it back to confirm it accepts exactly that password, so the email and the login cannot disagree. The password is never stored in plain text, logged, or returned by an API. Admin shows whether the email was accepted by the provider (and, if not, the provider's own reason); **Resend login details** issues a new temporary password and the old one stops working.
+
+A teacher who was deleted and is created again with the same email is **restored** (same record and Teacher ID), and the Teacher service re-links and reactivates their existing login rather than refusing it. Refusing it is what used to send teachers a password their login never had.
+
+**Forgot password.** The Teacher Portal's sign-in page lets a teacher request a single-use reset link (valid for 1 hour, at most one email a minute) at the Teacher Portal's `/setup-password` page. The answer is the same whether or not the address has an account. Using the link replaces the password and signs the account out everywhere.
 
 **Course-wise visibility.** A teacher sees every student enrolled in each course assigned to them — and only those — under *Courses → View students*. It updates by itself: the student portal already sends a student's record after every purchase, coupon, free enrolment and profile edit, and the teacher portal applies it as it arrives. Assigning a course loads the students already enrolled. Grades, attendance and progress stay with the batch's own teacher; the course roster is read-only.
 
@@ -112,7 +116,7 @@ Settings (all optional except the email key):
 | admin | `SENDGRID_API_KEY` | Without it no email is sent (status shows *Email not configured*). |
 | admin | `SMTP_FROM` | Must be a **verified sender** in SendGrid, or every send is rejected (403). |
 | admin | `TEACHER_PORTAL_URL` | Leave unset: the Teacher service reports its own `CLIENT_URL`. Override only for a custom domain. |
-| admin | `TEACHER_SETUP_LINK_TTL_HOURS` | Link lifetime, 1–168 (default 72). |
-| teacher | `CLIENT_URL` | Must be the address the Teacher Portal frontend is served from — the email links there. |
+| teacher | `CLIENT_URL` | Must be the address the Teacher Portal frontend is served from — the emails link there. |
+| teacher | `ADMIN_BACKEND_URL` | Admin's API address. "Forgot password" emails are sent through Admin, authenticated with the shared `STUDENT_BACKEND_SERVICE_KEY`. |
 
-**Deploy order:** student → teacher → admin. The teacher service still accepts the older temporary-password provisioning, so an Admin that has not been updated yet keeps working while the others roll out.
+**Deploy order:** student → teacher → admin. The teacher service still accepts the older provisioning calls, so an Admin that has not been updated yet keeps working while the others roll out.

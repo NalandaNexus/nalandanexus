@@ -44,4 +44,20 @@ export const authLimiter = rateLimit({
   handler: rateLimitedJson,
 });
 
+/**
+ * "Forgot password" always answers success (so it cannot reveal who has an
+ * account), which means authLimiter - counting only failures - would never stop
+ * it. This one counts every request, so the form cannot be used to flood a
+ * teacher's inbox or probe addresses at speed. The service also sends at most
+ * one email per account per minute on top of this.
+ */
+export const passwordResetLimiter = rateLimit({
+  store: new MongoRateLimitStore({ prefix: 'pwreset' }),
+  windowMs: env.rateLimitWindowMs,
+  max: env.authRateLimitMax,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitedJson,
+});
+
 export default generalLimiter;

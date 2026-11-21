@@ -43,17 +43,17 @@ const userSchema = new Schema(
     // can only ever be used to change itself, never to access the portal.
     mustChangePassword: { type: Boolean, default: false },
 
-    // Password setup by emailed link (see services/auth.service.js#completePasswordSetup).
-    // An account an administrator creates is given a random password nobody
-    // knows, and the person sets their own through a single-use, time-limited
-    // link - so no password is ever chosen by, shown to, or emailed by anyone
-    // else. Only the SHA-256 of the link's token is stored: a database read
-    // cannot be turned into a working link. Cleared the moment it is used.
+    // A single-use, time-limited link to choose a password: the self-service
+    // "Forgot password" email (services/auth.service.js#requestPasswordReset),
+    // or an older Admin's setup-link onboarding. Only the SHA-256 of the link's
+    // token is stored, so a database read cannot be turned into a working link.
+    // Cleared the moment it is used (completePasswordSetup).
     setupTokenHash: { type: String, select: false, default: undefined },
     setupTokenExpiresAt: { type: Date, select: false, default: undefined },
-    // When the person last chose their own password; null for an account still
-    // waiting on its first setup.
+    // When the person last chose their own password through a link.
     passwordSetAt: { type: Date, default: null },
+    // When a reset link was last emailed, so repeated requests cannot flood the inbox.
+    passwordResetRequestedAt: { type: Date, default: null, select: false },
   },
   { timestamps: true }
 );

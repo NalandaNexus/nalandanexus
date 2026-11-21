@@ -9,8 +9,8 @@ import { adminApi } from '../services/adminApi';
 import { useRealtimeEvents } from '../hooks/useRealtimeEvents';
 
 const RESEND_WARNING_COPY = {
-  PORTAL_PROVISIONING_FAILED: 'The Teacher Portal could not be reached, so no new link was issued and no email was sent. Nothing was changed — try again in a moment.',
-  EMAIL_DELIVERY_FAILED: 'The link was issued, but the email provider did not accept the message.',
+  PORTAL_PROVISIONING_FAILED: 'The Teacher Portal could not be reached, so no new password was issued and no email was sent. The password sent before still works — try again in a moment.',
+  EMAIL_DELIVERY_FAILED: 'A new temporary password was issued, but the email provider did not accept the message. Send the details again once the cause is fixed.',
   COURSE_SYNC_FAILED: 'The Teacher Portal did not accept the course assignment yet.',
   TEACHER_ID_MISMATCH: 'The Teacher Portal could not use the Teacher ID shown here; check the ID in the email.',
 };
@@ -108,9 +108,9 @@ export default function TeachersPage() {
   };
 
   /**
-   * Sends the teacher a new password-setup link. No password is involved: the
-   * link replaces any earlier one, and the teacher chooses their own. If it
-   * could not be sent, the recorded reason is shown rather than a vague error.
+   * Emails the teacher a new temporary password, issued to their Teacher Portal
+   * login first; any earlier one stops working. If it could not be sent, the
+   * recorded reason is shown rather than a vague error.
    */
   const handleResendCredentials = async (teacher) => {
     setResendingId(teacher.id);
@@ -120,7 +120,7 @@ export default function TeachersPage() {
       if (warnings.length) {
         setResendProblem({ name: teacher.name, email: teacher.email, warnings, reason: res.data?.emailDeliveryError || null });
       } else {
-        showToast(`A new password-setup email was sent to ${teacher.email}.`);
+        showToast(`New sign-in details were emailed to ${teacher.email}.`);
       }
       if (selectedTeacher?.id === teacher.id && res.data) setSelectedTeacher({ ...selectedTeacher, ...res.data, id: teacher.id });
       fetchTeachers();
@@ -206,8 +206,9 @@ export default function TeachersPage() {
     }
   };
 
-  // A password can only be set through an emailed single-use link, so a reset is
-  // the same thing as sending a new one.
+  // An administrator's reset is a new temporary password, emailed - the same
+  // action as resending the sign-in details. Teachers can also reset their own
+  // from the Teacher Portal's "Forgot password?".
   const handleResetPassword = (teacher) => handleResendCredentials(teacher);
 
   const handleDeletePrompt = (teacher) => {
@@ -316,7 +317,7 @@ export default function TeachersPage() {
           showToast(
             warnings.length
               ? 'Teacher created — see the dialog for items needing attention.'
-              : 'Teacher created. A password-setup email has been sent.'
+              : 'Teacher created. Their sign-in details have been emailed.'
           );
           fetchTeachers();
         }}
@@ -346,7 +347,7 @@ export default function TeachersPage() {
         isDeleting={isDeleting}
       />
 
-      {/* Shown when a resend did not fully work. It states why, and never contains a password: there is none to show. */}
+      {/* Shown when a resend did not fully work. It states why, and never contains a password: that exists only in the teacher's email. */}
       {resendProblem && (
         <div className="fixed inset-0 z-50 bg-[#22355E]/40 backdrop-blur-sm flex items-center justify-center p-4">
           <div role="dialog" aria-modal="true" className="bg-white border border-[#DFDACB] rounded-2xl max-w-md w-full p-6 shadow-2xl relative animate-in fade-in zoom-in-95 duration-200">
@@ -361,9 +362,9 @@ export default function TeachersPage() {
             <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-3 shadow-sm border bg-[#C99A2E]/15 border-[#C99A2E]/30 text-[#C99A2E]">
               <ShieldAlert className="w-6 h-6" />
             </div>
-            <h3 className="text-lg font-bold text-[#22355E]">Setup Email Needs Attention</h3>
+            <h3 className="text-lg font-bold text-[#22355E]">Sign-in Email Needs Attention</h3>
             <p className="text-xs text-[#2B2B28] mt-1.5 leading-relaxed">
-              The new setup link for <strong className="font-semibold text-[#22355E]">{resendProblem.email}</strong> could not be fully sent.
+              The new sign-in details for <strong className="font-semibold text-[#22355E]">{resendProblem.email}</strong> could not be fully sent.
             </p>
             <ul className="mt-3 space-y-1.5">
               {resendProblem.warnings.map((code) => (

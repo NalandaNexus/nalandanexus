@@ -107,7 +107,19 @@ export const upsertPortalStudentSchema = {
   }),
 };
 
+/** A teacher's self-service reset link, built and stored by the Teacher service, for Admin to email. */
+export const teacherPasswordResetEmailSchema = {
+  body: z.object({
+    email: z.string().trim().email().max(254),
+    name: z.string().trim().max(160).optional().nullable(),
+    teacherId: z.string().trim().max(40).optional().nullable(),
+    resetUrl: z.string().trim().url().max(600),
+    expiresAt: z.coerce.date(),
+  }),
+};
+
 export default {
+  teacherPasswordResetEmailSchema,
   upsertPortalStudentSchema,
   ingestPaymentSchema,
   ingestAssignmentActivitySchema,

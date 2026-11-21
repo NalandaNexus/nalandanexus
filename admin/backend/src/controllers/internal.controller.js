@@ -4,6 +4,7 @@ import * as paymentService from '../services/payment.service.js';
 import * as academicsService from '../services/academics.service.js';
 import * as announcementService from '../services/announcement.service.js';
 import * as portalStudentService from '../services/portalStudent.service.js';
+import { sendTeacherPasswordResetEmail } from '../services/teacher.service.js';
 import { ApiError } from '../utils/ApiError.js';
 
 /**
@@ -66,7 +67,19 @@ export const upsertPortalStudent = catchAsync(async (req, res) => {
   });
 });
 
+/**
+ * Emails a teacher's self-service password-reset link for the Teacher service,
+ * which has no mail sender of its own (see teacher/backend auth.service.js
+ * #requestPasswordReset). Answers 200 with the outcome either way; the link
+ * itself is never logged or stored here.
+ */
+export const sendTeacherPasswordReset = catchAsync(async (req, res) => {
+  const result = await sendTeacherPasswordResetEmail(req.body);
+  return sendSuccess(res, { message: result.delivered ? 'Reset email sent.' : 'Reset email not sent.', data: result });
+});
+
 export default {
+  sendTeacherPasswordReset,
   upsertPortalStudent,
   ingestPayment,
   ingestAssignmentActivity,

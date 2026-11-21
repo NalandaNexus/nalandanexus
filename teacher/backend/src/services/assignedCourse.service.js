@@ -1,5 +1,5 @@
 import { AssignedCourse } from '../models/AssignedCourse.js';
-import { User } from '../models/User.js';
+import { findTeacherUserByEmail } from './credentials.service.js';
 import { Teacher } from '../models/Teacher.js';
 import { emitToTeacher } from '../sockets/index.js';
 import { notifyTeacher } from './notification.service.js';
@@ -32,7 +32,7 @@ function shape(doc) {
  * caller (admin's course.service.js) surfaces as a warning, not a crash.
  */
 export async function assignCourse({ teacherEmail, sourceId, title, courseCode, description, image, priceInPaise, status, studentCourseSlug }) {
-  const user = await User.findOne({ email: teacherEmail.toLowerCase().trim(), role: 'teacher' });
+  const { user } = await findTeacherUserByEmail(teacherEmail);
   if (!user) return { assigned: false, reason: 'TEACHER_NOT_FOUND' };
 
   const teacher = await Teacher.findOne({ user: user._id });
