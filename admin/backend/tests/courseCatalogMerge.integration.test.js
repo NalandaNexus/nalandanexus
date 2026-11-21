@@ -43,6 +43,20 @@ before(async () => {
           bannerImage: '/prarambh_course_banner.jpg',
           isPurchasable: true,
           instructor: { name: 'Nalanda Nexus Senior Faculty' },
+          subtitle: 'The Awakening',
+          duration: '9 Months',
+          totalModules: 5,
+          totalLessons: 13,
+        },
+        {
+          id: '6a84b83a72e6b674a085fa50',
+          slug: 'garud',
+          title: 'GARUD — The Rise',
+          priceInPaise: 0,
+          isPurchasable: false,
+          duration: '9 Months',
+          totalModules: 18,
+          totalLessons: 106,
         },
         {
           id: '6a84b83a72e6b674a085fa49',
@@ -185,9 +199,59 @@ test('an unreachable catalogue degrades rather than emptying the page', async ()
     const res = await call('/api/admin/courses', { cookie });
     assert.equal(res.status, 200, 'the course list still renders');
     assert.equal(res.body.meta.catalogAvailable, false, 'and says the rest could not be loaded');
+    // A suspended Render service answers 503. The administrator is told what
+    // failed and which address was tried, so a wrong STUDENT_BACKEND_URL is
+    // visible on the page instead of looking like "there are no courses".
+    assert.equal(res.body.meta.catalogError, 'REQUEST_FAILED');
+    assert.match(res.body.meta.catalogErrorDetail, /503/);
+    assert.equal(res.body.meta.catalogHost, `127.0.0.1:${catalogServer.address().port}`);
+    assert.ok(!res.body.data.some((c) => c.slug === 'prarambh'));
   } finally {
     catalogState.status = previous;
   }
+});
+
+test('a catalogue course card carries its duration, modules and lessons', async () => {
+  const { cookie } = await login();
+  const res = await call('/api/admin/courses', { cookie });
+  const garud = res.body.data.find((c) => c.slug === 'garud');
+  assert.equal(garud.duration, '9 Months');
+  assert.equal(garud.totalModules, 18);
+  assert.equal(garud.totalLessons, 106);
+  const prarambh = res.body.data.find((c) => c.slug === 'prarambh');
+  assert.equal(prarambh.subtitle, 'The Awakening');
+  assert.equal(prarambh.totalLessons, 13);
+});
+
+test('each course reports its assigned teachers and active enrolments from this portal\'s records', async () => {
+  const { Teacher } = await import('../src/models/Teacher.js');
+  const { Student } = await import('../src/models/Student.js');
+  const stamp = Date.now();
+  await Teacher.create([
+    { name: 'T One', email: `t1.${stamp}@test.local`, teacherId: `TCH-C${stamp}1`, status: 'ACTIVE', assignedCourses: [{ slug: 'garud' }, { slug: 'prarambh' }] },
+    { name: 'T Two', email: `t2.${stamp}@test.local`, teacherId: `TCH-C${stamp}2`, status: 'ACTIVE', assignedCourses: [{ slug: 'garud' }] },
+    // A deleted teacher no longer counts.
+    { name: 'T Gone', email: `t3.${stamp}@test.local`, teacherId: `TCH-C${stamp}3`, status: 'INACTIVE', deletedAt: new Date(), assignedCourses: [{ slug: 'garud' }] },
+  ]);
+  const enrol = (slug, status) => ({ enrollmentId: `E-${slug}-${Math.random()}`, courseSlug: slug, status });
+  await Student.create([
+    { name: 'S One', email: `s1.${stamp}@test.local`, rollNo: `R${stamp}1`, source: 'student-portal', portalUserId: `u1${stamp}`, portalEnrollments: [enrol('prarambh', 'active'), enrol('garud', 'revoked')] },
+    { name: 'S Two', email: `s2.${stamp}@test.local`, rollNo: `R${stamp}2`, source: 'student-portal', portalUserId: `u2${stamp}`, portalEnrollments: [enrol('prarambh', 'active')] },
+  ]);
+
+  const { cookie } = await login();
+  const res = await call('/api/admin/courses', { cookie });
+  const bySlug = Object.fromEntries(res.body.data.map((c) => [c.slug, c]));
+  assert.equal(bySlug.garud.assignedTeachersCount, 2);
+  assert.equal(bySlug.garud.enrolledStudentsCount, 0, 'a revoked enrolment is not counted');
+  assert.equal(bySlug.prarambh.assignedTeachersCount, 1);
+  assert.equal(bySlug.prarambh.enrolledStudentsCount, 2);
+  assert.equal(bySlug['python-for-beginners'].assignedTeachersCount, 0);
+
+  const one = await call('/api/admin/courses/student:garud', { cookie });
+  assert.equal(one.status, 200, JSON.stringify(one.body));
+  assert.equal(one.body.data.assignedTeachersCount, 2);
+  assert.equal(one.body.data.totalModules, 18);
 });
 
 test('a course not yet open for enrolment is approved, not archived', async () => {

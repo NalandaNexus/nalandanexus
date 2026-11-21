@@ -1,6 +1,7 @@
 import { env } from '../config/env.js';
 import { Course } from '../models/Course.js';
 import { Teacher } from '../models/Teacher.js';
+import { Student } from '../models/Student.js';
 import { ApiError } from '../utils/ApiError.js';
 import { parsePagination, buildPaginationMeta, parseSort } from '../utils/pagination.js';
 import { withIds } from '../utils/serialize.js';
@@ -154,6 +155,11 @@ export async function listCourses(query) {
       isPurchasable: c.isPurchasable,
       instructor: c.instructorName ? { name: c.instructorName, email: null } : null,
       studentCourseId: c.studentCourseId,
+      subtitle: c.subtitle,
+      tagline: c.tagline,
+      duration: c.duration,
+      totalModules: c.totalModules,
+      totalLessons: c.totalLessons,
       origin: 'student-catalog',
       readOnly: true,
       deletedAt: null,
@@ -162,17 +168,55 @@ export async function listCourses(query) {
   const merged = [...ownedItems, ...catalogItems];
   const total = merged.length;
   const start = (page - 1) * limit;
+  const items = merged.slice(start, start + limit);
+  await attachCourseCounts(items);
 
   return {
-    items: merged.slice(start, start + limit),
+    items,
     meta: {
       ...buildPaginationMeta({ page, limit, total }),
       // Says plainly that part of the list is missing rather than letting a
-      // student-service outage look like "there are no other courses".
+      // student-service outage look like "there are no other courses". The
+      // reason and the address tried are shown to the administrator: an empty
+      // list with no explanation is how a wrong STUDENT_BACKEND_URL went unseen.
       catalogAvailable: catalog.ok !== false,
       catalogError: catalog.ok === false ? catalog.reason : undefined,
+      catalogErrorDetail: catalog.ok === false ? catalog.error || null : undefined,
+      catalogHost: catalog.ok === false ? catalog.host || null : undefined,
     },
   };
+}
+
+/**
+ * How many teachers are assigned to each course and how many students are
+ * enrolled in it, from this portal's own records: teachers' assigned catalogue
+ * courses, and the enrolments the student portal syncs onto each student. Both
+ * are keyed by course slug, which every portal shares. Two queries for the whole
+ * page, never one per course. A course without a slug gets zero for both.
+ */
+async function attachCourseCounts(items) {
+  const slugs = [...new Set(items.map((c) => c.slug).filter(Boolean))];
+  if (!slugs.length) return;
+  const [teachers, students] = await Promise.all([
+    Teacher.aggregate([
+      { $match: { deletedAt: null, 'assignedCourses.slug': { $in: slugs } } },
+      { $unwind: '$assignedCourses' },
+      { $match: { 'assignedCourses.slug': { $in: slugs } } },
+      { $group: { _id: '$assignedCourses.slug', n: { $sum: 1 } } },
+    ]),
+    Student.aggregate([
+      { $match: { 'portalEnrollments.courseSlug': { $in: slugs } } },
+      { $unwind: '$portalEnrollments' },
+      { $match: { 'portalEnrollments.courseSlug': { $in: slugs }, 'portalEnrollments.status': 'active' } },
+      { $group: { _id: '$portalEnrollments.courseSlug', n: { $sum: 1 } } },
+    ]),
+  ]);
+  const teacherCount = new Map(teachers.map((r) => [r._id, r.n]));
+  const studentCount = new Map(students.map((r) => [r._id, r.n]));
+  for (const c of items) {
+    c.assignedTeachersCount = c.slug ? teacherCount.get(c.slug) || 0 : 0;
+    c.enrolledStudentsCount = c.slug ? studentCount.get(c.slug) || 0 : 0;
+  }
 }
 
 function escapeRegex(str) {
@@ -196,7 +240,7 @@ export async function getCourseById(id) {
     }
     const found = (catalog.courses || []).find((c) => c.slug === slug);
     if (!found) throw ApiError.notFound('Course not found', 'COURSE_NOT_FOUND');
-    return {
+    const entry = {
       id, _id: id,
       code: found.slug.toUpperCase().slice(0, 24),
       title: found.title,
@@ -209,9 +253,16 @@ export async function getCourseById(id) {
       isPurchasable: found.isPurchasable,
       instructor: found.instructorName ? { name: found.instructorName, email: null } : null,
       studentCourseId: found.studentCourseId,
+      subtitle: found.subtitle,
+      tagline: found.tagline,
+      duration: found.duration,
+      totalModules: found.totalModules,
+      totalLessons: found.totalLessons,
       origin: 'student-catalog',
       readOnly: true,
     };
+    await attachCourseCounts([entry]);
+    return entry;
   }
 
   const course = await Course.findOne({ _id: id, deletedAt: null }).populate('instructor', 'name email department');

@@ -587,6 +587,17 @@ export const adminApi = {
     return json.data || [];
   },
 
+  /**
+   * The course list together with whether the student catalogue (PRARAMBH,
+   * GARUD, YODDHA and the rest) could be read, and if not, why and from which
+   * address. The course page needs this: without it a catalogue outage looked
+   * exactly like "there are no courses".
+   */
+  async getCoursesWithMeta(params = {}) {
+    const json = await request('/courses', { query: params });
+    return { items: json.data || [], meta: json.meta || {} };
+  },
+
   async createCourse(courseData) {
     const json = await request('/courses', { method: 'POST', body: toCourseFormData(courseData), isFormData: true });
     return json.data;

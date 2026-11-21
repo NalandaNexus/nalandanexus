@@ -157,11 +157,28 @@ export async function fetchStudentCourseCatalog() {
           image: c.bannerImage || null,
           isPurchasable: Boolean(c.isPurchasable),
           instructorName: c.instructor?.name || null,
+          // What a course card needs to describe the programme itself.
+          subtitle: c.subtitle || null,
+          tagline: c.tagline || null,
+          duration: c.duration || null,
+          totalModules: Number.isFinite(c.totalModules) ? c.totalModules : null,
+          totalLessons: Number.isFinite(c.totalLessons) ? c.totalLessons : null,
         }));
       return { ok: true, courses };
     }
   } catch (err) {
-    return { ok: false, reason: 'REQUEST_FAILED', error: err.message, courses: [] };
+    // `host` is the address this portal was configured to reach (no path, no
+    // secret), so an administrator can see at once when it is the wrong service.
+    return { ok: false, reason: 'REQUEST_FAILED', error: err.message, host: catalogHost(), courses: [] };
+  }
+}
+
+/** The configured student service's host, for error messages. */
+function catalogHost() {
+  try {
+    return new URL(env.studentBridge.url).host;
+  } catch {
+    return null;
   }
 }
 
