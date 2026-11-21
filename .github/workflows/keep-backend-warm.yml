@@ -43,13 +43,16 @@ jobs:
       # teacher portal matters most precisely when something else is unhealthy.
       fail-fast: false
       matrix:
+        # The services the live sites call (www.nalandanexus.com,
+        # nalandanexusteacher.vercel.app, nalandanexusadmin.vercel.app). Keep these
+        # in step with Render: pinging a retired service warms nothing.
         include:
           - name: student
-            url: https://nalandanexus.onrender.com
+            url: https://nalandanexus-student.onrender.com
           - name: teacher
-            url: https://nalandanexus-1-bj7j.onrender.com
+            url: https://nalandanexus-teacher.onrender.com
           - name: admin
-            url: https://nalandanexus-1.onrender.com
+            url: https://nalandanexus-admin.onrender.com
 
     name: Ping ${{ matrix.name }} backend
     steps:
