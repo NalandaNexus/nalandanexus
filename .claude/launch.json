@@ -1,0 +1,33 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "video-stack",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["e2e/lessonVideo.e2e.mjs", "--keep"],
+      "port": 5101,
+      "url": "http://localhost:5101"
+    },
+    {
+      "name": "student-web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "student/frontend"],
+      "env": { "VITE_STUDENT_API_URL": "http://localhost:5101/api" },
+      "port": 3000
+    },
+    {
+      "name": "teacher-web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "teacher/frontend"],
+      "env": { "VITE_TEACHER_API_URL": "http://localhost:5102/api/teacher", "VITE_SOCKET_URL": "http://localhost:5102" },
+      "port": 5174
+    },
+    {
+      "name": "admin-web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "admin/frontend"],
+      "env": { "VITE_ADMIN_API_URL": "http://localhost:5103/api/admin", "VITE_ADMIN_SOCKET_URL": "http://localhost:5103" },
+      "port": 5175
+    }
+  ]
+}
