@@ -6,6 +6,7 @@ import * as announcementService from '../services/announcement.service.js';
 import * as portalStudentService from '../services/portalStudent.service.js';
 import { sendTeacherPasswordResetEmail } from '../services/teacher.service.js';
 import { ApiError } from '../utils/ApiError.js';
+import { emitEvent } from '../sockets/index.js';
 
 /**
  * Receives a real, signature-verified Razorpay payment event from
@@ -78,7 +79,30 @@ export const sendTeacherPasswordReset = catchAsync(async (req, res) => {
   return sendSuccess(res, { message: result.delivered ? 'Reset email sent.' : 'Reset email not sent.', data: result });
 });
 
+/**
+ * A module or lesson video changed in the student service. Every signed-in
+ * administrator is told; the notice names what changed and nothing more.
+ */
+export const relayCourseVideoChange = catchAsync(async (req, res) => {
+  const { slug, courseId, moduleId, lessonId, action, provider, isPublished, version, actor } = req.body;
+  emitEvent.courseVideoChanged({
+    type: 'course_video.changed',
+    slug: slug.toLowerCase(),
+    courseId: courseId || null,
+    moduleId: moduleId || null,
+    lessonId: lessonId || null,
+    action,
+    provider: provider || null,
+    isPublished: isPublished ?? null,
+    version: version || null,
+    actor: actor ? { portal: actor.portal || 'system', name: actor.name || null } : null,
+    at: new Date().toISOString(),
+  });
+  sendSuccess(res, { message: 'Relayed', data: { relayed: true } });
+});
+
 export default {
+  relayCourseVideoChange,
   sendTeacherPasswordReset,
   upsertPortalStudent,
   ingestPayment,

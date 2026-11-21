@@ -45,14 +45,14 @@ before(async () => {
     priceInPaise: 0,
     isPublished: true,
     pillar: 'communicate',
-    videoUrl: '/PRARAMBH.mp4',
+    videoUrl: '/legacy-video.mp4',
     modules: [
       {
         moduleId: 'mod-1',
         title: 'Awakening',
         order: 1,
         lessons: [
-          { lessonId: 'l-1', title: 'Welcome', order: 1, videoUrl: '/PRARAMBH.mp4', summary: 'Hello', content: 'Read me' },
+          { lessonId: 'l-1', title: 'Welcome', order: 1, videoUrl: '/legacy-video.mp4', summary: 'Hello', content: 'Read me' },
           { lessonId: 'l-2', title: 'Archetypes', order: 2 },
         ],
       },
@@ -171,7 +171,7 @@ test('a draft is stored with metadata but never reaches the student', async () =
   assert.equal(stored.title, 'Welcome');
   assert.equal(stored.summary, 'Hello');
   assert.equal(stored.content, 'Read me');
-  assert.equal(stored.videoUrl, '/PRARAMBH.mp4');
+  assert.equal(stored.videoUrl, '/legacy-video.mp4');
 
   const lesson = lessonOf(await studentContent(), 'l-1');
   assert.equal(lesson.video, null, 'a draft is not sent at all');
@@ -253,7 +253,7 @@ test('a legacy YouTube videoUrl plays through the embed; a legacy file stays a f
   assert.equal(legacyYt.video.videoId, ID_B);
   assert.equal(legacyYt.videoUrl, '');
   assert.equal(legacyYt.videoManaged, false);
-  assert.equal(content.videoUrl, '/PRARAMBH.mp4', 'the course-level trailer is unchanged');
+  assert.equal(content.videoUrl, '/legacy-video.mp4', 'the course-level trailer is unchanged');
 });
 
 test('changing or re-saving a video never re-awards XP or resets completion', async () => {

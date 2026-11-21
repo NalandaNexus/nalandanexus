@@ -99,6 +99,10 @@ class SocketService {
         // A student's record arrived from the student portal - an enrolment or a
         // profile change for someone on this teacher's roster.
         'student.synced',
+        // A module/lesson video changed in one of this teacher's courses - by
+        // them in another tab, a colleague, or an administrator. The Module
+        // Videos page re-reads the course; the notice itself carries no URL.
+        'course_video.changed',
       ];
       forwardEvents.forEach((ev) => {
         this.socket.on(ev, (payload) => {

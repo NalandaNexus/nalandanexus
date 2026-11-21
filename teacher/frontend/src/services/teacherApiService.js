@@ -166,6 +166,10 @@ const del = (path) => request(path, { method: 'DELETE' });
 const postForm = (path, formData) => request(path, { method: 'POST', body: formData, isFormData: true });
 
 // A course video belongs to one lesson or one module.
+function courseUploadPath(slug, uploadId) {
+  return `/lesson-videos/courses/${encodeURIComponent(slug)}/uploads/${encodeURIComponent(uploadId)}`;
+}
+
 function courseVideoPath(slug, target) {
   const node = target.moduleId ? `modules/${encodeURIComponent(target.moduleId)}` : `lessons/${encodeURIComponent(target.lessonId)}`;
   return `/lesson-videos/courses/${encodeURIComponent(slug)}/${node}`;
@@ -430,22 +434,45 @@ class TeacherApiService {
     return del(`/courses/${courseId}`).then((r) => r.data);
   }
 
-  // ---- Lesson videos (assigned courses only; enforced by the backend) ----
+  // ---- Module and lesson videos (assigned courses only; enforced by the backend) ----
   getLessonVideoCourses() {
     return get('/lesson-videos/courses').then((r) => r.data || []);
   }
   getLessonVideos(slug) {
     return get(`/lesson-videos/courses/${encodeURIComponent(slug)}`).then((r) => r.data);
   }
-  inspectLessonVideo(url, { signal } = {}) {
-    return post('/lesson-videos/inspect', { url }, signal).then((r) => r.data);
+  getLessonVideoActivity(slug) {
+    return get(`/lesson-videos/courses/${encodeURIComponent(slug)}/activity`).then((r) => r.data || []);
+  }
+  inspectLessonVideo(url, { signal, provider } = {}) {
+    return post('/lesson-videos/inspect', { url, ...(provider ? { provider } : {}) }, signal).then((r) => r.data);
   }
   // target is { lessonId } or { moduleId }.
   saveCourseVideo(slug, target, payload) {
     return put(courseVideoPath(slug, target), payload).then((r) => r.data);
   }
+  updateCourseVideo(slug, target, payload) {
+    return patch(courseVideoPath(slug, target), payload).then((r) => r.data);
+  }
   removeCourseVideo(slug, target, payload = {}) {
     return request(courseVideoPath(slug, target), { method: 'DELETE', body: payload }).then((r) => r.data);
+  }
+  // Uploads: the file itself goes from the browser straight to storage on
+  // presigned URLs; these calls only open, steer and finish the session.
+  startCourseVideoUpload(slug, target, payload) {
+    return post(`${courseVideoPath(slug, target)}/uploads`, payload).then((r) => r.data);
+  }
+  getCourseVideoPartUrls(slug, uploadId, partNumbers) {
+    return post(`${courseUploadPath(slug, uploadId)}/parts`, { partNumbers }).then((r) => r.data);
+  }
+  resumeCourseVideoUpload(slug, uploadId) {
+    return post(`${courseUploadPath(slug, uploadId)}/resume`, {}).then((r) => r.data);
+  }
+  completeCourseVideoUpload(slug, uploadId, payload = {}) {
+    return post(`${courseUploadPath(slug, uploadId)}/complete`, payload).then((r) => r.data);
+  }
+  abortCourseVideoUpload(slug, uploadId) {
+    return del(courseUploadPath(slug, uploadId)).then((r) => r.data);
   }
 
   // ---- Exams ----

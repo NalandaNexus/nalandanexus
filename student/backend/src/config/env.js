@@ -116,6 +116,24 @@ export const env = {
     authMax: Number(process.env.AUTH_RATE_LIMIT_MAX) || 20,
   },
 
+  // Private S3-compatible object storage for uploaded module/lesson videos.
+  // Cloudflare R2, AWS S3 and MinIO all work; only time-limited signed URLs
+  // ever reach a browser. All four of endpoint/bucket/key id/secret must be
+  // set, otherwise uploads answer 503 VIDEO_STORAGE_NOT_CONFIGURED and
+  // YouTube / Google Drive links keep working.
+  videoStorage: {
+    endpoint: (process.env.VIDEO_STORAGE_ENDPOINT || '').trim().replace(/\/+$/, ''),
+    region: (process.env.VIDEO_STORAGE_REGION || 'auto').trim(),
+    bucket: (process.env.VIDEO_STORAGE_BUCKET || '').trim(),
+    accessKeyId: (process.env.VIDEO_STORAGE_ACCESS_KEY_ID || '').trim(),
+    secretAccessKey: (process.env.VIDEO_STORAGE_SECRET_ACCESS_KEY || '').trim(),
+    // Path-style (https://endpoint/bucket/key) works on R2, S3 and MinIO.
+    forcePathStyle: process.env.VIDEO_STORAGE_FORCE_PATH_STYLE !== 'false',
+    // A generous operational ceiling (default 20 GB), not a request-body
+    // limit: files go to storage in parts, never through this server.
+    maxUploadBytes: Math.max(1, Number(process.env.MAX_VIDEO_UPLOAD_MB) || 20480) * 1024 * 1024,
+  },
+
   // Service-to-service bridge: lets the (separate) teacher backend deliver
   // a published announcement here without a student-portal user session.
   // See middleware/internalService.js and routes/internal.routes.js. Empty

@@ -7,9 +7,11 @@ export function sendSuccess(res, { data = null, message = 'Operation successful'
   return res.status(status).json(payload);
 }
 
-export function sendError(res, { status = 500, code = 'INTERNAL_ERROR', message = 'Something went wrong', details } = {}) {
+export function sendError(res, { status = 500, code = 'INTERNAL_ERROR', message = 'Something went wrong', details, exposeDetails = false } = {}) {
   const payload = { success: false, error: { code, message } };
-  if (details && process.env.NODE_ENV !== 'production') {
+  // Details are hidden in production unless the error was built to carry
+  // public data a client acts on (e.g. a 409's current version).
+  if (details && (exposeDetails || process.env.NODE_ENV !== 'production')) {
     payload.error.details = details;
   }
   return res.status(status).json(payload);

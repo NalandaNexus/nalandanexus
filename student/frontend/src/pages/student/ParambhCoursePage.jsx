@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { Play, CheckCircle2, Lock, FileText, BrainCircuit, ArrowLeft, BookOpen, Clapperboard } from 'lucide-react';
 import { courseService } from '../../services/courseService';
 import { useStudent } from '../../context/StudentContext';
-import { getSocket } from '../../services/socket';
+import { onSocketReady } from '../../services/socket';
 import LessonVideoPlayer from '../../components/student/LessonVideoPlayer';
 
 /**
@@ -71,15 +71,33 @@ export default function ParambhCoursePage() {
     }
   }, [courseSlug]);
 
-  // Pushed: the server tells this course's room when its content changes.
+  // Pushed: the server tells this course's room when its content changes - a
+  // teacher or an administrator uploading, replacing, publishing or removing a
+  // module video. The notice carries no content; the page re-reads through the
+  // course API, which decides what this student may see. A reconnect re-reads
+  // too, catching anything sent while the connection was down. Listeners are
+  // attached to whichever socket the session has, even one created after this
+  // page mounted.
   useEffect(() => {
-    const socket = getSocket();
-    if (!socket) return undefined;
+    let current = null;
     const onUpdate = (payload) => {
       if (!payload?.slug || payload.slug === courseContent?.slug || payload.slug === courseSlug) refreshQuietly();
     };
-    socket.on('course:content_updated', onUpdate);
-    return () => socket.off('course:content_updated', onUpdate);
+    const onReconnect = () => refreshQuietly();
+    const detach = () => {
+      current?.off('course:content_updated', onUpdate);
+      current?.io?.off?.('reconnect', onReconnect);
+    };
+    const unsubscribe = onSocketReady((socket) => {
+      detach();
+      current = socket;
+      socket.on('course:content_updated', onUpdate);
+      socket.io?.on?.('reconnect', onReconnect);
+    });
+    return () => {
+      unsubscribe();
+      detach();
+    };
   }, [refreshQuietly, courseSlug, courseContent?.slug]);
 
   // Pulled: an event missed while the tab was asleep or offline is caught when
@@ -95,8 +113,9 @@ export default function ParambhCoursePage() {
   const modules = courseContent?.modules || [];
   const activeModule = modules.find((m) => m.moduleId === activeModuleId) || modules[0];
   const activeLesson = activeModule?.lessons?.find((l) => l.lessonId === activeLessonId) || activeModule?.lessons?.[0];
-  // Falls back to the lesson view by itself if the intro is unpublished meanwhile.
+  // Falls back to the lesson view by itself if the module video is removed meanwhile.
   const introModule = introModuleId ? modules.find((m) => m.moduleId === introModuleId && m.video) || null : null;
+  const videoKey = (scope, v) => `${scope}:${v.provider}:${v.videoId || v.externalVideoId || v.uploadedAt || v.fileSize || ''}`;
 
   const handleMarkComplete = async () => {
     if (!activeLesson || activeLesson.completed) return;
@@ -190,9 +209,15 @@ export default function ParambhCoursePage() {
           <div className="lg:col-span-7 space-y-4">
             {introModule ? (
               <>
-                <LessonVideoPlayer key={`intro:${introModule.moduleId}:${introModule.video.videoId}`} video={introModule.video} lessonTitle={introModule.title} showDescription={false} />
+                <LessonVideoPlayer
+                  key={videoKey(`module:${introModule.moduleId}`, introModule.video)}
+                  video={introModule.video}
+                  lessonTitle={introModule.title}
+                  showDescription={false}
+                  onExpired={refreshQuietly}
+                />
                 <div className="bg-[#FAF9F4] border border-[#DFDACB] rounded-2xl p-5 shadow-xs space-y-2">
-                  <span className="text-xs font-bold text-[#AB5236] uppercase tracking-wider font-data">Module introduction</span>
+                  <span className="text-xs font-bold text-[#AB5236] uppercase tracking-wider font-data">Module video</span>
                   <h2 className="font-heading font-bold text-base sm:text-lg text-[#22355E]">{introModule.title}</h2>
                   {introModule.video.description && (
                     <p className="text-sm text-[#2B2B28]/70 leading-relaxed whitespace-pre-line">{introModule.video.description}</p>
@@ -213,35 +238,31 @@ export default function ParambhCoursePage() {
               </>
             ) : (
             <>
-            {/* A lesson may be written rather than filmed - GARUD and YODDHA are
-                text-first. An empty black player in place of a video that does
-                not exist is worse than no player, so it is only drawn when
-                there is something to play.
-
-                A published YouTube video plays through LessonVideoPlayer. A
-                lesson nobody has given a YouTube video keeps its directly-hosted
-                file, falling back to the course's own as before; a lesson whose
-                YouTube video is still a draft shows neither, rather than an
-                unrelated file in its place. */}
+            {/* What plays for the selected lesson, in order: the lesson's own
+                published video; a legacy file the lesson itself still names
+                (never PRARAMBH's retired fixed video - the server no longer
+                sends it); otherwise the module's video, which every lesson of
+                the module shares; otherwise a plain message. There is no
+                course-wide fallback: that is how one fixed video used to appear
+                on every lesson. A draft, or an upload still being processed,
+                never reaches this page. */}
             {activeLesson?.video ? (
-              <LessonVideoPlayer key={`${activeLesson.lessonId}:${activeLesson.video.videoId}`} video={activeLesson.video} lessonTitle={activeLesson.title} />
+              <LessonVideoPlayer key={videoKey(activeLesson.lessonId, activeLesson.video)} video={activeLesson.video} lessonTitle={activeLesson.title} onExpired={refreshQuietly} />
+            ) : activeLesson?.videoUrl ? (
+              <div className="bg-black rounded-2xl overflow-hidden shadow-lg aspect-video relative border border-[#DFDACB] flex items-center justify-center">
+                <video key={activeLesson.lessonId} src={activeLesson.videoUrl} poster={courseContent.bannerImage} controls playsInline preload="metadata" className="w-full h-full object-cover">
+                  Your browser does not support the video tag.
+                </video>
+              </div>
+            ) : activeModule?.video ? (
+              <div className="space-y-1.5" data-testid="module-video">
+                <p className="px-1 text-[11px] font-bold uppercase tracking-wider text-[#AB5236] font-data">Module video · {activeModule.title}</p>
+                <LessonVideoPlayer key={videoKey(`module:${activeModule.moduleId}`, activeModule.video)} video={activeModule.video} lessonTitle={activeModule.title} onExpired={refreshQuietly} />
+              </div>
             ) : (
-              (() => {
-                const fileSrc = activeLesson?.videoUrl || (activeLesson?.videoManaged ? '' : courseContent.videoUrl);
-                return fileSrc ? (
-                  <div className="bg-black rounded-2xl overflow-hidden shadow-lg aspect-video relative border border-[#DFDACB] flex items-center justify-center">
-                    <video
-                      key={activeLesson?.lessonId}
-                      src={fileSrc}
-                      poster={courseContent.bannerImage}
-                      controls
-                      className="w-full h-full object-cover"
-                    >
-                      Your browser does not support the video tag.
-                    </video>
-                  </div>
-                ) : null;
-              })()
+              <div className="rounded-2xl border border-[#DFDACB] bg-[#FAF9F4] p-7 text-center text-sm text-[#6E6A64]" data-testid="no-module-video">
+                No video has been uploaded for this module yet. Please check back later.
+              </div>
             )}
 
             {/* Current Lesson Metadata Card */}
@@ -351,7 +372,7 @@ export default function ParambhCoursePage() {
                             }`}
                           >
                             <Clapperboard className={`w-4 h-4 shrink-0 ${introModuleId === mod.moduleId ? 'text-[#C99A2E]' : 'text-[#AB5236]'}`} />
-                            <span className="text-xs font-semibold truncate">Module introduction</span>
+                            <span className="text-xs font-semibold truncate">Module video</span>
                           </button>
                         )}
                         {mod.lessons.map((lesson) => {

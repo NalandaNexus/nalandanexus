@@ -228,6 +228,28 @@ async function startFakeStudentPortal() {
         if (node && req.method === 'DELETE') {
           return send(200, { success: true, data: { ...nodeIds, removed: true, previousVideoId: 'dQw4w9WgXcQ' } });
         }
+        if (node && req.method === 'PATCH') {
+          return send(200, { success: true, data: { ...nodeIds, video: { provider: 'upload', isPublished: parsed.isPublished !== false, title: parsed.title || '' } } });
+        }
+        if (url.pathname === '/api/internal/lesson-videos/events') return send(200, { success: true, data: [] });
+        const start = url.pathname.match(/^\/api\/internal\/lesson-videos\/courses\/([^/]+)\/(lessons|modules)\/([^/]+)\/uploads$/);
+        if (start && req.method === 'POST') {
+          return send(201, { success: true, data: { uploadId: 'aaaaaaaaaaaaaaaaaaaaaaaa', status: 'uploading', partSize: 10485760, totalParts: 1, fileName: parsed.fileName } });
+        }
+        const step = url.pathname.match(/^\/api\/internal\/lesson-videos\/courses\/([^/]+)\/uploads\/([a-f0-9]{24})(?:\/(parts|resume|complete))?$/);
+        if (step) {
+          if (req.method === 'DELETE') return send(200, { success: true, data: { uploadId: step[2], status: 'aborted', aborted: true } });
+          if (step[3] === 'parts') {
+            return send(200, { success: true, data: { uploadId: step[2], parts: (parsed.partNumbers || []).map((n) => ({ partNumber: n, url: `https://storage.test/p${n}` })) } });
+          }
+          if (step[3] === 'resume') return send(200, { success: true, data: { uploadId: step[2], status: 'uploading', uploadedParts: [] } });
+          if (step[3] === 'complete') {
+            return send(200, {
+              success: true,
+              data: { status: 'completed', uploadId: step[2], moduleId: 'm-1', lessonId: null, video: { provider: 'upload', fileName: 'a.mp4', isPublished: true } },
+            });
+          }
+        }
         const course = url.pathname.match(/^\/api\/internal\/lesson-videos\/courses\/([^/]+)$/);
         if (course) return send(200, { success: true, data: { slug: course[1], modules: [] } });
         return send(404, { success: false });

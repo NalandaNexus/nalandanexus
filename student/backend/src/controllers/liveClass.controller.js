@@ -2,6 +2,7 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { sendSuccess } from '../utils/apiResponse.js';
 import { LiveClass } from '../models/LiveClass.js';
 import { Enrollment } from '../models/Enrollment.js';
+import { isRetiredLegacyVideoUrl } from '../services/lessonVideo.service.js';
 
 /**
  * Only shows a student live classes for courses they're actually enrolled
@@ -43,5 +44,12 @@ export const listLiveClasses = asyncHandler(async (req, res) => {
     LiveClass.find({ isPublished: true, status: 'completed', $and: [courseFilter] }).sort({ scheduledAt: -1 }).limit(50),
   ]);
 
-  return sendSuccess(res, { data: { upcoming, recorded } });
+  // The seeded "Orientation Session" pointed its recording at PRARAMBH's
+  // retired fixed video, which no longer exists; never link a student to it.
+  const withoutRetiredRecording = (doc) => {
+    const item = doc.toJSON ? doc.toJSON() : doc;
+    return isRetiredLegacyVideoUrl(item.recordingUrl) ? { ...item, recordingUrl: null } : item;
+  };
+
+  return sendSuccess(res, { data: { upcoming, recorded: recorded.map(withoutRetiredRecording) } });
 });

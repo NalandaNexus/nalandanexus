@@ -61,3 +61,45 @@ export const passwordResetLimiter = rateLimit({
 });
 
 export default generalLimiter;
+
+/*
+ * Module-video limits, counted per signed-in user (these routes always run
+ * after authentication), so one teacher's uploads never use up another's.
+ * Generous for real work - a 20 GB file needs about 40 part-URL requests -
+ * and tight enough that a stolen session cannot hammer the student service
+ * or the storage provider.
+ */
+const perUser = (req) => `user:${String(req.user?._id || req.ip)}`;
+
+/** Link checks reach YouTube/Google from the student service. */
+export const videoInspectLimiter = rateLimit({
+  store: new MongoRateLimitStore({ prefix: 'video-inspect' }),
+  windowMs: 60 * 1000,
+  max: 60,
+  keyGenerator: perUser,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitedJson,
+});
+
+/** Opening upload sessions. */
+export const videoUploadStartLimiter = rateLimit({
+  store: new MongoRateLimitStore({ prefix: 'video-upload-start' }),
+  windowMs: 60 * 60 * 1000,
+  max: 30,
+  keyGenerator: perUser,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitedJson,
+});
+
+/** Part URLs, resume and complete calls while uploading. */
+export const videoUploadActivityLimiter = rateLimit({
+  store: new MongoRateLimitStore({ prefix: 'video-upload-activity' }),
+  windowMs: 15 * 60 * 1000,
+  max: 900,
+  keyGenerator: perUser,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: rateLimitedJson,
+});

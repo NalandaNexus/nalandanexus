@@ -219,10 +219,12 @@ function couponsUnavailable() {
   );
 }
 
-async function couponCall(path, options) {
+async function couponCall(path, options, { once = false } = {}) {
   if (!isConfigured()) throw couponsUnavailable();
   try {
-    return await call(path, options);
+    // `once`: a request that creates something is sent a single time, with the
+    // long budget - retrying it after a timeout could create it twice.
+    return await (once ? attempt(path, options, ATTEMPT_TIMEOUTS_MS[ATTEMPT_TIMEOUTS_MS.length - 1]) : call(path, options));
   } catch (err) {
     // A 4xx is the student service rejecting this on its merits (unknown
     // course, a campaign name already in use); that judgement is the useful
@@ -417,20 +419,23 @@ export async function setContentSubjects(slug, payload) {
 }
 
 /**
- * Lesson videos, proxied to the service that owns lessons.
+ * Module and lesson videos, proxied to the service that owns modules and
+ * lessons (and is the only writer of their videos).
  *
- * The student service validates every link itself (one parser, one set of
- * error codes) and its 4xx answers - an unsupported link, an unknown lesson, a
- * video YouTube says does not exist - reach the admin unchanged. Only a
- * transport failure becomes 503, worded for videos rather than coupons.
+ * The student service validates every link and every uploaded file itself
+ * (one parser, one set of error codes) and its 4xx answers - an unsupported
+ * link, an unknown module, a file that is not a video, a version conflict -
+ * reach the admin unchanged, details included. Only a transport failure
+ * becomes 503. Upload bytes never pass through here or through the student
+ * service: the browser sends them straight to private storage.
  */
-async function videoCall(path, options) {
+async function videoCall(path, options, opts) {
   try {
-    return await couponCall(path, options);
+    return await couponCall(path, options, opts);
   } catch (err) {
     if (err?.code === 'STUDENT_SERVICE_UNAVAILABLE') {
       throw ApiError.serviceUnavailable(
-        'The Student service is unavailable, so lesson videos cannot be loaded or saved right now. Nothing was changed - please try again in a moment.',
+        'The Student service is unavailable, so module videos cannot be loaded or saved right now. Nothing was changed - please try again in a moment.',
         'STUDENT_SERVICE_UNAVAILABLE'
       );
     }
@@ -443,6 +448,9 @@ const videoPath = (slug, target) =>
   `/api/internal/lesson-videos/courses/${encodeURIComponent(slug)}/${
     target.moduleId ? `modules/${encodeURIComponent(target.moduleId)}` : `lessons/${encodeURIComponent(target.lessonId)}`
   }`;
+const uploadPath = (slug, uploadId) =>
+  `/api/internal/lesson-videos/courses/${encodeURIComponent(slug)}/uploads/${encodeURIComponent(uploadId)}`;
+const json = (method, payload) => ({ method, body: JSON.stringify(payload) });
 
 export async function listLessonVideoCourses() {
   const body = await videoCall('/api/internal/lesson-videos/courses', { method: 'GET' });
@@ -454,19 +462,50 @@ export async function getLessonVideos(slug) {
   return body?.data || null;
 }
 
-export async function inspectLessonVideo(url) {
-  const body = await videoCall('/api/internal/lesson-videos/inspect', { method: 'POST', body: JSON.stringify({ url }) });
+/** The video history across courses (or one), optionally only warnings and errors. */
+export async function listCourseVideoEvents({ slug, level, limit, before } = {}) {
+  const params = new URLSearchParams();
+  if (slug) params.set('slug', slug);
+  if (level) params.set('level', level);
+  if (limit) params.set('limit', String(limit));
+  if (before) params.set('before', before);
+  const qs = params.toString();
+  const body = await videoCall(`/api/internal/lesson-videos/events${qs ? `?${qs}` : ''}`, { method: 'GET' });
+  return body?.data || [];
+}
+
+export async function inspectLessonVideo(url, provider) {
+  const body = await videoCall('/api/internal/lesson-videos/inspect', json('POST', { url, ...(provider ? { provider } : {}) }));
   return body?.data || null;
 }
 
 export async function saveCourseVideo(slug, target, payload) {
-  const body = await videoCall(videoPath(slug, target), { method: 'PUT', body: JSON.stringify(payload) });
-  return body?.data || null;
+  return (await videoCall(videoPath(slug, target), json('PUT', payload)))?.data || null;
+}
+
+export async function updateCourseVideo(slug, target, payload) {
+  return (await videoCall(videoPath(slug, target), json('PATCH', payload)))?.data || null;
 }
 
 export async function removeCourseVideo(slug, target, payload) {
-  const body = await videoCall(videoPath(slug, target), { method: 'DELETE', body: JSON.stringify(payload) });
-  return body?.data || null;
+  return (await videoCall(videoPath(slug, target), json('DELETE', payload)))?.data || null;
+}
+
+export async function startCourseVideoUpload(slug, target, payload) {
+  return (await videoCall(`${videoPath(slug, target)}/uploads`, json('POST', payload), { once: true }))?.data || null;
+}
+export async function getCourseVideoPartUrls(slug, uploadId, payload) {
+  return (await videoCall(`${uploadPath(slug, uploadId)}/parts`, json('POST', payload)))?.data || null;
+}
+export async function resumeCourseVideoUpload(slug, uploadId, payload) {
+  return (await videoCall(`${uploadPath(slug, uploadId)}/resume`, json('POST', payload)))?.data || null;
+}
+// Safe to repeat: the student service answers "processing" or the finished result.
+export async function completeCourseVideoUpload(slug, uploadId, payload) {
+  return (await videoCall(`${uploadPath(slug, uploadId)}/complete`, json('POST', payload)))?.data || null;
+}
+export async function abortCourseVideoUpload(slug, uploadId, payload) {
+  return (await videoCall(uploadPath(slug, uploadId), json('DELETE', payload)))?.data || null;
 }
 
 export async function listSubjects() {

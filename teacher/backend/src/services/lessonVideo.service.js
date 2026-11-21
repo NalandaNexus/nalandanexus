@@ -3,7 +3,7 @@ import { CourseAccess } from '../models/CourseAccess.js';
 import { ApiError } from '../utils/ApiError.js';
 
 /**
- * Lesson videos for the courses a teacher is assigned.
+ * Module and lesson videos for the courses a teacher is assigned.
  *
  * The authorisation is this portal's own CourseAccess record - the row an
  * administrator's assignment creates for (teacher, course slug), and the same
@@ -12,9 +12,11 @@ import { ApiError } from '../utils/ApiError.js';
  * ability to edit its videos in the same moment. There is no second assignment
  * system here.
  *
- * Lessons themselves live in the student service; this forwards an authorised
- * edit there over the service-key bridge, naming the teacher who made it. The
- * student service validates the link and is the only writer.
+ * Modules and lessons live in the student service; this forwards an
+ * authorised edit there over the service-key bridge, naming the teacher who
+ * made it. The student service validates the link or file and is the only
+ * writer. Upload bytes never pass through here: the browser sends them
+ * straight to private storage on URLs the student service signs.
  */
 
 const SLUG = /^[a-z0-9-]{1,100}$/;
@@ -76,16 +78,19 @@ async function attempt(path, options, timeoutMs) {
   }
 }
 
-async function call(path, options) {
+async function call(path, options, { idempotent = true } = {}) {
   if (!env.studentBridge.url || !env.studentBridge.serviceKey) throw unavailable();
+  // A request that creates something (an upload session) is sent once, with
+  // the long timeout: retrying it after a timeout could open it twice.
+  const timeouts = idempotent ? ATTEMPT_TIMEOUTS_MS : [ATTEMPT_TIMEOUTS_MS[ATTEMPT_TIMEOUTS_MS.length - 1]];
   let last;
-  for (let i = 0; i < ATTEMPT_TIMEOUTS_MS.length; i += 1) {
+  for (let i = 0; i < timeouts.length; i += 1) {
     try {
-      const { body } = await attempt(path, options, ATTEMPT_TIMEOUTS_MS[i]);
+      const { body } = await attempt(path, options, timeouts[i]);
       return body?.data ?? null;
     } catch (err) {
       last = err;
-      if (!err.retryable || i === ATTEMPT_TIMEOUTS_MS.length - 1) break;
+      if (!err.retryable || i === timeouts.length - 1) break;
       await new Promise((r) => setTimeout(r, RETRY_BACKOFF_MS));
     }
   }
@@ -123,6 +128,9 @@ export async function listManageableCourses(teacherId) {
     lessonCount: 0,
     videoCount: 0,
     publishedVideoCount: 0,
+    moduleVideoCount: 0,
+    publishedModuleVideoCount: 0,
+    modulesWithoutVideo: 0,
   });
 }
 
@@ -130,8 +138,13 @@ export async function getCourseVideos(slug) {
   return call(`/api/internal/lesson-videos/courses/${encodeURIComponent(slug)}`, { method: 'GET' });
 }
 
-export async function inspectLink(url) {
-  return call('/api/internal/lesson-videos/inspect', { method: 'POST', body: JSON.stringify({ url }) });
+export async function inspectLink(url, provider) {
+  return call('/api/internal/lesson-videos/inspect', { method: 'POST', body: JSON.stringify({ url, ...(provider ? { provider } : {}) }) });
+}
+
+/** The video history of one assigned course (uploads, replacements, failures). */
+export async function listCourseActivity(slug, { limit = 30 } = {}) {
+  return call(`/api/internal/lesson-videos/events?slug=${encodeURIComponent(slug)}&limit=${Number(limit) || 30}`, { method: 'GET' });
 }
 
 // A video belongs to one lesson or one module: { lessonId } or { moduleId }.
@@ -139,13 +152,58 @@ const videoPath = (slug, target) =>
   `/api/internal/lesson-videos/courses/${encodeURIComponent(slug)}/${
     target.moduleId ? `modules/${encodeURIComponent(target.moduleId)}` : `lessons/${encodeURIComponent(target.lessonId)}`
   }`;
+const uploadPath = (slug, uploadId) =>
+  `/api/internal/lesson-videos/courses/${encodeURIComponent(slug)}/uploads/${encodeURIComponent(uploadId)}`;
 
 export async function saveCourseVideo(slug, target, payload) {
   return call(videoPath(slug, target), { method: 'PUT', body: JSON.stringify(payload) });
+}
+
+export async function updateCourseVideo(slug, target, payload) {
+  return call(videoPath(slug, target), { method: 'PATCH', body: JSON.stringify(payload) });
 }
 
 export async function removeCourseVideo(slug, target, payload) {
   return call(videoPath(slug, target), { method: 'DELETE', body: JSON.stringify(payload) });
 }
 
-export default { assertCourseAccess, listManageableCourses, getCourseVideos, inspectLink, saveCourseVideo, removeCourseVideo };
+export async function startCourseVideoUpload(slug, target, payload) {
+  return call(`${videoPath(slug, target)}/uploads`, { method: 'POST', body: JSON.stringify(payload) }, { idempotent: false });
+}
+export async function getCourseVideoPartUrls(slug, uploadId, payload) {
+  return call(`${uploadPath(slug, uploadId)}/parts`, { method: 'POST', body: JSON.stringify(payload) });
+}
+export async function resumeCourseVideoUpload(slug, uploadId, payload) {
+  return call(`${uploadPath(slug, uploadId)}/resume`, { method: 'POST', body: JSON.stringify(payload) });
+}
+// Completing is safe to repeat: the student service answers "processing" or
+// the finished result instead of doing the work twice.
+export async function completeCourseVideoUpload(slug, uploadId, payload) {
+  return call(`${uploadPath(slug, uploadId)}/complete`, { method: 'POST', body: JSON.stringify(payload) });
+}
+export async function abortCourseVideoUpload(slug, uploadId, payload) {
+  return call(uploadPath(slug, uploadId), { method: 'DELETE', body: JSON.stringify(payload) });
+}
+
+/** Teachers assigned to a course, for relaying a video change to them live. */
+export async function teachersAssignedTo(slug) {
+  const rows = await CourseAccess.find({ studentCourseSlug: normSlug(slug) }).select('teacher').lean();
+  return [...new Set(rows.map((r) => String(r.teacher)))];
+}
+
+export default {
+  assertCourseAccess,
+  listManageableCourses,
+  getCourseVideos,
+  inspectLink,
+  listCourseActivity,
+  saveCourseVideo,
+  updateCourseVideo,
+  removeCourseVideo,
+  startCourseVideoUpload,
+  getCourseVideoPartUrls,
+  resumeCourseVideoUpload,
+  completeCourseVideoUpload,
+  abortCourseVideoUpload,
+  teachersAssignedTo,
+};

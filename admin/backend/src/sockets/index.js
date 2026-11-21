@@ -111,6 +111,11 @@ export const emitEvent = {
   leaderboardUpdated: (leaderboard) => safeEmit('leaderboard.updated', leaderboard),
   analyticsUpdated: (snapshot) => safeEmit('analytics.updated', snapshot),
   auditLogCreated: (entry) => safeEmit('audit.created', entry),
+
+  // A module/lesson video changed in the student service (by a teacher or an
+  // administrator). Names what changed, carries no URL; the Module Videos page
+  // re-reads through its own authorised API.
+  courseVideoChanged: (notice) => safeEmit('course_video.changed', notice),
 };
 
 export default { initSockets, getIO, emitEvent, emitToAdmin };

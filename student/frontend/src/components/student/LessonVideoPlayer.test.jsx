@@ -128,3 +128,78 @@ describe('LessonVideoPlayer', () => {
     });
   });
 });
+
+describe('LessonVideoPlayer - uploaded files', () => {
+  const upload = (over = {}) => ({
+    provider: 'upload',
+    title: 'Module 1 lecture',
+    description: '',
+    duration: 754,
+    mimeType: 'video/mp4',
+    streamUrl: 'https://r2.test/v.mp4?X-Amz-Signature=a',
+    ...over,
+  });
+
+  it('streams from the signed URL with native controls, a loading indicator and a speed control', () => {
+    render(<LessonVideoPlayer video={upload()} />);
+    const el = document.querySelector('video');
+    expect(el.getAttribute('src')).toBe('https://r2.test/v.mp4?X-Amz-Signature=a');
+    expect(el.hasAttribute('controls')).toBe(true);
+    expect(el.getAttribute('preload')).toBe('metadata');
+    expect(el.hasAttribute('playsinline')).toBe(true);
+    expect(el.getAttribute('controlslist')).toBe('nodownload');
+    expect(screen.getByTestId('video-buffering')).toBeInTheDocument();
+    fireEvent.loadedMetadata(el);
+    expect(screen.queryByTestId('video-buffering')).toBeNull();
+    fireEvent.change(screen.getByLabelText('Playback speed'), { target: { value: '1.5' } });
+    expect(el.playbackRate).toBe(1.5);
+    expect(screen.getByText(/13 min/)).toBeInTheDocument();
+  });
+
+  it('on a playback error asks once for a fresh URL, then explains and offers to try again', () => {
+    const onExpired = vi.fn();
+    render(<LessonVideoPlayer video={upload()} onExpired={onExpired} />);
+    const el = document.querySelector('video');
+    fireEvent.error(el);
+    expect(onExpired).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('alert')).toBeNull();
+    // The same URL failing again is not an expiry: say so.
+    Object.defineProperty(el, 'error', { value: { code: 4 }, configurable: true });
+    fireEvent.error(el);
+    expect(screen.getByRole('alert')).toHaveTextContent(/cannot be played in this browser/);
+    fireEvent.click(screen.getByRole('button', { name: /Try again/ }));
+    expect(onExpired).toHaveBeenCalledTimes(2);
+  });
+
+  it('says the video is unavailable rather than showing a dead player when no URL could be signed', () => {
+    render(<LessonVideoPlayer video={upload({ streamUrl: null })} />);
+    expect(screen.getByRole('alert')).toHaveTextContent(/temporarily unavailable/);
+    expect(document.querySelector('video')).toBeNull();
+  });
+});
+
+describe('LessonVideoPlayer - Google Drive', () => {
+  const DRIVE = '1AbCdEfGhIjKlMnOpQrStUvWxYz012345';
+  const drive = (over = {}) => ({ provider: 'google_drive', externalVideoId: DRIVE, title: 'Week 3', description: '', availability: 'available', ...over });
+
+  it('loads Drive only when Play is pressed, in a frame built from the file id', () => {
+    render(<LessonVideoPlayer video={drive({ embedUrl: 'https://evil.example/frame' })} />);
+    expect(document.querySelector('iframe')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Play video: Week 3' }));
+    const frame = document.querySelector('iframe');
+    expect(frame.getAttribute('src')).toBe(`https://drive.google.com/file/d/${DRIVE}/preview`);
+    expect(frame.hasAttribute('allowfullscreen')).toBe(true);
+    expect(screen.getByRole('link', { name: /Open in Google Drive/ }).getAttribute('href')).toBe(`https://drive.google.com/file/d/${DRIVE}/view`);
+    expect(screen.getByText(/Not loading\? You may need to sign in to Google/)).toBeInTheDocument();
+  });
+
+  it('explains a file that is not shared publicly before the student presses Play', () => {
+    render(<LessonVideoPlayer video={drive({ availability: 'restricted' })} />);
+    expect(screen.getByTestId('drive-access-notice')).toHaveTextContent(/shared privately on Google Drive/);
+  });
+
+  it('renders nothing for a tampered file id', () => {
+    const { container } = render(<LessonVideoPlayer video={drive({ externalVideoId: '"><script>' })} />);
+    expect(container.innerHTML).toBe('');
+  });
+});

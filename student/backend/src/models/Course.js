@@ -3,23 +3,48 @@ import mongoose from 'mongoose';
 const { Schema } = mongoose;
 
 /**
- * A YouTube video attached to one lesson by an administrator or an assigned
- * teacher (services/lessonVideo.service.js is the only writer).
+ * The one primary video of a module or a lesson: a YouTube video, a Google
+ * Drive file, or a file uploaded to private object storage.
  *
- * Only facts are stored. The embed URL, watch URL and thumbnail URLs are pure
- * functions of `videoId` (utils/youtube.js) and are computed on every read, so
- * there is no second copy of the id to fall out of step with the first.
+ * This embedded record is the single source of truth for what students play.
+ * The student service is its only writer (services/lessonVideo.service.js);
+ * the Admin and Teacher portals edit it through the service-key bridge rather
+ * than keeping a copy. Being one subdocument - not an array - is what makes a
+ * second "active" video on the same module impossible.
  *
- * Absent on every lesson nobody has managed, which is how the many lessons
+ * Only facts are stored. Embed, watch and thumbnail URLs are pure functions of
+ * the ids (utils/youtube.js, utils/googleDrive.js) and an uploaded file's
+ * playback URL is signed on every read, so nothing here can go stale.
+ *
+ * Absent on every lesson and module nobody has managed, which is how the many
  * that predate this field keep behaving exactly as they did.
  */
 const lessonVideoSchema = new Schema(
   {
-    provider: { type: String, enum: ['youtube'], default: 'youtube', required: true },
-    videoId: { type: String, required: true, match: /^[A-Za-z0-9_-]{11}$/ },
+    provider: { type: String, enum: ['youtube', 'google_drive', 'upload'], required: true },
+    // YouTube's 11-character id (YouTube only).
+    videoId: { type: String, default: null, match: /^[A-Za-z0-9_-]{11}$/ },
+    // Google Drive file id (Drive only), never an arbitrary URL.
+    externalVideoId: { type: String, default: null, match: /^[A-Za-z0-9_-]{20,200}$/ },
+    // Drive's resource key for files shared before its 2021 link update.
+    externalResourceKey: { type: String, default: null, match: /^[A-Za-z0-9_-]{1,120}$/ },
     // What the editor pasted, after validation - shown back to them so they
     // recognise their own link. Never rendered into an iframe.
-    originalUrl: { type: String, required: true, maxlength: 2048 },
+    originalUrl: { type: String, default: '', maxlength: 2048 },
+    // Uploaded files: the private object's key and its upload record. The
+    // playback URL is signed at read time and never stored.
+    storageKey: { type: String, default: null, maxlength: 1024 },
+    uploadId: { type: Schema.Types.ObjectId, ref: 'VideoUpload', default: null },
+    fileName: { type: String, default: '', maxlength: 255 },
+    fileSize: { type: Number, default: null, min: 0 },
+    duration: { type: Number, default: null, min: 0 },
+    mimeType: { type: String, default: '', maxlength: 120 },
+    // Always 'completed'/'verified' on an attached upload: a file is only
+    // attached after its upload finished and its content was verified. The
+    // in-between states live on the VideoUpload record.
+    uploadStatus: { type: String, enum: ['uploading', 'processing', 'completed', 'failed', null], default: null },
+    processingStatus: { type: String, enum: ['pending', 'verified', 'failed', null], default: null },
+    uploadedAt: { type: Date, default: null },
     title: { type: String, default: '', maxlength: 200 },
     description: { type: String, default: '', maxlength: 2000 },
     // 'embed' plays inside Nalanda Nexus; 'external' only offers YouTube.

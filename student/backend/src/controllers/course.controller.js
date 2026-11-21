@@ -6,7 +6,7 @@ import { Enrollment } from '../models/Enrollment.js';
 import { LessonProgress } from '../models/LessonProgress.js';
 import { recordActivity } from '../services/progression/engine.service.js';
 import { resolveLessonSubject } from '../services/progression/subject.service.js';
-import { shapeLessonVideoForStudent, shapeModuleVideoForStudent } from '../services/lessonVideo.service.js';
+import { shapeLessonVideoForStudent, shapeModuleVideoForStudent, legacyVideoUrlFor } from '../services/lessonVideo.service.js';
 
 /**
  * GET /api/student/courses - courses the authenticated student is enrolled in,
@@ -61,25 +61,30 @@ export const getEnrolledCourseContent = asyncHandler(async (req, res) => {
   ]);
   const completedLessonIds = new Set(progressDocs.filter((p) => p.completed).map((p) => p.lessonId));
 
-  const modules = course.modules
+  // The response carries freshly signed playback URLs for uploaded videos, so
+  // no browser or proxy may reuse it.
+  res.setHeader('Cache-Control', 'no-store');
+
+  const modules = await Promise.all(course.modules
     .sort((a, b) => a.order - b.order)
-    .map((m) => ({
+    .map(async (m) => ({
       moduleId: m.moduleId,
       title: m.title,
       order: m.order,
-      // The module's published introduction video, or null. Not a lesson: it
-      // carries no completion and awards nothing.
-      video: shapeModuleVideoForStudent(m),
-      lessons: m.lessons
+      // The module's own published video, or null. Not a lesson: it carries
+      // no completion and awards nothing.
+      video: await shapeModuleVideoForStudent(m),
+      lessons: await Promise.all(m.lessons
         .sort((a, b) => a.order - b.order)
-        .map((l) => ({
+        .map(async (l) => ({
           lessonId: l.lessonId,
           title: l.title,
           duration: l.duration,
           order: l.order,
-          // `video` is a published YouTube video (or null); `videoUrl` is the
-          // legacy directly-hosted file. A draft video is never sent.
-          ...shapeLessonVideoForStudent(l),
+          // `video` is the lesson's published video (or null); `videoUrl` is a
+          // legacy directly-hosted file, never PRARAMBH's retired fixed one.
+          // A draft, or an upload not yet verified, is never sent.
+          ...(await shapeLessonVideoForStudent(l)),
           // The teaching material. A lesson used to be a title, a duration and
           // a video URL, so a course with no video was a list of headings -
           // which is exactly what GARUD and YODDHA would have been.
@@ -89,8 +94,8 @@ export const getEnrolledCourseContent = asyncHandler(async (req, res) => {
           isLocked: l.isLocked,
           completed: completedLessonIds.has(l.lessonId),
           isCurrent: l.lessonId === enrollment?.currentLessonId,
-        })),
-    }));
+        }))),
+    })));
 
   return sendSuccess(res, {
     data: {
@@ -99,7 +104,7 @@ export const getEnrolledCourseContent = asyncHandler(async (req, res) => {
       title: course.title,
       subtitle: course.subtitle,
       bannerImage: course.bannerImage,
-      videoUrl: course.videoUrl,
+      videoUrl: legacyVideoUrlFor(course.videoUrl),
       totalLessons: course.totalLessons,
       completedLessons: completedLessonIds.size,
       progress: enrollment?.progressPercent || 0,

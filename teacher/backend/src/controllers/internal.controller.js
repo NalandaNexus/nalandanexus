@@ -15,6 +15,7 @@ import { receiveBridgedSubmission } from '../services/submission.service.js';
 import { receiveBridgedQuizResult } from '../services/exam.service.js';
 import { applyPortalStudent } from '../services/portalStudentSync.service.js';
 import { ApiError } from '../utils/ApiError.js';
+import { teachersAssignedTo } from '../services/lessonVideo.service.js';
 
 /**
  * Persists a real, per-teacher Notification for every active teacher — the
@@ -335,3 +336,30 @@ export default {
   receiveQuizResult,
   removeAdminAnnouncement,
 };
+
+/**
+ * A module or lesson video changed in the student service (uploaded,
+ * replaced, published, removed - by a teacher or an administrator). Only the
+ * teachers assigned to that course are told, on their private socket rooms;
+ * the notice names what changed and nothing more, and their Module Videos
+ * page re-reads the course through its own authorised API.
+ */
+export const relayCourseVideoChange = catchAsync(async (req, res) => {
+  const { slug, courseId, moduleId, lessonId, action, provider, isPublished, version, actor } = req.body;
+  const payload = {
+    type: 'course_video.changed',
+    slug: String(slug).toLowerCase(),
+    courseId: courseId || null,
+    moduleId: moduleId || null,
+    lessonId: lessonId || null,
+    action,
+    provider: provider || null,
+    isPublished: isPublished ?? null,
+    version: version || null,
+    actor: actor ? { portal: actor.portal || 'system', name: actor.name || null } : null,
+    at: new Date().toISOString(),
+  };
+  const teacherIds = await teachersAssignedTo(payload.slug);
+  for (const teacherId of teacherIds) emitToTeacher(teacherId, 'course_video.changed', payload);
+  sendSuccess(res, { message: 'Relayed', data: { delivered: teacherIds.length } });
+});

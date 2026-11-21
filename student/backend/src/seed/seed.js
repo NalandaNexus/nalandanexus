@@ -37,9 +37,9 @@ const PRARAMBH_MODULES = [
     title: 'Module 1: Orientation & Foundations',
     order: 1,
     lessons: [
-      { lessonId: 'l-1', title: '1.1 The Awakening: Welcome to Nalanda Nexus', duration: '18 mins', order: 1, videoUrl: '/PRARAMBH.mp4' },
-      { lessonId: 'l-2', title: '1.2 Discovering Your Learning Archetype', duration: '24 mins', order: 2, videoUrl: '/PRARAMBH.mp4' },
-      { lessonId: 'l-3', title: '1.3 The 3 Pillars: Communicate, Compute, Create', duration: '22 mins', order: 3, videoUrl: '/PRARAMBH.mp4' },
+      { lessonId: 'l-1', title: '1.1 The Awakening: Welcome to Nalanda Nexus', duration: '18 mins', order: 1 },
+      { lessonId: 'l-2', title: '1.2 Discovering Your Learning Archetype', duration: '24 mins', order: 2 },
+      { lessonId: 'l-3', title: '1.3 The 3 Pillars: Communicate, Compute, Create', duration: '22 mins', order: 3 },
     ],
   },
   {
@@ -47,9 +47,9 @@ const PRARAMBH_MODULES = [
     title: 'Module 2: Mindset & Self Growth',
     order: 2,
     lessons: [
-      { lessonId: 'l-4', title: '2.1 Overcoming Self-Doubt & Fear of Failure', duration: '26 mins', order: 1, videoUrl: '/PRARAMBH.mp4' },
-      { lessonId: 'l-5', title: '2.2 Developing an Unstoppable Growth Mindset', duration: '30 mins', order: 2, videoUrl: '/PRARAMBH.mp4' },
-      { lessonId: 'l-6', title: '2.3 Building Emotional Resilience for High Performance', duration: '28 mins', order: 3, videoUrl: '/PRARAMBH.mp4' },
+      { lessonId: 'l-4', title: '2.1 Overcoming Self-Doubt & Fear of Failure', duration: '26 mins', order: 1 },
+      { lessonId: 'l-5', title: '2.2 Developing an Unstoppable Growth Mindset', duration: '30 mins', order: 2 },
+      { lessonId: 'l-6', title: '2.3 Building Emotional Resilience for High Performance', duration: '28 mins', order: 3 },
     ],
   },
   {
@@ -57,9 +57,9 @@ const PRARAMBH_MODULES = [
     title: 'Module 3: Communication Mastery',
     order: 3,
     lessons: [
-      { lessonId: 'l-7', title: '3.1 Vocal Presence, Tone & Clarity', duration: '32 mins', order: 1, videoUrl: '/PRARAMBH.mp4' },
-      { lessonId: 'l-8', title: '3.2 Storytelling Frameworks for Young Leaders', duration: '35 mins', order: 2, videoUrl: '/PRARAMBH.mp4' },
-      { lessonId: 'l-9', title: '3.3 Active Listening & Empathetic Dialogue', duration: '25 mins', order: 3, videoUrl: '/PRARAMBH.mp4' },
+      { lessonId: 'l-7', title: '3.1 Vocal Presence, Tone & Clarity', duration: '32 mins', order: 1 },
+      { lessonId: 'l-8', title: '3.2 Storytelling Frameworks for Young Leaders', duration: '35 mins', order: 2 },
+      { lessonId: 'l-9', title: '3.3 Active Listening & Empathetic Dialogue', duration: '25 mins', order: 3 },
     ],
   },
   {
@@ -67,8 +67,8 @@ const PRARAMBH_MODULES = [
     title: 'Module 4: Goal Setting & Productivity',
     order: 4,
     lessons: [
-      { lessonId: 'l-10', title: '4.1 Crafting Your 90-Day Vision Blueprint', duration: '28 mins', order: 1, videoUrl: '/PRARAMBH.mp4' },
-      { lessonId: 'l-11', title: '4.2 Deep Work Habits for Modern Students', duration: '30 mins', order: 2, videoUrl: '/PRARAMBH.mp4' },
+      { lessonId: 'l-10', title: '4.1 Crafting Your 90-Day Vision Blueprint', duration: '28 mins', order: 1 },
+      { lessonId: 'l-11', title: '4.2 Deep Work Habits for Modern Students', duration: '30 mins', order: 2 },
     ],
   },
   {
@@ -76,8 +76,8 @@ const PRARAMBH_MODULES = [
     title: 'Module 5: Real-World Projects & Capstone',
     order: 5,
     lessons: [
-      { lessonId: 'l-12', title: '5.1 Project Brainstorming & Problem Definition', duration: '40 mins', order: 1, videoUrl: '/PRARAMBH.mp4', isLocked: true },
-      { lessonId: 'l-13', title: '5.2 Capstone Showcase & Peer Evaluation', duration: '45 mins', order: 2, videoUrl: '/PRARAMBH.mp4', isLocked: true },
+      { lessonId: 'l-12', title: '5.1 Project Brainstorming & Problem Definition', duration: '40 mins', order: 1, isLocked: true },
+      { lessonId: 'l-13', title: '5.2 Capstone Showcase & Peer Evaluation', duration: '45 mins', order: 2, isLocked: true },
     ],
   },
 ];
@@ -109,7 +109,7 @@ async function seed() {
       difficulty: 'Beginner Friendly',
       duration: '3 Months',
       bannerImage: '/prarambh_course_banner.jpg',
-      videoUrl: '/PRARAMBH.mp4',
+      videoUrl: '',
       priceInPaise: 500000, // ₹5,000
       originalPriceInPaise: 1200000, // ₹12,000
       currency: 'INR',
@@ -291,7 +291,7 @@ async function seed() {
     const liveClassesSeed = [
       { title: 'PRARAMBH Live Q&A: Confidence & Communication', instructor: 'Nalanda Nexus Senior Faculty', scheduledAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000), durationMinutes: 60, joinUrl: 'https://meet.example.com/prarambh-live-qna', status: 'upcoming' },
       { title: 'Goal Setting Workshop', instructor: 'Nalanda Nexus Senior Faculty', scheduledAt: new Date(Date.now() + 9 * 24 * 60 * 60 * 1000), durationMinutes: 45, joinUrl: 'https://meet.example.com/prarambh-goal-workshop', status: 'upcoming' },
-      { title: 'Orientation Session (Recording)', instructor: 'Nalanda Nexus Senior Faculty', scheduledAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000), durationMinutes: 50, recordingUrl: '/PRARAMBH.mp4', status: 'completed' },
+      { title: 'Orientation Session (Recording)', instructor: 'Nalanda Nexus Senior Faculty', scheduledAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000), durationMinutes: 50, status: 'completed' },
     ];
     for (const lc of liveClassesSeed) {
       await LiveClass.findOneAndUpdate(
