@@ -16,18 +16,43 @@
  * changed and the student sees the new one, a draft stays hidden, an assigned
  * teacher does the same for their course, an unassigned teacher is refused,
  * and none of it touches the student's completion or XP.
+ *
+ * Module videos then run every source and every direction of the live sync:
+ * files uploaded in parts to an S3-compatible store (an in-process stand-in,
+ * driven through real presigned URLs) and Google Drive links, with real
+ * Socket.IO clients for the student, the administrator and two teachers -
+ * Teacher -> Student and Admin, Admin -> Teacher and Student - checking that
+ * each portal is told, that only the right people are told, and that what the
+ * student then reads is what was saved.
  */
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import assert from 'node:assert/strict';
+import net from 'node:net';
 
 const KEEP = process.argv.includes('--keep');
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const KEY = 'e2e_service_key';
 const PASSWORD = 'E2e-Pass-123!';
-const PORTS = KEEP ? { student: 5101, teacher: 5102, admin: 5103 } : { student: 0, teacher: 0, admin: 0 };
+const PORTS = KEEP ? { student: 5101, teacher: 5102, admin: 5103 } : null;
+const MiB = 1024 * 1024;
+const DRIVE = '1AbCdEfGhIjKlMnOpQrStUvWxYz012345';
+
+// Each backend must know the others' addresses before it starts (the student
+// service notifies the two staff portals), so ports are chosen up front.
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const srv = net.createServer();
+    srv.unref();
+    srv.on('error', reject);
+    srv.listen(0, '127.0.0.1', () => {
+      const { port } = srv.address();
+      srv.close(() => resolve(port));
+    });
+  });
+}
 const ID_1 = 'dQw4w9WgXcQ';
 const ID_2 = 'M7lc1UVf-VE';
 const ID_3 = 'aqz-KE-bpKQ';
@@ -112,22 +137,33 @@ async function check(name, fn) {
 const lessonOf = (content, id) => content.modules.flatMap((m) => m.lessons).find((l) => l.lessonId === id);
 
 async function main() {
-  console.log('Booting student, teacher and admin backends (in-memory databases)…');
-  const student = await boot('student', PORTS.student, {
+  const ports = PORTS || { student: await freePort(), teacher: await freePort(), admin: await freePort() };
+  const fakeS3Module = await import(pathToFileURL(path.join(root, 'student', 'backend', 'tests', 'helpers', 'fakeS3.js')).href);
+  const s3 = await fakeS3Module.startFakeS3({ bucket: 'e2e-videos' });
+  console.log('Booting student, teacher and admin backends (in-memory databases, in-process object storage)…');
+  const student = await boot('student', ports.student, {
     JWT_ACCESS_SECRET: 'e2e_access',
     JWT_REFRESH_SECRET: 'e2e_refresh',
     CLIENT_URL: 'http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000',
     INTERNAL_SERVICE_KEY: KEY,
+    // Video change notices to the two staff portals.
+    ADMIN_BACKEND_URL: `http://127.0.0.1:${ports.admin}`,
+    TEACHER_BACKEND_URL: `http://127.0.0.1:${ports.teacher}`,
+    VIDEO_STORAGE_ENDPOINT: s3.endpoint,
+    VIDEO_STORAGE_REGION: 'auto',
+    VIDEO_STORAGE_BUCKET: s3.bucket,
+    VIDEO_STORAGE_ACCESS_KEY_ID: 'e2e-access-key',
+    VIDEO_STORAGE_SECRET_ACCESS_KEY: 'e2e-secret-key',
   });
   const [teacher, admin] = await Promise.all([
-    boot('teacher', PORTS.teacher, {
+    boot('teacher', ports.teacher, {
       JWT_SECRET: 'e2e_teacher_jwt',
       CLIENT_URL: 'http://localhost:5174',
       COOKIE_SAMESITE: 'lax',
       STUDENT_BACKEND_URL: student.url,
       STUDENT_BACKEND_SERVICE_KEY: KEY,
     }),
-    boot('admin', PORTS.admin, {
+    boot('admin', ports.admin, {
       JWT_SECRET: 'e2e_admin_jwt',
       CLIENT_URL: 'http://localhost:5175',
       COOKIE_SAMESITE: 'lax',
@@ -368,6 +404,234 @@ async function main() {
     assert.equal(lessonOf(view, 'l-3').video, null);
     assert.equal(lessonOf(view, 'l-3').content, 'Written material for l lesson 3.');
   });
+
+  // --- Module videos: every source, every direction of the live sync ----------
+  const { io } = await import(pathToFileURL(createRequire(path.join(root, 'admin', 'frontend', 'package.json')).resolve('socket.io-client')).href);
+  const sockets = [];
+  const listen = (url, options) =>
+    new Promise((resolve, reject) => {
+      const socket = io(url, { transports: ['websocket'], reconnection: false, ...options });
+      const log = [];
+      socket.onAny((event, payload) => log.push({ event, payload }));
+      sockets.push(socket);
+      socket.on('connect', () => resolve({ socket, log }));
+      socket.on('connect_error', reject);
+    });
+  const until = async (what, fn, ms = 6000) => {
+    const end = Date.now() + ms;
+    for (;;) {
+      const v = fn();
+      if (v) return v;
+      if (Date.now() > end) throw new Error(`timed out waiting for ${what}`);
+      await new Promise((r) => setTimeout(r, 50));
+    }
+  };
+  const quiet = async (ms = 800) => new Promise((r) => setTimeout(r, ms));
+
+  // Bob is assigned GARUD, Alice keeps PRARAMBH.
+  const assignBob = await http(teacher.url, 'PUT', '/api/internal/teachers/courses', {
+    headers: { 'X-Internal-Service-Key': KEY },
+    body: { teacherEmail: 'bob@e2e.test', courses: [{ slug: 'garud', title: 'GARUD' }] },
+  });
+  assert.equal(assignBob.status, 200, JSON.stringify(assignBob.body));
+
+  const studentSock = await listen(student.url, { auth: { token: studentToken } });
+  const adminSock = await listen(admin.url, { extraHeaders: { Cookie: adminCookie } });
+  const aliceSock = await listen(teacher.url, { extraHeaders: { Cookie: alice } });
+  const bobSock = await listen(teacher.url, { extraHeaders: { Cookie: bob } });
+  const clear = () => [studentSock, adminSock, aliceSock, bobSock].forEach((s) => (s.log.length = 0));
+  const got = (who, event, pred = () => true) => who.log.find((e) => e.event === event && pred(e.payload));
+
+  const moduleOf = async (id) => (await studentView()).modules.find((m) => m.moduleId === id);
+
+  /** Uploads `bytes` through a portal exactly as its browser editor does. */
+  async function uploadThrough(base, cookie, prefix, slug, moduleId, bytes, fileName, extra = {}) {
+    const start = await http(base, 'POST', `${prefix}/lesson-videos/courses/${slug}/modules/${moduleId}/uploads`, {
+      cookie,
+      body: { fileName, fileSize: bytes.length, mimeType: 'video/mp4', title: fileName, isPublished: true, ...extra },
+    });
+    assert.equal(start.status, 201, JSON.stringify(start.body));
+    const session = start.body.data;
+    const numbers = Array.from({ length: session.totalParts }, (_, i) => i + 1);
+    const urls = await http(base, 'POST', `${prefix}/lesson-videos/courses/${slug}/uploads/${session.uploadId}/parts`, { cookie, body: { partNumbers: numbers } });
+    assert.equal(urls.status, 200, JSON.stringify(urls.body));
+    return { session, urls: urls.body.data.parts, complete: () => http(base, 'POST', `${prefix}/lesson-videos/courses/${slug}/uploads/${session.uploadId}/complete`, { cookie, body: { duration: 42 } }) };
+  }
+  const sendAll = async ({ session, urls }, bytes) => {
+    for (const part of urls) {
+      const startByte = (part.partNumber - 1) * session.partSize;
+      await s3.putPart(part.url, bytes.subarray(startByte, startByte + session.partSize));
+    }
+  };
+
+  console.log('Module videos: Teacher -> Student and Admin');
+  let firstKey;
+  await check('a teacher uploads a large file in parts; students see nothing until it is verified', async () => {
+    clear();
+    const bytes = fakeS3Module.fakeVideoBytes(10 * MiB + 4321, 'mp4');
+    const up = await uploadThrough(teacher.url, alice, '/api/teacher', 'prarambh', 'mod-1', bytes, 'awakening.mp4');
+    assert.equal(up.session.totalParts, 2);
+    // Staff hear that an upload started; students do not.
+    await until('admin hears upload_started', () => got(adminSock, 'course_video.changed', (p) => p.action === 'upload_started'));
+    await sendAll(up, bytes);
+    assert.equal((await moduleOf('mod-1')).video, null, 'not visible while uploading');
+    const done = await up.complete();
+    assert.equal(done.status, 200, JSON.stringify(done.body));
+    assert.equal(done.body.data.video.provider, 'upload');
+    assert.equal(done.body.data.video.processingStatus, 'verified');
+    assert.equal(got(studentSock, 'course:content_updated', (p) => p.action === 'upload_started'), undefined);
+  });
+
+  await check('the student is told and then streams the verified file with range requests', async () => {
+    await until('student notice', () => got(studentSock, 'course:content_updated', (p) => p.slug === 'prarambh' && p.moduleId === 'mod-1'));
+    const mod = await moduleOf('mod-1');
+    assert.equal(mod.video.provider, 'upload');
+    assert.equal(mod.video.title, 'awakening.mp4');
+    const ranged = await fetch(mod.video.streamUrl, { headers: { Range: 'bytes=0-99' } });
+    assert.equal(ranged.status, 206);
+    assert.equal((await ranged.arrayBuffer()).byteLength, 100);
+    firstKey = [...s3.objects.keys()][0];
+  });
+
+  await check('the administrator is told who did it; only the course’s teacher is told, not Bob', async () => {
+    const notice = await until('admin notice', () => got(adminSock, 'course_video.changed', (p) => p.action === 'upload_completed'));
+    assert.equal(notice.payload.slug, 'prarambh');
+    assert.equal(notice.payload.moduleId, 'mod-1');
+    assert.equal(notice.payload.actor.name, 'Alice Rao');
+    assert.equal(notice.payload.actor.portal, 'teacher');
+    assert.ok(!JSON.stringify(notice.payload).includes('X-Amz'), 'notices carry no URL');
+    await until('alice notice', () => got(aliceSock, 'course_video.changed', (p) => p.action === 'upload_completed'));
+    await quiet();
+    assert.equal(got(bobSock, 'course_video.changed'), undefined, 'Bob does not teach PRARAMBH');
+    const adminView = await http(admin.url, 'GET', '/api/admin/lesson-videos/courses/prarambh', { cookie: adminCookie });
+    const m1 = adminView.body.data.modules.find((m) => m.moduleId === 'mod-1');
+    assert.equal(m1.video.provider, 'upload');
+    assert.equal(m1.video.updatedBy.name, 'Alice Rao');
+    assert.equal(m1.video.fileSize, 10 * MiB + 4321);
+  });
+
+  console.log('Module videos: Admin -> Teacher and Student');
+  await check('the administrator replaces the upload with a Google Drive link; teacher and student are told', async () => {
+    clear();
+    const before = (await http(admin.url, 'GET', '/api/admin/lesson-videos/courses/prarambh', { cookie: adminCookie })).body.data;
+    const version = before.modules.find((m) => m.moduleId === 'mod-1').video.updatedAt;
+    const r = await http(admin.url, 'PUT', '/api/admin/lesson-videos/courses/prarambh/modules/mod-1', {
+      cookie: adminCookie,
+      body: { provider: 'google_drive', url: `https://drive.google.com/file/d/${DRIVE}/view?usp=sharing`, title: 'Awakening (Drive)', isPublished: true, expectedUpdatedAt: version },
+    });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.data.previousProvider, 'upload');
+    const teacherNotice = await until('alice notice', () => got(aliceSock, 'course_video.changed', (p) => p.action === 'published'));
+    assert.equal(teacherNotice.payload.actor.portal, 'admin');
+    assert.equal(teacherNotice.payload.provider, 'google_drive');
+    await until('student notice', () => got(studentSock, 'course:content_updated', (p) => p.moduleId === 'mod-1'));
+    const mod = await moduleOf('mod-1');
+    assert.equal(mod.video.provider, 'google_drive');
+    assert.equal(mod.video.externalVideoId, DRIVE);
+    assert.equal(mod.video.embedUrl, `https://drive.google.com/file/d/${DRIVE}/preview`);
+    assert.equal(mod.video.streamUrl, undefined, 'no stale upload URL is left behind');
+    assert.ok(s3.objects.has(firstKey), 'the replaced file is kept until no student can still be playing it');
+  });
+
+  await check('the teacher, who loaded the old version, cannot overwrite the administrator’s change', async () => {
+    const stale = await http(teacher.url, 'DELETE', '/api/teacher/lesson-videos/courses/prarambh/modules/mod-1', {
+      cookie: alice,
+      body: { expectedUpdatedAt: '2026-01-01T00:00:00.000Z' },
+    });
+    assert.equal(stale.status, 409);
+    assert.equal(stale.body.error?.details?.current?.provider, 'google_drive');
+  });
+
+  await check('the administrator uploads to another module, replacing its YouTube video; the teacher is told', async () => {
+    clear();
+    const bytes = fakeS3Module.fakeVideoBytes(256 * 1024, 'mp4');
+    const up = await uploadThrough(admin.url, adminCookie, '/api/admin', 'prarambh', 'mod-2', bytes, 'mindset.mp4');
+    await sendAll(up, bytes);
+    const done = await up.complete();
+    assert.equal(done.status, 200, JSON.stringify(done.body));
+    assert.equal(done.body.data.previousProvider, 'youtube');
+    const notice = await until('alice notice', () => got(aliceSock, 'course_video.changed', (p) => p.moduleId === 'mod-2' && p.action === 'upload_completed'));
+    assert.equal(notice.payload.actor.name, 'E2E Admin');
+    await until('student notice', () => got(studentSock, 'course:content_updated', (p) => p.moduleId === 'mod-2'));
+    assert.equal((await moduleOf('mod-2')).video.provider, 'upload');
+  });
+
+  console.log('Module videos: deletion, permissions, other courses');
+  await check('the teacher deletes a module video; the student loses it at once and the administrator sees the deletion', async () => {
+    clear();
+    const current = (await http(teacher.url, 'GET', '/api/teacher/lesson-videos/courses/prarambh', { cookie: alice })).body.data;
+    const version = current.modules.find((m) => m.moduleId === 'mod-2').video.updatedAt;
+    const r = await http(teacher.url, 'DELETE', '/api/teacher/lesson-videos/courses/prarambh/modules/mod-2', { cookie: alice, body: { expectedUpdatedAt: version } });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    await until('student notice', () => got(studentSock, 'course:content_updated', (p) => p.moduleId === 'mod-2'));
+    assert.equal((await moduleOf('mod-2')).video, null);
+    const notice = await until('admin notice', () => got(adminSock, 'course_video.changed', (p) => p.action === 'removed'));
+    assert.equal(notice.payload.actor.name, 'Alice Rao');
+    const activity = await http(admin.url, 'GET', '/api/admin/lesson-videos/activity?slug=prarambh&limit=50', { cookie: adminCookie });
+    assert.equal(activity.status, 200);
+    assert.ok(activity.body.data.some((e) => e.action === 'removed' && e.targetId === 'mod-2' && e.actor.name === 'Alice Rao'));
+  });
+
+  await check('a file that is not a video is refused after upload, and the administrator sees the failure', async () => {
+    clear();
+    const bytes = fakeS3Module.fakeVideoBytes(64 * 1024, 'pdf');
+    const up = await uploadThrough(teacher.url, alice, '/api/teacher', 'prarambh', 'mod-2', bytes, 'slides.mp4');
+    await sendAll(up, bytes);
+    const done = await up.complete();
+    assert.equal(done.status, 422);
+    assert.equal(done.body.error?.code, 'VIDEO_VERIFICATION_FAILED');
+    assert.equal((await moduleOf('mod-2')).video, null);
+    const problems = await http(admin.url, 'GET', '/api/admin/lesson-videos/activity?level=problems', { cookie: adminCookie });
+    assert.ok(problems.body.data.some((e) => e.action === 'upload_failed' && e.level === 'error' && e.actor.name === 'Alice Rao'));
+  });
+
+  await check('another teacher cannot upload to, or steer an upload in, a course not assigned to them', async () => {
+    const started = await uploadThrough(teacher.url, alice, '/api/teacher', 'prarambh', 'mod-2', fakeS3Module.fakeVideoBytes(1000, 'mp4'), 'a.mp4');
+    const steer = await http(teacher.url, 'POST', `/api/teacher/lesson-videos/courses/prarambh/uploads/${started.session.uploadId}/complete`, { cookie: bob, body: {} });
+    assert.equal(steer.status, 403);
+    const own = await http(teacher.url, 'POST', '/api/teacher/lesson-videos/courses/prarambh/modules/mod-1/uploads', {
+      cookie: bob,
+      body: { fileName: 'x.mp4', fileSize: 1000, mimeType: 'video/mp4' },
+    });
+    assert.equal(own.status, 403);
+    const cancel = await http(teacher.url, 'DELETE', `/api/teacher/lesson-videos/courses/prarambh/uploads/${started.session.uploadId}`, { cookie: alice });
+    assert.equal(cancel.status, 200);
+  });
+
+  await check('several teachers and modules: Bob’s GARUD video reaches the admin, never Alice or PRARAMBH students', async () => {
+    clear();
+    const bytes = fakeS3Module.fakeVideoBytes(128 * 1024, 'webm');
+    const start = await http(teacher.url, 'POST', '/api/teacher/lesson-videos/courses/garud/modules/g-mod-1/uploads', {
+      cookie: bob,
+      body: { fileName: 'flight.webm', fileSize: bytes.length, mimeType: 'video/webm', isPublished: true },
+    });
+    assert.equal(start.status, 201, JSON.stringify(start.body));
+    const urls = await http(teacher.url, 'POST', `/api/teacher/lesson-videos/courses/garud/uploads/${start.body.data.uploadId}/parts`, { cookie: bob, body: { partNumbers: [1] } });
+    await s3.putPart(urls.body.data.parts[0].url, bytes);
+    const done = await http(teacher.url, 'POST', `/api/teacher/lesson-videos/courses/garud/uploads/${start.body.data.uploadId}/complete`, { cookie: bob, body: {} });
+    assert.equal(done.status, 200, JSON.stringify(done.body));
+    const notice = await until('admin notice', () => got(adminSock, 'course_video.changed', (p) => p.slug === 'garud'));
+    assert.equal(notice.payload.actor.name, 'Bob Iyer');
+    await until('bob notice', () => got(bobSock, 'course_video.changed', (p) => p.slug === 'garud'));
+    await quiet();
+    assert.equal(got(aliceSock, 'course_video.changed', (p) => p.slug === 'garud'), undefined);
+    assert.equal(got(studentSock, 'course:content_updated', (p) => p.slug === 'garud'), undefined, 'the student is not enrolled in GARUD');
+    const prarambhNow = await moduleOf('mod-1');
+    assert.equal(prarambhNow.video.provider, 'google_drive', 'other courses were not touched');
+  });
+
+  await check('every module of PRARAMBH is configured on its own', async () => {
+    const view = await studentView();
+    const sources = Object.fromEntries(view.modules.map((m) => [m.moduleId, m.video?.provider || null]));
+    assert.deepEqual(sources, { 'mod-1': 'google_drive', 'mod-2': null });
+    const l1 = lessonOf(view, 'l-1');
+    assert.equal(l1.completed, true, 'completion survived every video change');
+    assert.equal(await sdb.collection('xpevents').countDocuments({ userId: new ObjectId(userId) }), xpBefore);
+  });
+
+  for (const sock of sockets) sock.close();
+  // In --keep mode the store stays up so uploads work in a browser check.
+  if (!KEEP) await s3.close();
 
   if (KEEP) {
     // Leave something to look at in a browser.

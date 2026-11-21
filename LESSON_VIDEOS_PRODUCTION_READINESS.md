@@ -1,3 +1,43 @@
+# Module Videos — 2026-11-21 update (read this first)
+
+The YouTube-only audit below (2026-11-11) still holds for YouTube links. Since then, every module and lesson video can also be an **uploaded file** or a **Google Drive link**, and PRARAMBH's fixed `/PRARAMBH.mp4` has been retired. Where the two disagree, this section wins. The full description is in README → *Module videos*.
+
+**Status: code complete and tested locally; NOT verified against real storage.** No bucket credentials exist yet, so uploads have only run against an in-process S3-compatible stand-in (wire-compatible, driven by the real AWS SDK and real presigned URLs). Do not treat uploads as working in production until `npm run video-storage -- --self-test` passes there (step 3 below). Until storage is configured, uploads answer *not configured*, and YouTube and Drive links work.
+
+### What changes in production
+| Area | Change |
+| :--- | :--- |
+| Data | New optional fields on `Course.modules[].video` / `…lessons[].video` (`externalVideoId`, `storageKey`, `uploadId`, file facts). New collections `videouploads` and `coursevideoevents` (1-year TTL). **No migration needed**: existing videos read exactly as before. |
+| Fixed video | Never served any more, wherever old rows still name it. `npm run migrate:remove-prarambh-video` reports those rows (dry run); `-- --apply` clears the course trailer, the lesson `videoUrl`s and the seeded live-class recording. **Production write: needs explicit approval.** |
+| Student backend | Upload/details/history routes on the internal bridge; `jobs/videoStorageSweep.job.js` (every 10 min); live notices to Admin and Teacher; `Cache-Control: no-store` on course content. Error `details` are now returned in production **only** for errors marked public (409 current version, missing upload parts). Before this, the 409 recovery never worked in production. New dependency: `@aws-sdk/client-s3` and `@aws-sdk/s3-request-presigner`, pinned to `3.1164.0`. |
+| Teacher / Admin backends | Upload, details and activity routes; per-user rate limits (link checks 60/min, upload starts 30/h, upload steps 900/15 min); `POST /api/internal/course-videos/events` relays notices (Teacher: only that course's teachers; Admin: all admins). Every teacher upload step re-checks `CourseAccess`. |
+| Frontends | Module Videos editor and manager (Admin and Teacher, byte-identical); student players for uploads and Drive. **CSP** (`vercel.json`): `frame-src` gains `https://drive.google.com`; Admin and Teacher gain `media-src 'self' blob: https:`; the student's report-only policy gains the same `media-src`. |
+
+### Before deploying
+1. **Create the bucket** (Cloudflare R2 recommended): private, no public access, and an API token scoped to it with Object Read & Write.
+2. **Render, student backend:** set `VIDEO_STORAGE_ENDPOINT`, `VIDEO_STORAGE_REGION` (`auto` for R2), `VIDEO_STORAGE_BUCKET`, `VIDEO_STORAGE_ACCESS_KEY_ID` and `VIDEO_STORAGE_SECRET_ACCESS_KEY`; optionally `MAX_VIDEO_UPLOAD_MB` (default 20480). Confirm `ADMIN_BACKEND_URL` and `TEACHER_BACKEND_URL` point at the deployed admin and teacher backends, and that their `STUDENT_BACKEND_SERVICE_KEY` equals the student's `INTERNAL_SERVICE_KEY`. Live notices use these.
+3. **From a shell with those variables** (e.g. Render shell on the student service), in `student/backend`: `npm run video-storage -- --check`, then `npm run video-storage -- --configure https://<admin-frontend>,https://<teacher-frontend>,https://www.nalandanexus.com,https://nalandanexus.com`, then `npm run video-storage -- --self-test`. The self-test does a real 3-part upload through presigned URLs, assembles and verifies it, plays a byte range through a signed URL, and deletes it.
+4. Atlas snapshot, then deploy in the usual order: **student backend → teacher backend → admin backend → student → teacher → admin frontends**.
+5. Dry run of the fixed-video clean-up; apply only with approval.
+
+### After deploying (production acceptance, with a test student and a test module)
+- Teacher uploads a large MP4 to an assigned module: progress shows; students see nothing until it is verified; the open student page switches to it without a reload; it plays and seeks.
+- Admin's open Module Videos page shows the upload live, with size, duration and "by <teacher>".
+- Admin replaces it with a Google Drive link (shared "Anyone with the link"); the teacher's open page and the student's page update live. Then remove it: the student sees "No video has been uploaded for this module yet…".
+- A teacher cannot see or change a course not assigned to them; a renamed non-video file is refused and appears under *Video problems*.
+- About 2 h 10 min after a replacement, the old file is gone from the bucket.
+
+### Test results (2026-11-21, sequential, `NODE_ENV=test`, in-memory databases, no production access)
+Student backend **315/315** · Teacher backend **160/160** · Admin backend **125/125** · Student frontend **30/30** · Teacher frontend **24/24** · Admin frontend **30/30** · cross-portal e2e (`npm run test:e2e:lesson-videos`) **29/29**, including real Socket.IO clients for all four sync directions · production builds ×3 ✅ · browser check of all three portals against the local stack (real upload of an 8-second MP4, range playback at 1.5×, live update across portals, 375 px layout) ✅.
+
+### Known limitations
+- No transcoding. MKV/MOV play only where the browser supports their codecs; the editor warns, and recommends MP4 (H.264).
+- Delivery uses signed URLs straight from the bucket. On R2 that is Cloudflare's network, but not a cache-backed CDN. A private CDN would need signed cookies or a Worker.
+- Duration is read in the uploader's browser and is informational.
+- Drive and YouTube can only report what they expose publicly. A private Drive file is reported as "not shared publicly", not as broken, because students it is shared with can still watch.
+
+---
+
 # Lesson Videos (YouTube) — Production Readiness Audit
 
 Audit date: 2026-11-11 · Branch: `perf/loading-reliability-and-tagline` (HEAD `17940da` + uncommitted lesson-video work)

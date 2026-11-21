@@ -45,21 +45,21 @@ import { broadcastVideoChange } from './videoChangeBroadcast.service.js';
 /*
  * PRARAMBH used to play one fixed, pre-made file (/PRARAMBH.mp4) on every
  * lesson, set by the seed as each lesson's `videoUrl` and as the course
- * trailer. That file has been removed from the frontends, and PRARAMBH's
- * modules are now managed one by one. Whatever older database rows still
- * point at it are never shown (scripts/removeLegacyPrarambhVideo.js clears
- * them for good), and PRARAMBH shows only videos managed here.
+ * trailer the student page fell back to. That file has been removed from the
+ * frontends and every module is now managed on its own. Database rows that
+ * still point at it are never shown to anyone
+ * (scripts/removeLegacyPrarambhVideo.js clears them for good). Any other
+ * legacy file a course may have keeps working until someone replaces it.
  */
 const RETIRED_FIXED_VIDEO = /(^|\/)prarambh\.mp4(?:[?#].*)?$/i;
-const MANAGED_ONLY_COURSES = new Set(['prarambh']);
 
 export function isRetiredLegacyVideoUrl(url) {
   return typeof url === 'string' && RETIRED_FIXED_VIDEO.test(url.trim());
 }
 
 /** A directly-hosted legacy file a student may still be given, or ''. */
-export function legacyVideoUrlFor(courseSlug, url) {
-  if (!url || MANAGED_ONLY_COURSES.has(courseSlug) || isRetiredLegacyVideoUrl(url)) return '';
+export function legacyVideoUrlFor(url) {
+  if (!url || isRetiredLegacyVideoUrl(url)) return '';
   return url;
 }
 
@@ -329,6 +329,7 @@ async function publishedVideoForStudent(managed) {
       fileSize: managed.fileSize ?? null,
       duration: managed.duration ?? null,
       mimeType: managed.mimeType || 'video/mp4',
+      uploadedAt: managed.uploadedAt || null,
       // Signed for this response only; never cached or stored. Null when the
       // storage provider cannot be reached - the player says so instead of
       // showing a dead frame.
@@ -367,14 +368,14 @@ async function publishedVideoForStudent(managed) {
  * the retired fixed PRARAMBH file - and when that legacy value is itself a
  * YouTube link it is played through the same embed.
  */
-export async function shapeLessonVideoForStudent(lesson, { courseSlug = '' } = {}) {
+export async function shapeLessonVideoForStudent(lesson) {
   const managed = lesson.video?.provider ? lesson.video : null;
   if (managed) {
     if (!managed.isPublished) return { video: null, videoUrl: '', videoManaged: true };
     return { video: await publishedVideoForStudent(managed), videoUrl: '', videoManaged: true };
   }
 
-  const legacy = legacyVideoUrlFor(courseSlug, lesson.videoUrl || '');
+  const legacy = legacyVideoUrlFor(lesson.videoUrl || '');
   const parsed = legacy ? parseYoutubeUrl(legacy) : null;
   if (parsed?.ok) {
     return {
@@ -488,7 +489,7 @@ export async function getCourseVideos(slug) {
               activeUpload: activeUploads.get(`lesson:${l.lessonId}`) || null,
               // Shown to the editor so "Remove" is not a surprise: removing a
               // video also clears this older directly-hosted file.
-              legacyVideoUrl: l.video?.provider ? '' : legacyVideoUrlFor(course.slug, l.videoUrl || ''),
+              legacyVideoUrl: l.video?.provider ? '' : legacyVideoUrlFor(l.videoUrl || ''),
             }))
         ),
       }))
@@ -743,20 +744,20 @@ export async function upsertVideo(slug, target, input, actorInput) {
   let videoId = null;
   let externalVideoId = null;
   let externalResourceKey = null;
-  let originalUrl;
+  // What the editor pasted (after it passed the parser), shown back to them so
+  // they recognise their own link. Never framed: players rebuild from the id.
+  const originalUrl = String(input.url).trim().slice(0, 2048);
   let check;
   if (provider === 'youtube') {
     const parsed = parseYoutubeUrl(input.url);
     if (!parsed.ok) throw AppError.unprocessable(parsed.message, parsed.code);
     videoId = parsed.videoId;
-    originalUrl = parsed.canonicalUrl;
     check = await checkYoutubeAvailability(videoId);
   } else {
     const parsed = parseGoogleDriveUrl(input.url);
     if (!parsed.ok) throw AppError.unprocessable(parsed.message, parsed.code);
     externalVideoId = parsed.fileId;
     externalResourceKey = parsed.resourceKey;
-    originalUrl = parsed.canonicalUrl;
     check = await checkGoogleDriveAvailability(externalVideoId, externalResourceKey);
   }
 
@@ -919,6 +920,7 @@ export const removeLessonVideo = (slug, lessonId, actor, opts) => removeVideo(sl
 const UPLOAD_IDLE_EXPIRY_MS = 24 * 60 * 60 * 1000;
 const PROCESSING_TIMEOUT_MS = 30 * 60 * 1000;
 const MAX_ACTIVE_UPLOADS_PER_ACTOR = 3;
+const ACTIVE_UPLOAD_WINDOW_MS = 60 * 60 * 1000;
 const MAX_PART_URLS_PER_REQUEST = 50;
 
 function uploadActor(actor) {
@@ -989,16 +991,18 @@ export async function startUpload(slug, target, input, actorInput) {
     throw AppError.unprocessable(`This video is larger than the ${Math.floor(max / 1024 ** 3)} GB upload limit.`, 'VIDEO_TOO_LARGE');
   }
 
+  // Sessions with activity in the last hour: one abandoned in a closed tab (or
+  // opened twice by a retried request) stops counting on its own.
   const active = await VideoUpload.countDocuments({
     'actor.portal': actor.portal,
     'actor.userId': actor.userId,
     status: { $in: ['uploading', 'processing'] },
-    expiresAt: { $gt: new Date() },
+    updatedAt: { $gt: new Date(Date.now() - ACTIVE_UPLOAD_WINDOW_MS) },
   });
   if (active >= MAX_ACTIVE_UPLOADS_PER_ACTOR) {
     throw new AppError(
       `You already have ${active} uploads in progress. Finish or cancel one before starting another.`,
-      429,
+      409,
       'TOO_MANY_ACTIVE_UPLOADS'
     );
   }

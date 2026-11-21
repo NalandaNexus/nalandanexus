@@ -11,6 +11,7 @@ import { User } from '../models/User.js';
 import { TaskSubmission } from '../models/TaskSubmission.js';
 import { Post } from '../models/Post.js';
 import { getPlatformSatisfaction } from '../services/review.service.js';
+import { legacyVideoUrlFor } from '../services/lessonVideo.service.js';
 
 /**
  * The only posts an anonymous visitor may ever see - explicitly approved for
@@ -123,7 +124,8 @@ export const getCourseBySlug = asyncHandler(async (req, res) => {
       title: l.title,
       duration: l.duration,
       order: l.order,
-      videoUrl: isEnrolled ? l.videoUrl : undefined,
+      // Never PRARAMBH's retired fixed file (see lessonVideo.service.js).
+      videoUrl: isEnrolled ? legacyVideoUrlFor(l.videoUrl) : undefined,
     })),
   }));
 

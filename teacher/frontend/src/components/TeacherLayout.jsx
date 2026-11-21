@@ -23,7 +23,7 @@ import {
   Sparkles,
   ChevronDown,
   ShieldOff,
-  Youtube,
+  Clapperboard,
 } from 'lucide-react';
 import { useTeacherAuth } from '../context/TeacherAuthContext';
 import ProBadge from './common/ProBadge';
@@ -37,7 +37,7 @@ const NAV_ITEMS = [
   { name: 'Dashboard', path: '/', icon: LayoutDashboard, end: true },
   { name: 'My Classes', path: '/classes', icon: Layers },
   { name: 'Courses', path: '/courses', icon: BookOpen },
-  { name: 'Lesson Videos', path: '/lesson-videos', icon: Youtube },
+  { name: 'Module Videos', path: '/lesson-videos', icon: Clapperboard },
   { name: 'Assignments', path: '/grading', icon: FileCheck2 },
   { name: 'Students', path: '/students', icon: Users },
   { name: 'Progress', path: '/student-progress', icon: Activity },

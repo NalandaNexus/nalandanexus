@@ -105,6 +105,10 @@ function transportError(message, code) {
 }
 
 // A course video belongs to one lesson or one module.
+function courseUploadPath(slug, uploadId) {
+  return `/lesson-videos/courses/${encodeURIComponent(slug)}/uploads/${encodeURIComponent(uploadId)}`;
+}
+
 function courseVideoPath(slug, target) {
   const node = target.moduleId ? `modules/${encodeURIComponent(target.moduleId)}` : `lessons/${encodeURIComponent(target.lessonId)}`;
   return `/lesson-videos/courses/${encodeURIComponent(slug)}/${node}`;
@@ -539,8 +543,10 @@ export const adminApi = {
     return json.data;
   },
 
-  // Lesson videos (YouTube). Proxied to the student service, which owns
-  // lessons and validates every link; this portal gates and audits.
+  // Module and lesson videos: YouTube links, Google Drive links and uploaded
+  // files. Proxied to the student service, which owns modules and lessons and
+  // validates every link and file; this portal gates and audits. Upload bytes
+  // go from the browser straight to storage on presigned URLs.
   async getLessonVideoCourses() {
     const json = await request('/lesson-videos/courses');
     return json.data || [];
@@ -551,8 +557,14 @@ export const adminApi = {
     return json.data || null;
   },
 
-  async inspectLessonVideo(url, { signal } = {}) {
-    const json = await request('/lesson-videos/inspect', { method: 'POST', body: { url }, signal });
+  /** Video history; `level: 'problems'` lists only warnings and errors, across courses unless `slug` is given. */
+  async getVideoActivity({ slug, level, limit } = {}) {
+    const json = await request('/lesson-videos/activity', { query: { slug, level, limit } });
+    return json.data || [];
+  },
+
+  async inspectLessonVideo(url, { signal, provider } = {}) {
+    const json = await request('/lesson-videos/inspect', { method: 'POST', body: { url, ...(provider ? { provider } : {}) }, signal });
     return json.data || null;
   },
 
@@ -562,24 +574,34 @@ export const adminApi = {
     return json.data;
   },
 
+  async updateCourseVideo(slug, target, payload) {
+    const json = await request(courseVideoPath(slug, target), { method: 'PATCH', body: payload });
+    return json.data;
+  },
+
   async removeCourseVideo(slug, target, payload = {}) {
     const json = await request(courseVideoPath(slug, target), { method: 'DELETE', body: payload });
     return json.data;
   },
+
   async startCourseVideoUpload(slug, target, payload) {
     const json = await request(`${courseVideoPath(slug, target)}/uploads`, { method: 'POST', body: payload });
     return json.data;
   },
-  async getCourseVideoPartUrls(uploadId, partNumbers) {
-    const json = await request(`/lesson-videos/uploads/${encodeURIComponent(uploadId)}/parts`, { method: 'POST', body: { partNumbers } });
+  async getCourseVideoPartUrls(slug, uploadId, partNumbers) {
+    const json = await request(`${courseUploadPath(slug, uploadId)}/parts`, { method: 'POST', body: { partNumbers } });
     return json.data;
   },
-  async completeCourseVideoUpload(uploadId, payload) {
-    const json = await request(`/lesson-videos/uploads/${encodeURIComponent(uploadId)}/complete`, { method: 'POST', body: payload });
+  async resumeCourseVideoUpload(slug, uploadId) {
+    const json = await request(`${courseUploadPath(slug, uploadId)}/resume`, { method: 'POST', body: {} });
     return json.data;
   },
-  async abortCourseVideoUpload(uploadId) {
-    const json = await request(`/lesson-videos/uploads/${encodeURIComponent(uploadId)}`, { method: 'DELETE', body: {} });
+  async completeCourseVideoUpload(slug, uploadId, payload = {}) {
+    const json = await request(`${courseUploadPath(slug, uploadId)}/complete`, { method: 'POST', body: payload });
+    return json.data;
+  },
+  async abortCourseVideoUpload(slug, uploadId) {
+    const json = await request(courseUploadPath(slug, uploadId), { method: 'DELETE', body: {} });
     return json.data;
   },
 

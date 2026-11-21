@@ -127,3 +127,21 @@ export default {
   ingestAttendanceSummarySchema,
   ingestTeacherAnnouncementSchema,
 };
+
+// A notice from the student service that a module/lesson video changed.
+export const courseVideoChangedSchema = {
+  body: z.object({
+    type: z.string().max(40).optional(),
+    slug: z.string().trim().regex(/^[a-z0-9-]{1,120}$/i),
+    courseId: z.string().max(64).optional(),
+    moduleId: z.string().max(120).nullish(),
+    lessonId: z.string().max(120).nullish(),
+    targetType: z.enum(['module', 'lesson']).optional(),
+    action: z.string().min(1).max(40),
+    provider: z.enum(['youtube', 'google_drive', 'upload']).nullish(),
+    isPublished: z.boolean().nullish(),
+    version: z.string().datetime({ offset: true }).nullish(),
+    actor: z.object({ portal: z.enum(['admin', 'teacher', 'system']).optional(), name: z.string().max(120).nullish() }).nullish(),
+    at: z.string().max(40).optional(),
+  }),
+};

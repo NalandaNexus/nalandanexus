@@ -21,6 +21,7 @@ import {
   receiveSubmissionValidator,
   receiveQuizResultValidator,
   portalStudentValidator,
+  courseVideoChangedValidator,
 } from '../validators/internal.validators.js';
 
 // Service-to-service only - authenticated by a shared secret
@@ -57,5 +58,7 @@ router.post('/admin-announcements', adminAnnouncementValidator, validate, intern
 router.delete('/admin-announcements/:sourceId', sourceIdParamValidator, validate, internalController.removeAdminAnnouncement);
 router.post('/submissions', receiveSubmissionValidator, validate, internalController.receiveSubmission);
 router.post('/quiz-results', receiveQuizResultValidator, validate, internalController.receiveQuizResult);
+// The student service saying a module/lesson video changed; relayed live to the course's assigned teachers.
+router.post('/course-videos/events', courseVideoChangedValidator, validate, internalController.relayCourseVideoChange);
 
 export default router;

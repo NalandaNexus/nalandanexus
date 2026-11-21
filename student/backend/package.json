@@ -18,7 +18,8 @@
     "backfill:enrollment-numbers": "node src/scripts/backfillEnrollmentNumbers.js",
     "seed:progression": "node src/scripts/seedProgression.js",
     "seed:journey": "node src/scripts/seedJourneyCourses.js",
-    "migrate:remove-prarambh-video": "node src/scripts/removeLegacyPrarambhVideo.js"
+    "migrate:remove-prarambh-video": "node src/scripts/removeLegacyPrarambhVideo.js",
+    "video-storage": "node src/scripts/videoStorageSetup.js"
   },
   "keywords": [
     "nalanda",

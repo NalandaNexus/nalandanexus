@@ -200,7 +200,7 @@ test('an unreachable student service is a 503, never a false success', async () 
   fake.down = true;
   const res = await call('/api/admin/lesson-videos/courses/prarambh/lessons/l-1', { method: 'PUT', body: VIDEO, cookie });
   assert.equal(res.status, 503);
-  assert.match(res.body.message || res.body.error?.message, /lesson videos/);
+  assert.match(res.body.message || res.body.error?.message, /module videos/);
 });
 
 test('module videos go to the module route, with the same gate and audit', async () => {
@@ -239,4 +239,115 @@ test('a malformed version is refused before the bridge', async () => {
   const res = await call('/api/admin/lesson-videos/courses/prarambh/lessons/l-1', { method: 'PUT', body: { ...VIDEO, expectedUpdatedAt: 'soon' }, cookie });
   assert.equal(res.status, 422);
   assert.equal(received.length, 0);
+});
+
+// --- Uploads, Drive, history and live notices --------------------------------------------------------
+
+const SESSION = 'bbbbbbbbbbbbbbbbbbbbbbbb';
+const UPLOAD = { fileName: 'module-2.mov', fileSize: 734_003_200, mimeType: 'video/quicktime' };
+const UPLOAD_ROUTES = [
+  { method: 'POST', path: '/api/admin/lesson-videos/courses/prarambh/modules/mod-2/uploads', body: UPLOAD },
+  { method: 'POST', path: `/api/admin/lesson-videos/courses/prarambh/uploads/${SESSION}/parts`, body: { partNumbers: [1] } },
+  { method: 'POST', path: `/api/admin/lesson-videos/courses/prarambh/uploads/${SESSION}/resume`, body: {} },
+  { method: 'POST', path: `/api/admin/lesson-videos/courses/prarambh/uploads/${SESSION}/complete`, body: {} },
+  { method: 'DELETE', path: `/api/admin/lesson-videos/courses/prarambh/uploads/${SESSION}`, body: {} },
+  { method: 'PATCH', path: '/api/admin/lesson-videos/courses/prarambh/modules/mod-2', body: { isPublished: false } },
+  { method: 'GET', path: '/api/admin/lesson-videos/activity?level=problems' },
+];
+
+test('upload, details and activity routes need a session with courses.manage', async () => {
+  const staff = await login('staff@test.local');
+  for (const r of UPLOAD_ROUTES) {
+    assert.equal((await call(r.path, { method: r.method, body: r.body })).status, 401, `${r.method} ${r.path} unauthenticated`);
+    assert.equal((await call(r.path, { method: r.method, body: r.body, cookie: staff })).status, 403, `${r.method} ${r.path} STAFF`);
+  }
+  assert.equal(received.length, 0);
+});
+
+test('an administrator drives an upload; each step names the course and the administrator', async () => {
+  const admin = await login('super@test.local');
+  for (const r of UPLOAD_ROUTES.slice(0, 5)) {
+    const res = await call(r.path, { method: r.method, body: r.body, cookie: admin });
+    assert.ok(res.status < 300, `${r.method} ${r.path}: ${res.status} ${JSON.stringify(res.body)}`);
+  }
+  assert.deepEqual(
+    received.map((c) => `${c.method} ${c.url}`),
+    [
+      'POST /api/internal/lesson-videos/courses/prarambh/modules/mod-2/uploads',
+      `POST /api/internal/lesson-videos/courses/prarambh/uploads/${SESSION}/parts`,
+      `POST /api/internal/lesson-videos/courses/prarambh/uploads/${SESSION}/resume`,
+      `POST /api/internal/lesson-videos/courses/prarambh/uploads/${SESSION}/complete`,
+      `DELETE /api/internal/lesson-videos/courses/prarambh/uploads/${SESSION}`,
+    ]
+  );
+  for (const c of received) {
+    assert.equal(c.key, 'admin_to_student_key');
+    assert.equal(c.body.actor.portal, 'admin');
+    assert.equal(c.body.actor.name, 'Super');
+  }
+  assert.equal(received[0].body.fileName, 'module-2.mov');
+  assert.equal(received[0].body.fileSize, 734_003_200);
+});
+
+test('opening an upload session is never retried, so a slow student service cannot open two', async () => {
+  const admin = await login('super@test.local');
+  fake.rejectNext = { status: 500, code: 'INTERNAL_ERROR', message: 'boom' };
+  const res = await call('/api/admin/lesson-videos/courses/prarambh/modules/mod-2/uploads', { method: 'POST', body: UPLOAD, cookie: admin });
+  assert.equal(res.status, 503);
+  assert.equal(received.filter((c) => c.url.endsWith('/uploads')).length, 1);
+});
+
+test("the student service's refusals reach the administrator with their code and details", async () => {
+  const admin = await login('super@test.local');
+  fake.rejectNext = { status: 422, code: 'VIDEO_VERIFICATION_FAILED', message: 'This file is not a playable video.' };
+  const bad = await call(`/api/admin/lesson-videos/courses/prarambh/uploads/${SESSION}/complete`, { method: 'POST', body: {}, cookie: admin });
+  assert.equal(bad.status, 422);
+  assert.equal(bad.body.code || bad.body.error?.code, 'VIDEO_VERIFICATION_FAILED');
+
+  const current = { provider: 'youtube', videoId: 'M7lc1UVf-VE', updatedAt: '2026-11-21T09:00:00.000Z' };
+  fake.rejectNext = { status: 409, code: 'VIDEO_CHANGED', message: 'Changed by Tara.', details: { current, uploadId: SESSION, uploadStatus: 'verified' } };
+  const conflict = await call(`/api/admin/lesson-videos/courses/prarambh/uploads/${SESSION}/complete`, { method: 'POST', body: {}, cookie: admin });
+  assert.equal(conflict.status, 409);
+  const details = conflict.body.errors || conflict.body.error?.details;
+  assert.equal(details.current.videoId, 'M7lc1UVf-VE');
+  assert.equal(details.uploadStatus, 'verified');
+
+  const invalid = await call('/api/admin/lesson-videos/courses/prarambh/modules/mod-2/uploads', { method: 'POST', body: { ...UPLOAD, fileSize: -5 }, cookie: admin });
+  assert.equal(invalid.status, 422, 'shape is checked before anything crosses');
+  assert.equal(received.length, 2);
+});
+
+test('Google Drive links, visibility changes and the problems feed are forwarded as asked', async () => {
+  const admin = await login('super@test.local');
+  const drive = await call('/api/admin/lesson-videos/courses/prarambh/modules/mod-3', {
+    method: 'PUT',
+    body: { provider: 'google_drive', url: 'https://drive.google.com/file/d/1AbCdEfGhIjKlMnOpQrStUvWxYz012345/view', isPublished: true },
+    cookie: admin,
+  });
+  assert.equal(drive.status, 200);
+  assert.equal(received[0].body.provider, 'google_drive');
+
+  const patch = await call('/api/admin/lesson-videos/courses/prarambh/modules/mod-3', { method: 'PATCH', body: { isPublished: false }, cookie: admin });
+  assert.equal(patch.status, 200);
+  assert.equal(received[1].method, 'PATCH');
+  assert.equal(received[1].body.isPublished, false);
+
+  const activity = await call('/api/admin/lesson-videos/activity?level=problems&limit=20', { cookie: admin });
+  assert.equal(activity.status, 200);
+  assert.equal(received[2].url, '/api/internal/lesson-videos/events?level=problems&limit=20');
+
+  const unknownProvider = await call('/api/admin/lesson-videos/courses/prarambh/modules/mod-3', { method: 'PUT', body: { provider: 'vimeo', url: 'x' }, cookie: admin });
+  assert.equal(unknownProvider.status, 422);
+});
+
+test('a video change notice from the student service needs the service key, and is relayed to admins', async () => {
+  const notice = { slug: 'prarambh', moduleId: 'mod-1', lessonId: null, action: 'upload_completed', provider: 'upload', isPublished: true, actor: { portal: 'teacher', name: 'Tara' } };
+  const post = (headers, body = notice) =>
+    fetch(`${base}/api/internal/course-videos/events`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) });
+  assert.equal((await post({})).status, 401);
+  assert.equal((await post({ 'X-Internal-Service-Key': 'wrong' })).status, 401);
+  const ok = await post({ 'X-Internal-Service-Key': 'admin_to_student_key' });
+  assert.equal(ok.status, 200);
+  assert.equal((await ok.json()).data.relayed, true);
+  assert.equal((await post({ 'X-Internal-Service-Key': 'admin_to_student_key' }, { ...notice, slug: '<script>' })).status, 422);
 });

@@ -6,8 +6,9 @@ import { bootTestApp, registerAndLogin, bearer } from './helpers/testApp.js';
  * Backward compatibility of course videos on a production-shaped database.
  *
  * The catalogue is built the way production's was: PRARAMBH in the shape
- * src/seed/seed.js gives it (thirteen lessons and the capstone locked, with
- * no default video), and GARUD and YODDHA by the real
+ * src/seed/seed.js gave it (thirteen lessons, the capstone locked, every
+ * lesson still pointing at the retired fixed /PRARAMBH.mp4 as production's
+ * rows do until the clean-up script runs), and GARUD and YODDHA by the real
  * journey and curriculum seeders - eighteen modules each, with their quizzes,
  * final assessments and assignments. Real students then enrol, complete
  * lessons and earn XP through the real endpoints.
@@ -39,7 +40,7 @@ const PRARAMBH_MODULES = [
   moduleId,
   title,
   order: i + 1,
-  lessons: lessons.map(([lessonId, t, isLocked], j) => ({ lessonId, title: t, duration: '20 mins', order: j + 1, isLocked: Boolean(isLocked) })),
+  lessons: lessons.map(([lessonId, t, isLocked], j) => ({ lessonId, title: t, duration: '20 mins', order: j + 1, videoUrl: '/PRARAMBH.mp4', isLocked: Boolean(isLocked) })),
 }));
 
 before(async () => {
@@ -66,6 +67,7 @@ before(async () => {
     isPublished: true,
     isPurchasable: true,
     pillar: 'communicate',
+    videoUrl: '/PRARAMBH.mp4',
     modules: PRARAMBH_MODULES,
   });
   const journey = await import('../src/services/progression/journey.service.js');
@@ -152,10 +154,13 @@ test('the production-shaped catalogue is in place, with progress and XP to prote
   assert.ok(baseline.progress.length >= 18, `progress rows: ${baseline.progress.length}`);
   assert.ok(baseline.xp.length >= 18, `xp events: ${baseline.xp.length}`);
   assert.ok(baseline.quizzes.length >= 6 && baseline.tasks.length >= 16);
-  // PRARAMBH has no fixed fallback video; each module/lesson starts empty.
+  // The retired fixed video is never shown, although production's rows still
+  // name it: every PRARAMBH lesson starts with no video until one is managed.
   const view = (await request.get('/api/student/courses/prarambh/content').set(bearer(students[0].accessToken))).body.data;
   assert.ok(view.modules.flatMap((m) => m.lessons).every((l) => l.videoUrl === '' && l.video === null && l.videoManaged === false));
   assert.equal(view.videoUrl, '');
+  assert.ok(view.modules.every((m) => m.video === null), 'no module has a video yet');
+  assert.ok(!JSON.stringify(view).includes('PRARAMBH.mp4'), 'the retired file is not referenced anywhere in the response');
 });
 
 test('every kind of video operation across all three courses changes nothing but videos', async () => {
@@ -216,7 +221,8 @@ test('removing a video cleared only the hosted file it is documented to clear', 
   const prarambh = await M.Course.findOne({ slug: 'prarambh' }).lean();
   for (const l of prarambh.modules.flatMap((m) => m.lessons)) {
     if (removedLessons.has(l.lessonId)) assert.equal(l.videoUrl, '', l.lessonId);
-    else assert.equal(l.videoUrl, '', l.lessonId);
+    // Hidden from students, but the stored row is untouched by video work.
+    else assert.equal(l.videoUrl, '/PRARAMBH.mp4', l.lessonId);
   }
 });
 

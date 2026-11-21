@@ -25,7 +25,7 @@ import {
   LogOut,
   ChevronLeft,
   ChevronRight,
-  Youtube,
+  Clapperboard,
 } from 'lucide-react';
 import { useAdminAuth } from '../../context/AdminAuthContext';
 
@@ -43,7 +43,7 @@ const NAV_SECTIONS = [
       { name: 'Batches', path: '/batches', icon: Layers },
       { name: 'Coupons', path: '/coupons', icon: Ticket },
       { name: 'Course Subjects', path: '/course-subjects', icon: Tags },
-      { name: 'Lesson Videos', path: '/lesson-videos', icon: Youtube },
+      { name: 'Module Videos', path: '/lesson-videos', icon: Clapperboard },
       { name: 'Progression', path: '/progression', icon: SlidersHorizontal },
       { name: 'Stage Eligibility', path: '/stage-eligibility', icon: ShieldCheck },
       { name: 'Student Eligibility', path: '/student-eligibility', icon: ListChecks },

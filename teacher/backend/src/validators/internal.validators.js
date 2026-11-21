@@ -215,3 +215,20 @@ export default {
   adminAnnouncementValidator,
   receiveSubmissionValidator,
 };
+
+// A notice from the student service that a module/lesson video changed. It
+// names what changed and carries no URL; teachers who receive it re-read the
+// course through their own authorised API.
+export const courseVideoChangedValidator = [
+  body('slug').isString().trim().matches(/^[a-z0-9-]{1,100}$/i),
+  body('courseId').optional().isString().isLength({ max: 64 }),
+  body('moduleId').optional({ nullable: true }).isString().isLength({ max: 120 }),
+  body('lessonId').optional({ nullable: true }).isString().isLength({ max: 120 }),
+  body('action').isString().isLength({ min: 1, max: 40 }),
+  body('provider').optional({ nullable: true }).isIn(['youtube', 'google_drive', 'upload']),
+  body('isPublished').optional({ nullable: true }).isBoolean(),
+  body('version').optional({ nullable: true }).isISO8601(),
+  body('actor').optional({ nullable: true }).isObject(),
+  body('actor.portal').optional({ nullable: true }).isIn(['admin', 'teacher', 'system']),
+  body('actor.name').optional({ nullable: true }).isString().isLength({ max: 120 }),
+];

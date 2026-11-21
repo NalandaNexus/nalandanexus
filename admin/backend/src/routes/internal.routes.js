@@ -10,6 +10,7 @@ import {
   ingestTeacherAnnouncementSchema,
   upsertPortalStudentSchema,
   teacherPasswordResetEmailSchema,
+  courseVideoChangedSchema,
 } from '../validators/internal.validators.js';
 
 // Service-to-service only - authenticated by a shared secret
@@ -28,6 +29,8 @@ router.delete('/teacher-announcements/:sourceId', internalController.retractTeac
 // A portal student's current record, keyed on their student-portal user id.
 router.put('/portal-students/:userId', validate(upsertPortalStudentSchema), internalController.upsertPortalStudent);
 // A teacher's self-service password-reset link, which the Teacher service asks Admin to email.
+// The student service saying a module/lesson video changed; relayed live to signed-in admins.
+router.post('/course-videos/events', validate(courseVideoChangedSchema), internalController.relayCourseVideoChange);
 router.post('/teacher-emails/password-reset', validate(teacherPasswordResetEmailSchema), internalController.sendTeacherPasswordReset);
 
 export default router;

@@ -12,6 +12,19 @@ const SOCKET_URL = (
 ).replace(/\/api\/?$/, '');
 
 let socket = null;
+const readyListeners = new Set();
+
+/**
+ * Calls `fn(socket)` with the current authenticated socket now (if any) and
+ * again whenever a new one is created - after sign-in, or after a token
+ * refresh replaced it. A page that mounts before the session's socket exists
+ * still gets its listeners attached. Returns an unsubscribe function.
+ */
+export function onSocketReady(fn) {
+  readyListeners.add(fn);
+  if (socket) fn(socket);
+  return () => readyListeners.delete(fn);
+}
 
 export function connectSocket() {
   const token = getAccessToken();
@@ -29,6 +42,7 @@ export function connectSocket() {
     withCredentials: true,
     transports: ['websocket', 'polling'],
   });
+  readyListeners.forEach((fn) => fn(socket));
 
   return socket;
 }

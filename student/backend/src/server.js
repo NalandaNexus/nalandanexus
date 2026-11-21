@@ -8,6 +8,7 @@ import { startQuizExpirySweep } from './jobs/quizExpirySweep.job.js';
 import { startLiveClassStatusSweep } from './jobs/liveClassStatusSweep.job.js';
 import { startPortalSyncSweep } from './jobs/portalSyncSweep.job.js';
 import { startLessonVideoRecheck } from './jobs/lessonVideoRecheck.job.js';
+import { startVideoStorageSweep } from './jobs/videoStorageSweep.job.js';
 
 async function main() {
   try {
@@ -24,6 +25,7 @@ async function main() {
   startLiveClassStatusSweep();
   startPortalSyncSweep();
   startLessonVideoRecheck();
+  startVideoStorageSweep();
 
   httpServer.listen(env.port, () => {
     logger.info(`Nalanda Student Backend running on http://localhost:${env.port} (${env.nodeEnv})`);
