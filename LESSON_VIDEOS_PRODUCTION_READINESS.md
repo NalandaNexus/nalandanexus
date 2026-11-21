@@ -40,6 +40,8 @@ Student backend **315/315** · Teacher backend **160/160** · Admin backend **12
 
 # Lesson Videos (YouTube) — Production Readiness Audit
 
+> **Hostnames corrected 2026-11-21.** This audit originally named the Render services `nalandanexus`, `nalandanexus-1-bj7j` and `nalandanexus-1`. Those are retired: suspended, or running old code that no site calls, and all three answered 503 on 2026-11-21. The live services are **student `https://nalandanexus-student.onrender.com`**, **teacher `https://nalandanexus-teacher.onrender.com`** and **admin `https://nalandanexus-admin.onrender.com`** (all healthy on 2026-11-21). Every URL below uses them. The production commits quoted in this section are as observed on 2026-11-11.
+
 Audit date: 2026-11-11 · Branch: `perf/loading-reliability-and-tagline` (HEAD `17940da` + uncommitted lesson-video work)
 Production today (read from each backend's `/api/health`): commit **`3e5b530`** on all three backends.
 
@@ -116,12 +118,12 @@ What could **not** be checked: the deployed Render and Vercel environment values
 
 | Service | Variable | Must be |
 |---|---|---|
-| Student backend (`nalandanexus.onrender.com`) | `INTERNAL_SERVICE_KEY` | set; equal to the next two |
-| Admin backend (`nalandanexus-1.onrender.com`) | `STUDENT_BACKEND_URL` / `STUDENT_BACKEND_SERVICE_KEY` | `https://nalandanexus.onrender.com` / the student key |
-| Teacher backend (`nalandanexus-1-bj7j.onrender.com`) | `STUDENT_BACKEND_URL` / `STUDENT_BACKEND_SERVICE_KEY` | as above |
+| Student backend (`nalandanexus-student.onrender.com`) | `INTERNAL_SERVICE_KEY` | set; equal to the next two |
+| Admin backend (`nalandanexus-admin.onrender.com`) | `STUDENT_BACKEND_URL` / `STUDENT_BACKEND_SERVICE_KEY` | `https://nalandanexus-student.onrender.com` / the student key |
+| Teacher backend (`nalandanexus-teacher.onrender.com`) | `STUDENT_BACKEND_URL` / `STUDENT_BACKEND_SERVICE_KEY` | as above |
 | Admin backend | `TEACHER_BACKEND_URL` / `TEACHER_BACKEND_SERVICE_KEY` | the teacher backend / its key (needed by `17940da` course assignment) |
 | Each backend | `CLIENT_URL` | its production frontend origin(s), comma-separated |
-| Student frontend | `VITE_STUDENT_API_URL` | `https://nalandanexus.onrender.com/api` |
+| Student frontend | `VITE_STUDENT_API_URL` | `https://nalandanexus-student.onrender.com/api` |
 | Admin frontend | `VITE_ADMIN_API_URL`, `VITE_ADMIN_SOCKET_URL` | admin backend `/api/admin`, admin backend origin |
 | Teacher frontend | `VITE_TEACHER_API_URL` (and `VITE_SOCKET_URL` if set) | teacher backend `/api/teacher`; the socket now falls back to the API origin |
 
@@ -300,7 +302,7 @@ Student backend 292/292 · Admin backend 114/114 · Teacher backend 134/134 · S
 Not blockers: the unpushed local `main` commit (already on this branch); the clean second worktree; no staging (mitigated by §10.10 and rollback).
 
 ### 10.6 Render (three web services) — confirm, don't change secrets
-| Setting | Student (`nalandanexus.onrender.com`) | Teacher (`nalandanexus-1-bj7j.onrender.com`) | Admin (`nalandanexus-1.onrender.com`) |
+| Setting | Student (`nalandanexus-student.onrender.com`) | Teacher (`nalandanexus-teacher.onrender.com`) | Admin (`nalandanexus-admin.onrender.com`) |
 |---|---|---|---|
 | Root directory | `student/backend` | `teacher/backend` | `admin/backend` |
 | Build / start | `npm ci` (or `npm install`) / `npm start` (`node src/server.js`) | same | same |
@@ -309,7 +311,7 @@ Not blockers: the unpushed local `main` commit (already on this branch); the cle
 | `NODE_ENV` | `production` | `production` | `production` |
 | Database | `MONGODB_URI` → `nalanda_student` | → `nalanda_teacher` | → `nalanda_admin` |
 | Service keys | `INTERNAL_SERVICE_KEY` = K | `STUDENT_BACKEND_SERVICE_KEY` = K | `STUDENT_BACKEND_SERVICE_KEY` = K; `TEACHER_BACKEND_SERVICE_KEY` = the teacher's inbound key |
-| Bridges | (`TEACHER_BACKEND_URL`, `ADMIN_BACKEND_URL` as today) | `STUDENT_BACKEND_URL=https://nalandanexus.onrender.com` | `STUDENT_BACKEND_URL=https://nalandanexus.onrender.com`; `TEACHER_BACKEND_URL=https://nalandanexus-1-bj7j.onrender.com` |
+| Bridges | (`TEACHER_BACKEND_URL`, `ADMIN_BACKEND_URL` as today) | `STUDENT_BACKEND_URL=https://nalandanexus-student.onrender.com` | `STUDENT_BACKEND_URL=https://nalandanexus-student.onrender.com`; `TEACHER_BACKEND_URL=https://nalandanexus-teacher.onrender.com` |
 | `CLIENT_URL` | `https://www.nalandanexus.com,https://nalandanexus.com,https://nalandanexus.vercel.app` (as today) | the teacher frontend's production origin | **exactly one** origin: the admin frontend's production origin (admin CORS accepts a single origin) |
 | Outbound | HTTPS to `www.youtube.com`, `img.youtube.com` (default) | — | — |
 | Auto-deploy | Paused for the release (B2) | Paused | Paused |
@@ -321,7 +323,7 @@ No new variables are introduced by lesson videos.
 |---|---|---|---|
 | Root directory | `student/frontend` | `teacher/frontend` | `admin/frontend` |
 | Framework / build / output | Vite / `npm run build` / `dist` | same | same |
-| Env (Production) | `VITE_STUDENT_API_URL=https://nalandanexus.onrender.com/api` | `VITE_TEACHER_API_URL=https://nalandanexus-1-bj7j.onrender.com/api/teacher` (`VITE_SOCKET_URL` optional; falls back to the API origin) | `VITE_ADMIN_API_URL=https://nalandanexus-1.onrender.com/api/admin`, `VITE_ADMIN_SOCKET_URL=https://nalandanexus-1.onrender.com` |
+| Env (Production) | `VITE_STUDENT_API_URL=https://nalandanexus-student.onrender.com/api` | `VITE_TEACHER_API_URL=https://nalandanexus-teacher.onrender.com/api/teacher` (`VITE_SOCKET_URL` optional; falls back to the API origin) | `VITE_ADMIN_API_URL=https://nalandanexus-admin.onrender.com/api/admin`, `VITE_ADMIN_SOCKET_URL=https://nalandanexus-admin.onrender.com` |
 | Headers | from `vercel.json`: enforced frame CSP + report-only full CSP | unchanged `vercel.json` (already allows YouTube frames) | from `vercel.json`: `frame-src 'self' https://www.youtube-nocookie.com` |
 | Check | No dashboard-level header overrides that would replace `vercel.json` | same | same |
 | Auto-deploy | Paused for the release (B2) | Paused | Paused |
