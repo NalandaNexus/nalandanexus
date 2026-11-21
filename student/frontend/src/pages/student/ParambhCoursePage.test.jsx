@@ -40,7 +40,7 @@ const yt = (id, over = {}) => ({
   ...over,
 });
 
-function content({ l1 = {}, l2 = {}, courseVideoUrl = '/PRARAMBH.mp4' } = {}) {
+function content({ l1 = {}, l2 = {}, courseVideoUrl = '' } = {}) {
   return {
     id: 'c1',
     slug: 'prarambh',

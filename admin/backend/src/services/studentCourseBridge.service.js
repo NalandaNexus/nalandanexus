@@ -469,6 +469,23 @@ export async function removeCourseVideo(slug, target, payload) {
   return body?.data || null;
 }
 
+export async function startCourseVideoUpload(slug, target, payload) {
+  const body = await videoCall(`${videoPath(slug, target)}/uploads`, { method: 'POST', body: JSON.stringify(payload) });
+  return body?.data || null;
+}
+export async function getCourseVideoPartUrls(uploadId, payload) {
+  const body = await videoCall(`/api/internal/lesson-videos/uploads/${encodeURIComponent(uploadId)}/parts`, { method: 'POST', body: JSON.stringify(payload) });
+  return body?.data || null;
+}
+export async function completeCourseVideoUpload(uploadId, payload) {
+  const body = await videoCall(`/api/internal/lesson-videos/uploads/${encodeURIComponent(uploadId)}/complete`, { method: 'POST', body: JSON.stringify(payload) });
+  return body?.data || null;
+}
+export async function abortCourseVideoUpload(uploadId, payload) {
+  const body = await videoCall(`/api/internal/lesson-videos/uploads/${encodeURIComponent(uploadId)}`, { method: 'DELETE', body: JSON.stringify(payload) });
+  return body?.data || null;
+}
+
 export async function listSubjects() {
   const body = await couponCall('/api/internal/subjects', { method: 'GET' });
   return body?.data || [];

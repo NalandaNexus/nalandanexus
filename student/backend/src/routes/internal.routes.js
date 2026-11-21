@@ -5,11 +5,20 @@ import * as lessonVideoController from '../controllers/lessonVideo.controller.js
 import {
   videoCatalogSchema,
   courseVideosSchema,
+  videoEventsSchema,
   inspectVideoSchema,
   upsertLessonVideoSchema,
+  updateLessonVideoSchema,
   removeLessonVideoSchema,
   upsertModuleVideoSchema,
+  updateModuleVideoSchema,
   removeModuleVideoSchema,
+  startLessonUploadSchema,
+  startModuleUploadSchema,
+  uploadPartUrlsSchema,
+  resumeUploadSchema,
+  completeUploadSchema,
+  abortUploadSchema,
 } from '../validators/lessonVideo.validators.js';
 import { requireInternalServiceKey } from '../middleware/internalService.js';
 import { validate } from '../middleware/validate.js';
@@ -55,15 +64,29 @@ import {
 const router = Router();
 router.use(requireInternalServiceKey);
 
-// Lesson videos (YouTube). Lessons live only here, so the Admin and Teacher
-// portals manage their videos through these rather than holding a copy.
+// Module and lesson videos (YouTube, Google Drive, uploaded files). Modules
+// and lessons live only here, so the Admin and Teacher portals manage their
+// videos through these rather than holding a copy. Upload routes name the
+// course too, so the teacher portal's per-course assignment check covers them.
+const lessonPath = '/lesson-videos/courses/:slug/lessons/:lessonId';
+const modulePath = '/lesson-videos/courses/:slug/modules/:moduleId';
+const uploadPath = '/lesson-videos/courses/:slug/uploads/:uploadId';
 router.get('/lesson-videos/courses', validate(videoCatalogSchema), lessonVideoController.listVideoCatalog);
+router.get('/lesson-videos/events', validate(videoEventsSchema), lessonVideoController.listVideoEvents);
 router.get('/lesson-videos/courses/:slug', validate(courseVideosSchema), lessonVideoController.getCourseVideos);
 router.post('/lesson-videos/inspect', validate(inspectVideoSchema), lessonVideoController.inspectVideo);
-router.put('/lesson-videos/courses/:slug/lessons/:lessonId', validate(upsertLessonVideoSchema), lessonVideoController.upsertVideo);
-router.delete('/lesson-videos/courses/:slug/lessons/:lessonId', validate(removeLessonVideoSchema), lessonVideoController.removeVideo);
-router.put('/lesson-videos/courses/:slug/modules/:moduleId', validate(upsertModuleVideoSchema), lessonVideoController.upsertVideo);
-router.delete('/lesson-videos/courses/:slug/modules/:moduleId', validate(removeModuleVideoSchema), lessonVideoController.removeVideo);
+router.put(lessonPath, validate(upsertLessonVideoSchema), lessonVideoController.upsertVideo);
+router.patch(lessonPath, validate(updateLessonVideoSchema), lessonVideoController.updateVideo);
+router.delete(lessonPath, validate(removeLessonVideoSchema), lessonVideoController.removeVideo);
+router.put(modulePath, validate(upsertModuleVideoSchema), lessonVideoController.upsertVideo);
+router.patch(modulePath, validate(updateModuleVideoSchema), lessonVideoController.updateVideo);
+router.delete(modulePath, validate(removeModuleVideoSchema), lessonVideoController.removeVideo);
+router.post(`${lessonPath}/uploads`, validate(startLessonUploadSchema), lessonVideoController.startUpload);
+router.post(`${modulePath}/uploads`, validate(startModuleUploadSchema), lessonVideoController.startUpload);
+router.post(`${uploadPath}/parts`, validate(uploadPartUrlsSchema), lessonVideoController.uploadPartUrls);
+router.post(`${uploadPath}/resume`, validate(resumeUploadSchema), lessonVideoController.resumeUpload);
+router.post(`${uploadPath}/complete`, validate(completeUploadSchema), lessonVideoController.completeUpload);
+router.delete(uploadPath, validate(abortUploadSchema), lessonVideoController.abortUpload);
 
 router.post('/announcements', validate(createBridgedAnnouncementSchema), internalController.createBridgedAnnouncement);
 router.patch('/announcements/:sourceId', validate(updateBridgedAnnouncementSchema), internalController.updateBridgedAnnouncement);

@@ -15,6 +15,10 @@ const API = {
   inspect: (url, opts) => teacherApiService.inspectLessonVideo(url, opts),
   save: (slug, target, payload) => teacherApiService.saveCourseVideo(slug, target, payload),
   remove: (slug, target, payload) => teacherApiService.removeCourseVideo(slug, target, payload),
+  startUpload: (slug, target, payload) => teacherApiService.startCourseVideoUpload(slug, target, payload),
+  partUrls: (uploadId, partNumbers) => teacherApiService.getCourseVideoPartUrls(uploadId, partNumbers),
+  completeUpload: (uploadId, payload) => teacherApiService.completeCourseVideoUpload(uploadId, payload),
+  abortUpload: (uploadId) => teacherApiService.abortCourseVideoUpload(uploadId),
 };
 
 export default function LessonVideosPage() {
@@ -31,8 +35,8 @@ export default function LessonVideosPage() {
     <LessonVideoManager
       key={generation}
       api={API}
-      heading="Lesson Videos"
-      description="Add YouTube videos to the lessons of your assigned courses. Students see a video once it is published."
+      heading="Module Videos"
+      description="Upload a video or attach a YouTube or Google Drive link to each authorized module. Students see verified changes immediately."
       emptyMessage="No courses have been assigned to you yet. An administrator assigns courses from the Admin portal."
     />
   );

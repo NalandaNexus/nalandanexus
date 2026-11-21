@@ -61,25 +61,29 @@ export const getEnrolledCourseContent = asyncHandler(async (req, res) => {
   ]);
   const completedLessonIds = new Set(progressDocs.filter((p) => p.completed).map((p) => p.lessonId));
 
-  const modules = course.modules
+  // PRARAMBH's old fixed /PRARAMBH.mp4 was deliberately retired.  Other
+  // courses retain their legacy content while staff migrate them; Prarambh
+  // only exposes an independently configured, verified managed video.
+  const allowLegacyVideo = course.slug !== 'prarambh';
+  const modules = await Promise.all(course.modules
     .sort((a, b) => a.order - b.order)
-    .map((m) => ({
+    .map(async (m) => ({
       moduleId: m.moduleId,
       title: m.title,
       order: m.order,
       // The module's published introduction video, or null. Not a lesson: it
       // carries no completion and awards nothing.
-      video: shapeModuleVideoForStudent(m),
-      lessons: m.lessons
+      video: await shapeModuleVideoForStudent(m),
+      lessons: await Promise.all(m.lessons
         .sort((a, b) => a.order - b.order)
-        .map((l) => ({
+        .map(async (l) => ({
           lessonId: l.lessonId,
           title: l.title,
           duration: l.duration,
           order: l.order,
           // `video` is a published YouTube video (or null); `videoUrl` is the
           // legacy directly-hosted file. A draft video is never sent.
-          ...shapeLessonVideoForStudent(l),
+          ...(await shapeLessonVideoForStudent(l, { allowLegacy: allowLegacyVideo })),
           // The teaching material. A lesson used to be a title, a duration and
           // a video URL, so a course with no video was a list of headings -
           // which is exactly what GARUD and YODDHA would have been.
@@ -89,8 +93,8 @@ export const getEnrolledCourseContent = asyncHandler(async (req, res) => {
           isLocked: l.isLocked,
           completed: completedLessonIds.has(l.lessonId),
           isCurrent: l.lessonId === enrollment?.currentLessonId,
-        })),
-    }));
+        }))),
+    })));
 
   return sendSuccess(res, {
     data: {
@@ -99,7 +103,7 @@ export const getEnrolledCourseContent = asyncHandler(async (req, res) => {
       title: course.title,
       subtitle: course.subtitle,
       bannerImage: course.bannerImage,
-      videoUrl: course.videoUrl,
+      videoUrl: allowLegacyVideo ? course.videoUrl : '',
       totalLessons: course.totalLessons,
       completedLessons: completedLessonIds.size,
       progress: enrollment?.progressPercent || 0,

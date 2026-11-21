@@ -16,7 +16,7 @@ function course() {
         moduleId: 'mod-1',
         title: 'Awakening',
         lessons: [
-          { lessonId: 'l-1', title: 'Welcome', isPublished: true, video: null, legacyVideoUrl: '/PRARAMBH.mp4' },
+          { lessonId: 'l-1', title: 'Welcome', isPublished: true, video: null, legacyVideoUrl: '/legacy-video.mp4' },
           {
             lessonId: 'l-2',
             title: 'Archetypes',

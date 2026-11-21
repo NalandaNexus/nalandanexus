@@ -143,6 +143,10 @@ export default function LessonVideoManager({ api, heading, description, emptyMes
           inspect: (url, opts) => api.inspect(url, opts),
           save: (payload) => api.save(slug, target, payload),
           remove: (payload) => api.remove(slug, target, payload),
+          startUpload: (payload) => api.startUpload(slug, target, payload),
+          partUrls: (uploadId, partNumbers) => api.partUrls(uploadId, partNumbers),
+          completeUpload: (uploadId, payload) => api.completeUpload(uploadId, payload),
+          abortUpload: (uploadId) => api.abortUpload(uploadId),
         }}
         onSaved={(video, mode) => {
           patchVideo(target, video);

@@ -21,6 +21,7 @@ export function globalErrorHandler(err, req, res, next) {
       code: err.code,
       message: err.message,
       details: err.details,
+      exposeDetails: Boolean(err.exposeDetails),
     });
   }
 

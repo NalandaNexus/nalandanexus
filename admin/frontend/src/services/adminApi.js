@@ -566,6 +566,22 @@ export const adminApi = {
     const json = await request(courseVideoPath(slug, target), { method: 'DELETE', body: payload });
     return json.data;
   },
+  async startCourseVideoUpload(slug, target, payload) {
+    const json = await request(`${courseVideoPath(slug, target)}/uploads`, { method: 'POST', body: payload });
+    return json.data;
+  },
+  async getCourseVideoPartUrls(uploadId, partNumbers) {
+    const json = await request(`/lesson-videos/uploads/${encodeURIComponent(uploadId)}/parts`, { method: 'POST', body: { partNumbers } });
+    return json.data;
+  },
+  async completeCourseVideoUpload(uploadId, payload) {
+    const json = await request(`/lesson-videos/uploads/${encodeURIComponent(uploadId)}/complete`, { method: 'POST', body: payload });
+    return json.data;
+  },
+  async abortCourseVideoUpload(uploadId) {
+    const json = await request(`/lesson-videos/uploads/${encodeURIComponent(uploadId)}`, { method: 'DELETE', body: {} });
+    return json.data;
+  },
 
   async getCampaigns(params = {}) {
     const json = await request('/coupons/campaigns', { query: params });

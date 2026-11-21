@@ -148,4 +148,18 @@ export async function removeCourseVideo(slug, target, payload) {
   return call(videoPath(slug, target), { method: 'DELETE', body: JSON.stringify(payload) });
 }
 
-export default { assertCourseAccess, listManageableCourses, getCourseVideos, inspectLink, saveCourseVideo, removeCourseVideo };
+const uploadPath = (slug, target) => `${videoPath(slug, target)}/uploads`;
+export async function startCourseVideoUpload(slug, target, payload) {
+  return call(uploadPath(slug, target), { method: 'POST', body: JSON.stringify(payload) });
+}
+export async function getCourseVideoPartUrls(uploadId, payload) {
+  return call(`/api/internal/lesson-videos/uploads/${encodeURIComponent(uploadId)}/parts`, { method: 'POST', body: JSON.stringify(payload) });
+}
+export async function completeCourseVideoUpload(uploadId, payload) {
+  return call(`/api/internal/lesson-videos/uploads/${encodeURIComponent(uploadId)}/complete`, { method: 'POST', body: JSON.stringify(payload) });
+}
+export async function abortCourseVideoUpload(uploadId, payload) {
+  return call(`/api/internal/lesson-videos/uploads/${encodeURIComponent(uploadId)}`, { method: 'DELETE', body: JSON.stringify(payload) });
+}
+
+export default { assertCourseAccess, listManageableCourses, getCourseVideos, inspectLink, saveCourseVideo, removeCourseVideo, startCourseVideoUpload, getCourseVideoPartUrls, completeCourseVideoUpload, abortCourseVideoUpload };

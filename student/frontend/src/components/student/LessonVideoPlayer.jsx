@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Play, ExternalLink, Loader2, ShieldAlert } from 'lucide-react';
+import { Play, ExternalLink, Loader2, ShieldAlert, AlertCircle } from 'lucide-react';
 import YouTubeThumbnail from './YouTubeThumbnail';
 import {
   isValidYoutubeVideoId,
@@ -57,7 +57,54 @@ export default function LessonVideoPlayer({ video, lessonTitle, showDescription 
     return () => window.removeEventListener('message', onMessage);
   }, [playing]);
 
-  if (!video || !isValidYoutubeVideoId(video.videoId)) return null;
+  if (!video) return null;
+
+  // Signed object-storage playback. The URL is issued only after the student
+  // passed the enrolled-course API gate and the file completed server-side
+  // signature verification. Native controls provide speed, volume and full
+  // screen support without loading a third-party player.
+  if (video.provider === 'upload') {
+    if (!video.streamUrl) return null;
+    return (
+      <div className="space-y-2">
+        <div className="relative aspect-video w-full rounded-2xl overflow-hidden bg-[#0F1A30] shadow-lg border border-[#DFDACB]" data-testid="lesson-video-player">
+          <video
+            key={video.streamUrl}
+            src={video.streamUrl}
+            controls
+            preload="metadata"
+            playsInline
+            className="w-full h-full"
+            onError={() => setPlayerError({ message: 'This uploaded video is temporarily unavailable. Please refresh or try again shortly.' })}
+          >
+            Your browser does not support this video format.
+          </video>
+          {playerError && <div role="alert" className="absolute inset-0 flex items-center justify-center bg-black/70 p-5 text-center text-sm text-white"><AlertCircle className="w-5 h-5 text-[#C99A2E] mr-2" />{playerError.message}</div>}
+        </div>
+        <div className="flex items-center justify-between gap-3 px-1 text-[11px] text-[#2B2B28]/55">
+          <span className="truncate">{showDescription && video.description ? video.description : video.fileName || 'Uploaded video'}</span>
+          {Number.isFinite(video.duration) && <span className="shrink-0">{Math.round(video.duration / 60)} min</span>}
+        </div>
+      </div>
+    );
+  }
+
+  if (video.provider === 'google_drive') {
+    if (!video.embedUrl) return null;
+    return (
+      <div className="space-y-2">
+        <div className="relative aspect-video w-full rounded-2xl overflow-hidden bg-[#0F1A30] shadow-lg border border-[#DFDACB]" data-testid="lesson-video-player">
+          <iframe src={video.embedUrl} title={video.title || lessonTitle || 'Google Drive video'} className="absolute inset-0 h-full w-full" allow="autoplay; fullscreen" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" sandbox="allow-scripts allow-same-origin allow-presentation allow-popups" />
+        </div>
+        <div className="flex items-center justify-between gap-3 px-1">
+          <span className="text-[11px] truncate text-[#2B2B28]/55">{showDescription && video.description ? video.description : 'Google Drive'}</span>
+          <a href={video.watchUrl} target="_blank" rel="noopener noreferrer" className="shrink-0 inline-flex items-center gap-1 text-[11px] font-semibold text-[#22355E] hover:text-[#AB5236]">Open in Drive <ExternalLink className="w-3 h-3" /></a>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isValidYoutubeVideoId(video.videoId)) return null;
 
   const { videoId } = video;
   const title = video.title || lessonTitle || 'Lesson video';

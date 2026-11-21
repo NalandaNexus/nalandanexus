@@ -32,8 +32,9 @@ const targetOf = (params) => (params.moduleId ? { moduleId: params.moduleId } : 
 export const save = catchAsync(async (req, res) => {
   const slug = await lessonVideos.assertCourseAccess(req.teacher._id, req.params.slug);
   const target = targetOf(req.params);
-  const { url, title, description, playbackMode, isPublished, expectedUpdatedAt } = req.body;
+  const { provider, url, title, description, playbackMode, isPublished, expectedUpdatedAt } = req.body;
   const result = await lessonVideos.saveCourseVideo(slug, target, {
+    provider: provider || 'youtube',
     url,
     title: title ?? '',
     description: description ?? '',
@@ -62,6 +63,30 @@ export const save = catchAsync(async (req, res) => {
   sendSuccess(res, { message: video?.isPublished ? 'Video published' : 'Video saved as draft', data: result });
 });
 
+export const startUpload = catchAsync(async (req, res) => {
+  const slug = await lessonVideos.assertCourseAccess(req.teacher._id, req.params.slug);
+  const target = targetOf(req.params);
+  const result = await lessonVideos.startCourseVideoUpload(slug, target, { ...req.body, actor: actorOf(req) });
+  await logAudit({ actorId: req.user._id, action: 'course.module_video.upload_started', targetType: 'Course', targetId: null, metadata: { slug, ...target, uploadId: result.uploadId, fileName: req.body.fileName, fileSize: req.body.fileSize }, ip: req.ip });
+  sendSuccess(res, { message: 'Upload started', data: result });
+});
+
+export const uploadPartUrls = catchAsync(async (req, res) => {
+  const result = await lessonVideos.getCourseVideoPartUrls(req.params.uploadId, { ...req.body, actor: actorOf(req) });
+  sendSuccess(res, { data: result });
+});
+
+export const completeUpload = catchAsync(async (req, res) => {
+  const result = await lessonVideos.completeCourseVideoUpload(req.params.uploadId, { ...req.body, actor: actorOf(req) });
+  if (result.video) await logAudit({ actorId: req.user._id, action: result.video.isPublished ? 'course.module_video.published' : 'course.module_video.saved', targetType: 'Course', targetId: null, metadata: { uploadId: req.params.uploadId, provider: 'upload', storageKey: result.video.storageKey || null }, ip: req.ip });
+  sendSuccess(res, { message: result.video?.isPublished ? 'Video verified and published' : 'Video verified', data: result });
+});
+
+export const abortUpload = catchAsync(async (req, res) => {
+  const result = await lessonVideos.abortCourseVideoUpload(req.params.uploadId, { actor: actorOf(req) });
+  sendSuccess(res, { message: 'Upload cancelled', data: result });
+});
+
 export const remove = catchAsync(async (req, res) => {
   const slug = await lessonVideos.assertCourseAccess(req.teacher._id, req.params.slug);
   const target = targetOf(req.params);
@@ -84,4 +109,4 @@ export const remove = catchAsync(async (req, res) => {
   sendSuccess(res, { message: result?.removed ? 'Video removed' : 'There was no video to remove', data: result });
 });
 
-export default { listCourses, getCourse, inspect, save, remove };
+export default { listCourses, getCourse, inspect, save, remove, startUpload, uploadPartUrls, completeUpload, abortUpload };

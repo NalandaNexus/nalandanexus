@@ -1,6 +1,7 @@
 export { User, ROLES } from './User.js';
 export { StudentProfile } from './StudentProfile.js';
 export { Course } from './Course.js';
+export { VideoUpload } from './VideoUpload.js';
 export { Enrollment } from './Enrollment.js';
 export { Order } from './Order.js';
 export { LessonProgress } from './LessonProgress.js';

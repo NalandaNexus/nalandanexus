@@ -25,6 +25,7 @@ const lessonParams = { params: z.object({ slug, lessonId: nodeId }) };
 const moduleParams = { params: z.object({ slug, moduleId: nodeId }) };
 
 const saveBody = z.object({
+  provider: z.enum(['youtube', 'google_drive']).optional().default('youtube'),
   url: z.string().max(2048),
   title: z.string().max(200).optional().default(''),
   description: z.string().max(2000).optional().default(''),
@@ -41,5 +42,16 @@ router.put('/courses/:slug/lessons/:lessonId', validate({ ...lessonParams, body:
 router.delete('/courses/:slug/lessons/:lessonId', validate({ ...lessonParams, body: removeBody }), controller.remove);
 router.put('/courses/:slug/modules/:moduleId', validate({ ...moduleParams, body: saveBody }), controller.save);
 router.delete('/courses/:slug/modules/:moduleId', validate({ ...moduleParams, body: removeBody }), controller.remove);
+const uploadStart = z.object({
+  fileName: z.string().min(1).max(255), fileSize: z.number().int().positive(), mimeType: z.string().min(1).max(120),
+  title: z.string().max(200).optional().default(''), description: z.string().max(2000).optional().default(''),
+  isPublished: z.boolean().optional().default(true), expectedUpdatedAt,
+});
+const uploadParams = { params: z.object({ uploadId: z.string().regex(/^[a-f\d]{24}$/i) }) };
+router.post('/courses/:slug/lessons/:lessonId/uploads', validate({ ...lessonParams, body: uploadStart }), controller.startUpload);
+router.post('/courses/:slug/modules/:moduleId/uploads', validate({ ...moduleParams, body: uploadStart }), controller.startUpload);
+router.post('/uploads/:uploadId/parts', validate({ ...uploadParams, body: z.object({ partNumbers: z.array(z.number().int()).min(1).max(25) }) }), controller.uploadPartUrls);
+router.post('/uploads/:uploadId/complete', validate({ ...uploadParams, body: z.object({ parts: z.array(z.object({ partNumber: z.number().int().positive(), etag: z.string().min(1).max(256) })).min(1).max(10000), duration: z.number().finite().min(0).max(86400).optional() }) }), controller.completeUpload);
+router.delete('/uploads/:uploadId', validate({ ...uploadParams, body: z.object({}).optional().default({}) }), controller.abortUpload);
 
 export default router;

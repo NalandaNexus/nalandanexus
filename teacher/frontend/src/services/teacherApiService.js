@@ -447,6 +447,18 @@ class TeacherApiService {
   removeCourseVideo(slug, target, payload = {}) {
     return request(courseVideoPath(slug, target), { method: 'DELETE', body: payload }).then((r) => r.data);
   }
+  startCourseVideoUpload(slug, target, payload) {
+    return post(`${courseVideoPath(slug, target)}/uploads`, payload).then((r) => r.data);
+  }
+  getCourseVideoPartUrls(uploadId, partNumbers) {
+    return post(`/lesson-videos/uploads/${encodeURIComponent(uploadId)}/parts`, { partNumbers }).then((r) => r.data);
+  }
+  completeCourseVideoUpload(uploadId, payload) {
+    return post(`/lesson-videos/uploads/${encodeURIComponent(uploadId)}/complete`, payload).then((r) => r.data);
+  }
+  abortCourseVideoUpload(uploadId) {
+    return del(`/lesson-videos/uploads/${encodeURIComponent(uploadId)}`).then((r) => r.data);
+  }
 
   // ---- Exams ----
   getExams() {

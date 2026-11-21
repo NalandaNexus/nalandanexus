@@ -6,8 +6,8 @@ import { bootTestApp, registerAndLogin, bearer } from './helpers/testApp.js';
  * Backward compatibility of course videos on a production-shaped database.
  *
  * The catalogue is built the way production's was: PRARAMBH in the shape
- * src/seed/seed.js gives it (thirteen lessons, the capstone locked, every
- * lesson on the hosted /PRARAMBH.mp4), and GARUD and YODDHA by the real
+ * src/seed/seed.js gives it (thirteen lessons and the capstone locked, with
+ * no default video), and GARUD and YODDHA by the real
  * journey and curriculum seeders - eighteen modules each, with their quizzes,
  * final assessments and assignments. Real students then enrol, complete
  * lessons and earn XP through the real endpoints.
@@ -39,7 +39,7 @@ const PRARAMBH_MODULES = [
   moduleId,
   title,
   order: i + 1,
-  lessons: lessons.map(([lessonId, t, isLocked], j) => ({ lessonId, title: t, duration: '20 mins', order: j + 1, videoUrl: '/PRARAMBH.mp4', isLocked: Boolean(isLocked) })),
+  lessons: lessons.map(([lessonId, t, isLocked], j) => ({ lessonId, title: t, duration: '20 mins', order: j + 1, isLocked: Boolean(isLocked) })),
 }));
 
 before(async () => {
@@ -66,7 +66,6 @@ before(async () => {
     isPublished: true,
     isPurchasable: true,
     pillar: 'communicate',
-    videoUrl: '/PRARAMBH.mp4',
     modules: PRARAMBH_MODULES,
   });
   const journey = await import('../src/services/progression/journey.service.js');
@@ -153,11 +152,10 @@ test('the production-shaped catalogue is in place, with progress and XP to prote
   assert.ok(baseline.progress.length >= 18, `progress rows: ${baseline.progress.length}`);
   assert.ok(baseline.xp.length >= 18, `xp events: ${baseline.xp.length}`);
   assert.ok(baseline.quizzes.length >= 6 && baseline.tasks.length >= 16);
-  // Lessons nobody has given a video behave exactly as before: PRARAMBH keeps
-  // its hosted file, GARUD and YODDHA have none, and nobody sees a video object.
+  // PRARAMBH has no fixed fallback video; each module/lesson starts empty.
   const view = (await request.get('/api/student/courses/prarambh/content').set(bearer(students[0].accessToken))).body.data;
-  assert.ok(view.modules.flatMap((m) => m.lessons).every((l) => l.videoUrl === '/PRARAMBH.mp4' && l.video === null && l.videoManaged === false));
-  assert.equal(view.videoUrl, '/PRARAMBH.mp4');
+  assert.ok(view.modules.flatMap((m) => m.lessons).every((l) => l.videoUrl === '' && l.video === null && l.videoManaged === false));
+  assert.equal(view.videoUrl, '');
 });
 
 test('every kind of video operation across all three courses changes nothing but videos', async () => {
@@ -218,7 +216,7 @@ test('removing a video cleared only the hosted file it is documented to clear', 
   const prarambh = await M.Course.findOne({ slug: 'prarambh' }).lean();
   for (const l of prarambh.modules.flatMap((m) => m.lessons)) {
     if (removedLessons.has(l.lessonId)) assert.equal(l.videoUrl, '', l.lessonId);
-    else assert.equal(l.videoUrl, '/PRARAMBH.mp4', l.lessonId);
+    else assert.equal(l.videoUrl, '', l.lessonId);
   }
 });
 

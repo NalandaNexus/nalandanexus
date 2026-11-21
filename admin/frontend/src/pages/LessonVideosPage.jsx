@@ -15,14 +15,18 @@ const API = {
   inspect: (url, opts) => adminApi.inspectLessonVideo(url, opts),
   save: (slug, target, payload) => adminApi.saveCourseVideo(slug, target, payload),
   remove: (slug, target, payload) => adminApi.removeCourseVideo(slug, target, payload),
+  startUpload: (slug, target, payload) => adminApi.startCourseVideoUpload(slug, target, payload),
+  partUrls: (uploadId, partNumbers) => adminApi.getCourseVideoPartUrls(uploadId, partNumbers),
+  completeUpload: (uploadId, payload) => adminApi.completeCourseVideoUpload(uploadId, payload),
+  abortUpload: (uploadId) => adminApi.abortCourseVideoUpload(uploadId),
 };
 
 export default function LessonVideosPage() {
   return (
     <LessonVideoManager
       api={API}
-      heading="Lesson Videos"
-      description="Attach a YouTube video to any lesson, or an introduction video to any module. Thumbnails are picked up automatically; students see a video only once it is published."
+      heading="Module Videos"
+      description="Monitor, upload, replace, or remove the primary video for every module and lesson. Students receive verified changes immediately."
       emptyMessage="No courses were found in the student catalogue."
     />
   );

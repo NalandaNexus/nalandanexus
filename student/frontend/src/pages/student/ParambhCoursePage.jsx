@@ -190,7 +190,7 @@ export default function ParambhCoursePage() {
           <div className="lg:col-span-7 space-y-4">
             {introModule ? (
               <>
-                <LessonVideoPlayer key={`intro:${introModule.moduleId}:${introModule.video.videoId}`} video={introModule.video} lessonTitle={introModule.title} showDescription={false} />
+                <LessonVideoPlayer key={`intro:${introModule.moduleId}:${introModule.video.provider}:${introModule.video.videoId || introModule.video.externalVideoId || introModule.video.fileName}`} video={introModule.video} lessonTitle={introModule.title} showDescription={false} />
                 <div className="bg-[#FAF9F4] border border-[#DFDACB] rounded-2xl p-5 shadow-xs space-y-2">
                   <span className="text-xs font-bold text-[#AB5236] uppercase tracking-wider font-data">Module introduction</span>
                   <h2 className="font-heading font-bold text-base sm:text-lg text-[#22355E]">{introModule.title}</h2>
@@ -224,7 +224,7 @@ export default function ParambhCoursePage() {
                 YouTube video is still a draft shows neither, rather than an
                 unrelated file in its place. */}
             {activeLesson?.video ? (
-              <LessonVideoPlayer key={`${activeLesson.lessonId}:${activeLesson.video.videoId}`} video={activeLesson.video} lessonTitle={activeLesson.title} />
+              <LessonVideoPlayer key={`${activeLesson.lessonId}:${activeLesson.video.provider}:${activeLesson.video.videoId || activeLesson.video.externalVideoId || activeLesson.video.fileName}`} video={activeLesson.video} lessonTitle={activeLesson.title} />
             ) : (
               (() => {
                 const fileSrc = activeLesson?.videoUrl || (activeLesson?.videoManaged ? '' : courseContent.videoUrl);
@@ -240,7 +240,11 @@ export default function ParambhCoursePage() {
                       Your browser does not support the video tag.
                     </video>
                   </div>
-                ) : null;
+                ) : (
+                  <div className="rounded-2xl border border-[#DFDACB] bg-[#FAF9F4] p-7 text-center text-sm text-[#6E6A64]" data-testid="no-module-video">
+                    No video has been uploaded for this module yet. Please check back later.
+                  </div>
+                );
               })()
             )}
 
