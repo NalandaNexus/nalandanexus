@@ -16,16 +16,30 @@ function required(name, fallback = undefined) {
 // `cors` package echoes this string back verbatim as Access-Control-Allow-Origin,
 // and browsers require that header to match the request's Origin byte-for-byte
 // (which never has a trailing slash) - so every cross-origin request, including
-// the login preflight, gets silently rejected by the browser. Stripped here so
-// deploy-time URL formatting can't take down auth.
-function stripTrailingSlash(url) {
-  return url.replace(/\/+$/, '');
+// the login preflight, gets silently rejected by the browser. Node goes further
+// and refuses to send the header at all if it holds a newline, an invisible
+// character (zero-width space) or "smart quotes" - all easy to paste in too -
+// throwing ERR_INVALID_CHAR on every request. So the value is reduced to a bare
+// origin here, and one that is not an http(s) URL at all stops the server at
+// startup with its name, instead of failing each request.
+function toOrigin(name, value) {
+  const cleaned = String(value).trim().replace(/^["'‘’“”]+|["'‘’“”]+$/g, '');
+  let url = null;
+  try {
+    url = new URL(cleaned);
+  } catch {
+    // reported below
+  }
+  if (!url || (url.protocol !== 'http:' && url.protocol !== 'https:')) {
+    throw new Error(`[env] ${name} must be an http(s) URL such as https://example.vercel.app, got ${JSON.stringify(value)}`);
+  }
+  return url.origin;
 }
 
 export const env = {
   nodeEnv: process.env.NODE_ENV || 'development',
   port: parseInt(process.env.PORT, 10) || 5002,
-  clientUrl: stripTrailingSlash(process.env.CLIENT_URL || 'http://localhost:5174'),
+  clientUrl: toOrigin('CLIENT_URL', process.env.CLIENT_URL || 'http://localhost:5174'),
   // This backend's own publicly-reachable base URL, used only to build
   // absolute /uploads/... links when bridging a resource/attachment to the
   // student portal (a different origin, so a relative path wouldn't resolve).

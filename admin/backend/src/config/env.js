@@ -21,10 +21,31 @@ function stripTrailingSlash(url) {
   return url.replace(/\/+$/, '');
 }
 
+// CLIENT_URL also goes out as the Access-Control-Allow-Origin header, and Node
+// refuses to send a header holding a newline, an invisible character
+// (zero-width space) or "smart quotes" - all easy to paste into Render's
+// dashboard - throwing ERR_INVALID_CHAR on every request, login included.
+// Reduced to a bare origin here (which also drops a trailing slash or path),
+// and a value that is not an http(s) URL at all stops the server at startup
+// with its name, instead of failing each request.
+function toOrigin(name, value) {
+  const cleaned = String(value).trim().replace(/^["'‘’“”]+|["'‘’“”]+$/g, '');
+  let url = null;
+  try {
+    url = new URL(cleaned);
+  } catch {
+    // reported below
+  }
+  if (!url || (url.protocol !== 'http:' && url.protocol !== 'https:')) {
+    throw new Error(`[env] ${name} must be an http(s) URL such as https://example.vercel.app, got ${JSON.stringify(value)}`);
+  }
+  return url.origin;
+}
+
 export const env = {
   nodeEnv: process.env.NODE_ENV || 'development',
   port: parseInt(process.env.PORT, 10) || 5003,
-  clientUrl: stripTrailingSlash(process.env.CLIENT_URL || 'http://localhost:5175'),
+  clientUrl: toOrigin('CLIENT_URL', process.env.CLIENT_URL || 'http://localhost:5175'),
   serverUrl: process.env.SERVER_URL || 'http://localhost:5003',
 
   mongodbUri: required('MONGODB_URI', 'mongodb://127.0.0.1:27017/nalanda_admin'),
