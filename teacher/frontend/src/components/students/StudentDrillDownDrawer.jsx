@@ -76,6 +76,11 @@ export default function StudentDrillDownDrawer({
                 <span className="text-xs font-bold px-2 py-0.5 rounded bg-[#EDEAE0] text-[#22355E] border border-[#DFDACB]">
                   {student.className}
                 </span>
+                {student.isOwnClass === false && (
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-[#AB5236]/10 text-[#AB5236] border border-[#AB5236]/30">
+                    {student.classTeacherName ? `${student.classTeacherName}’s batch` : 'Shared batch'}
+                  </span>
+                )}
               </div>
               <p className="text-xs text-[#6E6A64] mt-0.5 truncate">{student.email}</p>
               {/* The student's profile as the student portal holds it. */}

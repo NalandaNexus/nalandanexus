@@ -1,15 +1,17 @@
 import { Student } from '../models/Student.js';
-import { SchoolClass } from '../models/SchoolClass.js';
 import { ApiError } from '../utils/ApiError.js';
 import { fetchStudentProgress, fetchStudentActivity } from './studentBridge.service.js';
+import { getAccessibleClassIds, assertCourseAccessForClass, canActOnClass } from './courseAccess.service.js';
 
 /**
  * A teacher's view of how their students are progressing.
  *
- * Scoped by ownership at the database level, not by filtering afterwards: the
- * roster query is always `{ teacher: teacherId }`, so a student who is not
- * this teacher's cannot appear even if their id is supplied. Progression is
- * then fetched only for the ids that survived that query.
+ * Scoped at the database level, not by filtering afterwards: the roster
+ * query always covers every class this teacher may act on - their own,
+ * union any class whose course they hold CourseAccess for (see
+ * courseAccess.service.js) - so a student outside that set cannot appear
+ * even if their id is supplied. Progression is then fetched only for the
+ * ids that survived that query.
  *
  * Teachers can read every figure here and write none of them. XP, rank, skill
  * scores and eligibility are produced by the student service's engine from
@@ -100,11 +102,12 @@ function blockedStagesFor(progress) {
  * one request per page rather than growing with the class.
  */
 export async function listStudentsWithProgress(teacherId, { classId, page = 1, limit = 25, filter = null } = {}) {
-  const query = { teacher: teacherId };
+  let query;
   if (classId) {
-    const owned = await SchoolClass.findOne({ _id: classId, teacher: teacherId }).select('_id').lean();
-    if (!owned) throw ApiError.forbidden('That class does not belong to you.', 'CLASS_NOT_OWNED');
-    query.class = classId;
+    await assertCourseAccessForClass(teacherId, classId);
+    query = { class: classId };
+  } else {
+    query = { class: { $in: await getAccessibleClassIds(teacherId) } };
   }
 
   const skip = (Math.max(1, page) - 1) * limit;
@@ -163,13 +166,16 @@ export async function listStudentsWithProgress(teacherId, { classId, page = 1, l
 
 /** One student's detail, ownership checked before anything is fetched. */
 export async function getStudentProgressDetail(teacherId, studentId, { limit = 50 } = {}) {
-  const student = await Student.findOne({ _id: studentId, teacher: teacherId })
+  const student = await Student.findById(studentId)
     .select('name email linkedUserId class enrollmentId')
     .populate('class', 'name')
     .lean();
-  // Same message whether the student does not exist or belongs to someone else,
-  // so this cannot be used to discover who is on another teacher's roster.
-  if (!student) throw ApiError.notFound('Student not found', 'STUDENT_NOT_FOUND');
+  // Same message whether the student does not exist or this teacher may not
+  // act on their class, so this cannot be used to discover who is on
+  // another teacher's roster.
+  if (!student || !(await canActOnClass(teacherId, student.class?._id || student.class))) {
+    throw ApiError.notFound('Student not found', 'STUDENT_NOT_FOUND');
+  }
 
   if (!student.linkedUserId) {
     return { student: { ...student, linked: false }, progress: null, activity: [], flags: { unlinked: true } };

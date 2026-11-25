@@ -4,6 +4,7 @@ import { env } from '../config/env.js';
 import { verifyAuthToken } from '../utils/tokens.js';
 import { User } from '../models/User.js';
 import { Teacher } from '../models/Teacher.js';
+import { getAccessibleCourseSlugs, canActOnClass } from '../services/courseAccess.service.js';
 
 let ioInstance = null;
 
@@ -12,6 +13,9 @@ function teacherRoom(teacherId) {
 }
 function classRoom(classId) {
   return `class:${String(classId)}`;
+}
+function courseRoom(slug) {
+  return `course:${String(slug)}`;
 }
 // Single-tenant app (one institution) - every authenticated teacher socket
 // auto-joins this fixed room, giving admin-broadcast announcements a real,
@@ -60,14 +64,38 @@ export function initSockets(httpServer) {
     }
   });
 
-  ioInstance.on('connection', (socket) => {
+  ioInstance.on('connection', async (socket) => {
     if (socket.data.teacherId) {
       socket.join(teacherRoom(socket.data.teacherId));
       socket.join(INSTITUTION_ROOM);
+
+      // Auto-joins every course this teacher currently holds CourseAccess
+      // for, mirroring the institution-room auto-join above, so a
+      // grade/attendance update emitted to the whole course (see
+      // emitToCourse) reaches every teacher watching it live, not just the
+      // one who made it.
+      try {
+        const slugs = await getAccessibleCourseSlugs(socket.data.teacherId);
+        for (const slug of slugs) socket.join(courseRoom(slug));
+      } catch {
+        // Best-effort: a teacher who misses the initial auto-join can still
+        // reach course-room updates after their next reconnect.
+      }
     }
 
-    socket.on('subscribe:class', ({ classId } = {}) => {
-      if (classId) socket.join(classRoom(classId));
+    socket.on('subscribe:class', async ({ classId } = {}) => {
+      // Previously joined any classId an authenticated OR EVEN ANONYMOUS
+      // socket asked for, with no check at all - any client could read
+      // another teacher's live class-room events just by guessing an id.
+      // Now mirrors the REST API's own authorization: only a teacher who
+      // may act on this class (owns it, or holds course-access to its
+      // course) is let into its room.
+      if (!classId || !socket.data.teacherId) return;
+      try {
+        if (await canActOnClass(socket.data.teacherId, classId)) socket.join(classRoom(classId));
+      } catch {
+        // Lookup failure: do not grant the room.
+      }
     });
 
     socket.on('unsubscribe:class', ({ classId } = {}) => {
@@ -90,9 +118,15 @@ export function emitToClass(classId, event, payload) {
   ioInstance?.to(classRoom(classId)).emit(event, payload);
 }
 
+/** Reaches every teacher sharing a course (see the connection handler's auto-join above) - not just the one who made the change, so course-wide grading/attendance updates are seen live by every teacher watching it. */
+export function emitToCourse(studentCourseSlug, event, payload) {
+  if (!studentCourseSlug) return;
+  ioInstance?.to(courseRoom(studentCourseSlug)).emit(event, payload);
+}
+
 /** Broadcasts to every authenticated teacher socket — used for institution-wide admin announcements. */
 export function emitToAllTeachers(event, payload) {
   ioInstance?.to(INSTITUTION_ROOM).emit(event, payload);
 }
 
-export default { initSockets, getIO, emitToTeacher, emitToClass, emitToAllTeachers };
+export default { initSockets, getIO, emitToTeacher, emitToClass, emitToCourse, emitToAllTeachers };

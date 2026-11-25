@@ -9,6 +9,7 @@ import { listClasses } from './class.service.js';
 import { getAtRiskStudents } from './student.service.js';
 import { getTodaysSchedule, getActiveLiveSession } from './schedule.service.js';
 import { getAvgScoreBreakdown, getConceptPerformance } from './analytics.service.js';
+import { getAccessibleClassIds } from './courseAccess.service.js';
 
 const oid = (id) => new mongoose.Types.ObjectId(id);
 
@@ -53,18 +54,31 @@ export async function getDashboardOverview(teacherId) {
   };
 }
 
+/**
+ * "Total Classes" stays this teacher's own batches (matches `classes`,
+ * which is deliberately owner-scoped - see getDashboardOverview). Every
+ * other number here widens to every class this teacher may act on, own or
+ * course-access alike: this is the "larger, course-wide numbers" effect of
+ * shared monitoring the plan calls for, most visibly on the grading
+ * backlog and student count.
+ */
 async function getCoreStats(teacherId, classes, todaysSchedule) {
   const totalClasses = classes.length;
-  const totalStudents = classes.reduce((sum, c) => sum + c.studentCount, 0);
-  const avgScore = totalStudents ? Math.round(classes.reduce((s, c) => s + c.averageScore * c.studentCount, 0) / totalStudents) : 0;
 
+  const accessibleClassIds = await getAccessibleClassIds(teacherId);
   const weekAgo = new Date(Date.now() - 7 * 86400000);
-  const [newClasses, newStudents, publishedAssignments, toGradeCount] = await Promise.all([
+  const [newClasses, totalStudents, newStudents, publishedAssignments, toGradeCount, avgScoreRow] = await Promise.all([
     SchoolClass.countDocuments({ teacher: teacherId, createdAt: { $gte: weekAgo } }),
-    Student.countDocuments({ teacher: teacherId, createdAt: { $gte: weekAgo }, linkedUserId: { $ne: null } }),
-    Assignment.countDocuments({ teacher: teacherId, status: { $ne: 'archived' } }),
-    Submission.countDocuments({ teacher: teacherId, status: { $in: ['submitted', 'late'] } }),
+    Student.countDocuments({ class: { $in: accessibleClassIds }, status: 'active', linkedUserId: { $ne: null } }),
+    Student.countDocuments({ class: { $in: accessibleClassIds }, createdAt: { $gte: weekAgo }, linkedUserId: { $ne: null } }),
+    Assignment.countDocuments({ class: { $in: accessibleClassIds }, status: { $ne: 'archived' } }),
+    Submission.countDocuments({ class: { $in: accessibleClassIds }, status: { $in: ['submitted', 'late'] } }),
+    Student.aggregate([
+      { $match: { class: { $in: accessibleClassIds }, status: 'active', linkedUserId: { $ne: null } } },
+      { $group: { _id: null, avg: { $avg: '$metrics.currentScore' } } },
+    ]),
   ]);
+  const avgScore = Math.round(avgScoreRow[0]?.avg || 0);
 
   const avgScoreTrend = await getAvgScoreWeeklyTrend(teacherId);
   const nextSession = todaysSchedule.find((s) => s.status === 'upcoming' || s.status === 'live_now');
@@ -85,6 +99,7 @@ async function getCoreStats(teacherId, classes, todaysSchedule) {
 async function getAvgScoreWeeklyTrend(teacherId) {
   const weekAgo = new Date(Date.now() - 7 * 86400000);
   const twoWeeksAgo = new Date(Date.now() - 14 * 86400000);
+  const accessibleClassIds = (await getAccessibleClassIds(teacherId)).map(oid);
 
   // $lookup + $match against the real student so a graded submission that
   // belongs to an unverified/never-purchased roster row (still physically
@@ -93,13 +108,13 @@ async function getAvgScoreWeeklyTrend(teacherId) {
   // linkedUserId gate applied everywhere else Student is queried.
   const [thisWeek, lastWeek] = await Promise.all([
     Submission.aggregate([
-      { $match: { teacher: oid(teacherId), status: 'graded', gradedAt: { $gte: weekAgo } } },
+      { $match: { class: { $in: accessibleClassIds }, status: 'graded', gradedAt: { $gte: weekAgo } } },
       { $lookup: { from: 'students', localField: 'student', foreignField: '_id', as: 'studentDoc' } },
       { $match: { 'studentDoc.linkedUserId': { $ne: null } } },
       { $group: { _id: null, avg: { $avg: { $multiply: [{ $divide: ['$score', '$maxScore'] }, 100] } } } },
     ]),
     Submission.aggregate([
-      { $match: { teacher: oid(teacherId), status: 'graded', gradedAt: { $gte: twoWeeksAgo, $lt: weekAgo } } },
+      { $match: { class: { $in: accessibleClassIds }, status: 'graded', gradedAt: { $gte: twoWeeksAgo, $lt: weekAgo } } },
       { $lookup: { from: 'students', localField: 'student', foreignField: '_id', as: 'studentDoc' } },
       { $match: { 'studentDoc.linkedUserId': { $ne: null } } },
       { $group: { _id: null, avg: { $avg: { $multiply: [{ $divide: ['$score', '$maxScore'] }, 100] } } } },
@@ -115,18 +130,25 @@ async function getAvgScoreWeeklyTrend(teacherId) {
 }
 
 async function getWorkloadSummary(teacherId, classes) {
-  const activeClassIds = classes.map((c) => c.id);
+  const accessibleClassIds = await getAccessibleClassIds(teacherId);
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
 
+  const ownedClassIds = classes.map((c) => c.id);
   const [submissionsToGrade, quizzesToReview, classesWithAttendanceToday, todaysSchedule] = await Promise.all([
-    Submission.countDocuments({ teacher: teacherId, status: { $in: ['submitted', 'late'] } }),
-    Exam.countDocuments({ teacher: teacherId, status: 'completed' }),
-    Attendance.distinct('class', { teacher: teacherId, date: { $gte: todayStart } }),
+    Submission.countDocuments({ class: { $in: accessibleClassIds }, status: { $in: ['submitted', 'late'] } }),
+    Exam.countDocuments({ class: { $in: accessibleClassIds }, status: 'completed' }),
+    // Reckoned against OWNED batches only (not the wider accessible set):
+    // attendance is still something each batch's own home teacher is
+    // expected to take daily, so sharing grading/monitoring across a
+    // course must not make someone else's batch this teacher's attendance
+    // to chase, nor let another teacher already having marked IT hide this
+    // teacher's own batch still needing attendance today.
+    Attendance.distinct('class', { class: { $in: ownedClassIds }, date: { $gte: todayStart } }),
     getTodaysSchedule(teacherId),
   ]);
 
-  const attendanceRecordsPending = Math.max(0, activeClassIds.length - classesWithAttendanceToday.length);
+  const attendanceRecordsPending = Math.max(0, ownedClassIds.length - classesWithAttendanceToday.length);
   const upcomingClassesCount = todaysSchedule.filter((s) => s.status === 'upcoming' || s.status === 'live_now').length;
 
   const totalMinutes = submissionsToGrade * 5 + quizzesToReview * 10 + attendanceRecordsPending * 5;
@@ -189,7 +211,7 @@ async function getRecommendedActions(teacherId, conceptPerformance, atRiskStuden
     });
   }
 
-  const gradingBacklog = await Submission.countDocuments({ teacher: teacherId, status: { $in: ['submitted', 'late'] } });
+  const gradingBacklog = await Submission.countDocuments({ class: { $in: await getAccessibleClassIds(teacherId) }, status: { $in: ['submitted', 'late'] } });
   if (gradingBacklog > 0) {
     actions.push({
       id: 'act-grading-backlog',
@@ -207,9 +229,10 @@ async function getRecommendedActions(teacherId, conceptPerformance, atRiskStuden
 
 async function getPendingTasks(teacherId) {
   const tasks = [];
+  const accessibleClassIds = (await getAccessibleClassIds(teacherId)).map(oid);
 
   const toGradeAssignments = await Submission.aggregate([
-    { $match: { teacher: oid(teacherId), status: { $in: ['submitted', 'late'] } } },
+    { $match: { class: { $in: accessibleClassIds }, status: { $in: ['submitted', 'late'] } } },
     { $group: { _id: '$assignment', count: { $sum: 1 } } },
   ]);
 

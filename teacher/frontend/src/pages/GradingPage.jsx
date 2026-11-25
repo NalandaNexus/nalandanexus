@@ -4,6 +4,24 @@ import { teacherApiService, ApiClientError } from '../services/teacherApiService
 import { socketService } from '../services/socketService';
 import CourseAssignments from '../components/grading/CourseAssignments';
 
+/**
+ * Score/feedback drafts, keyed by submission id - captures each row's
+ * updatedAt as expectedUpdatedAt, the optimistic-concurrency baseline
+ * gradeSubmission checks on save. Shared by the initial load and by the
+ * refresh after every save/conflict, so the baseline is never left stale.
+ */
+function draftsFromSubmissions(list) {
+  const drafts = {};
+  (list || []).forEach((s) => {
+    drafts[s.id] = {
+      score: s.status === 'graded' ? s.score : '',
+      feedback: s.status === 'graded' ? s.feedback || '' : '',
+      expectedUpdatedAt: s.updatedAt ?? null,
+    };
+  });
+  return drafts;
+}
+
 export default function GradingPage() {
   const [assignments, setAssignments] = useState([]);
   const [classes, setClasses] = useState([]);
@@ -71,26 +89,35 @@ export default function GradingPage() {
     try {
       const data = await teacherApiService.getAssignmentSubmissions(assignment.id);
       setSubmissions(data || []);
-      const drafts = {};
-      (data || []).forEach((s) => {
-        if (s.status === 'graded') drafts[s.id] = { score: s.score, feedback: s.feedback || '' };
-      });
-      setGradeDrafts(drafts);
+      setGradeDrafts(draftsFromSubmissions(data));
     } catch {
       setSubmissions([]);
     }
   };
 
-  const handleGrade = async (submissionId, maxScore) => {
+  const handleGrade = async (submissionId) => {
     const draft = gradeDrafts[submissionId];
     if (!draft || draft.score === undefined || draft.score === '') return;
     try {
-      await teacherApiService.gradeSubmission(submissionId, Number(draft.score), draft.feedback || '');
+      await teacherApiService.gradeSubmission(submissionId, Number(draft.score), draft.feedback || '', draft.expectedUpdatedAt);
       const data = await teacherApiService.getAssignmentSubmissions(activeAssignment.id);
       setSubmissions(data || []);
+      setGradeDrafts(draftsFromSubmissions(data));
       fetchAssignments();
     } catch (err) {
-      alert(err instanceof ApiClientError ? err.message : 'Failed to save grade.');
+      if (err instanceof ApiClientError && err.code === 'SUBMISSION_CHANGED') {
+        const current = err.details?.current;
+        const data = await teacherApiService.getAssignmentSubmissions(activeAssignment.id).catch(() => []);
+        setSubmissions(data || []);
+        setGradeDrafts(draftsFromSubmissions(data));
+        alert(
+          current?.score != null
+            ? `Someone else just graded this submission (${current.score}/${current.maxScore}). The latest version is now loaded — please review before grading again.`
+            : 'Someone else just changed this submission. The latest version is now loaded — please review before grading again.'
+        );
+      } else {
+        alert(err instanceof ApiClientError ? err.message : 'Failed to save grade.');
+      }
     }
   };
 
@@ -134,7 +161,12 @@ export default function GradingPage() {
               {assignments.map((asg) => (
                 <tr key={asg.id} className="hover:bg-[#F7F5EE] transition-colors">
                   <td className="py-3 px-4 font-bold text-[#22355E]">{asg.title}</td>
-                  <td className="py-3 px-4 text-[#22355E] font-semibold">{asg.className}</td>
+                  <td className="py-3 px-4 text-[#22355E] font-semibold">
+                    {asg.className}
+                    {asg.isOwn === false && (
+                      <span className="block text-[10px] font-normal text-[#6E6A64] mt-0.5">{asg.teacherName || 'Another teacher'}&rsquo;s batch</span>
+                    )}
+                  </td>
                   <td className="py-3 px-4 text-[#6E6A64]">{new Date(asg.dueDate).toLocaleDateString()}</td>
                   <td className="py-3 px-4 font-mono text-[#2B2B28]">{asg.submitted} / {asg.total}</td>
                   <td className="py-3 px-4">
@@ -251,7 +283,7 @@ export default function GradingPage() {
                           className="flex-1 bg-white border border-[#DFDACB] rounded-lg px-2 py-1 text-xs"
                         />
                         <button
-                          onClick={() => handleGrade(s.id, s.maxScore || activeAssignment.maxScore)}
+                          onClick={() => handleGrade(s.id)}
                           className="px-3 py-1 rounded-lg bg-[#22355E] hover:bg-[#16233F] text-white text-[11px] font-bold"
                         >
                           {s.status === 'graded' ? 'Update' : 'Grade'}

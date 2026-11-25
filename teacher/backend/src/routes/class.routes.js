@@ -10,6 +10,8 @@ router.use(authenticate, requireRole('teacher'));
 
 router.get('/', classController.listClasses);
 router.get('/course-options', classController.getStudentCourseOptions);
+// Must come before '/:id' - 'accessible' would otherwise be read as a class id.
+router.get('/accessible', classController.listAccessibleClasses);
 router.post('/', createClassValidator, validate, classController.createClass);
 router.get('/:id', objectIdParam('id'), validate, classController.getClass);
 router.patch('/:id', objectIdParam('id'), updateClassValidator, validate, classController.updateClass);

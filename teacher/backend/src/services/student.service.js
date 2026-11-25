@@ -2,14 +2,32 @@ import { Student } from '../models/Student.js';
 import { SchoolClass } from '../models/SchoolClass.js';
 import { Submission } from '../models/Submission.js';
 import { Attendance } from '../models/Attendance.js';
+import { Teacher } from '../models/Teacher.js';
 import { ApiError } from '../utils/ApiError.js';
 import { parsePagination, buildPaginationMeta } from '../utils/pagination.js';
 import { assertClassOwnership } from './class.service.js';
+import { getAccessibleClassIds, canActOnClass } from './courseAccess.service.js';
 import { logAudit } from './audit.service.js';
 import { fetchEnrollmentSnapshot } from './studentBridge.service.js';
 import { recountBatchSeats } from './batchPlacement.service.js';
 
-function shapeStudentSummary(s) {
+/** Batch-resolves {teacherId: name}, for the "whose batch" indicator below - one query per list, never one per row. */
+async function resolveTeacherNames(teacherIds) {
+  const ids = [...new Set(teacherIds.map((id) => (id ? String(id) : null)).filter(Boolean))];
+  if (!ids.length) return new Map();
+  const rows = await Teacher.find({ _id: { $in: ids } }).populate('user', 'name').lean();
+  return new Map(rows.map((t) => [String(t._id), t.user?.name || null]));
+}
+
+/**
+ * `viewerTeacherId`/`teacherNameById` power the "whose batch" indicator -
+ * now that course-access can show a teacher a student outside their own
+ * roster (see getAccessibleClassIds), the roster grid needs to say whose
+ * batch each one is in. `teacherNameById` is built once per list/lookup (see
+ * resolveTeacherNames above) and passed in rather than queried per row.
+ */
+function shapeStudentSummary(s, viewerTeacherId = null, teacherNameById = new Map()) {
+  const classTeacherId = s.class?.teacher ? String(s.class.teacher) : null;
   return {
     id: s._id,
     name: s.name,
@@ -23,6 +41,10 @@ function shapeStudentSummary(s) {
     avatar: s.avatarUrl || dicebearAvatar(s.name),
     classId: s.class?._id || s.class,
     className: s.class?.name || undefined,
+    // Whose batch this is. Null (not false) when there's nothing to compare -
+    // keeps "known to be your own" distinct from "not known" for the frontend.
+    isOwnClass: classTeacherId && viewerTeacherId ? classTeacherId === String(viewerTeacherId) : null,
+    classTeacherName: classTeacherId ? teacherNameById.get(classTeacherId) || null : null,
     rollNumber: s.rollNumber,
     score: s.metrics?.currentScore ?? 0,
     previousScore: s.metrics?.previousScore ?? 0,
@@ -54,15 +76,34 @@ const SORT_FIELDS = {
   attendance: 'metrics.attendanceRate',
 };
 
-/** Backend-side search / filter / sort / pagination — never ships the full roster to the client just to filter it there. */
+/**
+ * Backend-side search / filter / sort / pagination — never ships the full
+ * roster to the client just to filter it there.
+ *
+ * Scoped to every class this teacher may act on (own, union course-access -
+ * see courseAccess.service.js), not only classes they own, so "my students"
+ * reads as the shared, course-wide roster every course-access teacher now
+ * monitors together. A specific classId is re-checked against that same
+ * set rather than trusted outright, since this is also reachable directly
+ * from the general students-list endpoint with a classId query param, not
+ * only through class.controller#getClassStudents (which already checks).
+ */
 export async function listStudents(teacherId, { classId, riskLevel, search, page, limit, sortBy, sortOrder } = {}) {
   const { page: p, limit: l, skip } = parsePagination({ page, limit });
+  const accessibleClassIds = await getAccessibleClassIds(teacherId);
 
   // Real, verified students only — a roster row is never proof of purchase
   // on its own (see syncEnrollmentForClass); only a real matched enrollment
   // (linkedUserId set) counts as a student a teacher should actually see.
-  const filter = { teacher: teacherId, status: 'active', linkedUserId: { $ne: null } };
-  if (classId && classId !== 'all') filter.class = classId;
+  const filter = { status: 'active', linkedUserId: { $ne: null } };
+  if (classId && classId !== 'all') {
+    if (!accessibleClassIds.some((id) => String(id) === String(classId))) {
+      return { students: [], meta: buildPaginationMeta({ page: p, limit: l, total: 0 }) };
+    }
+    filter.class = classId;
+  } else {
+    filter.class = { $in: accessibleClassIds };
+  }
   if (riskLevel && riskLevel !== 'all') filter['metrics.riskLevel'] = riskLevel;
   if (search && search.trim()) {
     const q = search.trim();
@@ -73,37 +114,55 @@ export async function listStudents(teacherId, { classId, riskLevel, search, page
   const sortDir = sortOrder === 'desc' ? -1 : 1;
 
   const [rows, total] = await Promise.all([
-    Student.find(filter).populate('class', 'name').sort({ [sortField]: sortDir }).skip(skip).limit(l).lean(),
+    Student.find(filter).populate('class', 'name teacher').sort({ [sortField]: sortDir }).skip(skip).limit(l).lean(),
     Student.countDocuments(filter),
   ]);
+  const teacherNameById = await resolveTeacherNames(rows.map((r) => r.class?.teacher));
 
   return {
-    students: rows.map(shapeStudentSummary),
+    students: rows.map((s) => shapeStudentSummary(s, teacherId, teacherNameById)),
     meta: buildPaginationMeta({ page: p, limit: l, total }),
   };
 }
 
 export async function getAtRiskStudents(teacherId) {
-  const rows = await Student.find({ teacher: teacherId, status: 'active', linkedUserId: { $ne: null }, 'metrics.riskLevel': { $in: ['act_now', 'watch'] } })
-    .populate('class', 'name')
+  const accessibleClassIds = await getAccessibleClassIds(teacherId);
+  const rows = await Student.find({
+    class: { $in: accessibleClassIds },
+    status: 'active',
+    linkedUserId: { $ne: null },
+    'metrics.riskLevel': { $in: ['act_now', 'watch'] },
+  })
+    .populate('class', 'name teacher')
     .sort({ 'metrics.currentScore': 1 })
     .lean();
 
-  const shaped = rows.map(shapeStudentSummary);
+  const teacherNameById = await resolveTeacherNames(rows.map((r) => r.class?.teacher));
+  const shaped = rows.map((s) => shapeStudentSummary(s, teacherId, teacherNameById));
   const actNow = shaped.filter((s) => s.riskLevel === 'act_now');
   const watch = shaped.filter((s) => s.riskLevel === 'watch');
   return { all: [...actNow, ...watch], actNow, watch, totalCount: actNow.length + watch.length };
 }
 
+/** Strict ownership - kept as-is for the contact/guardian-info WRITE paths below (updateStudent, archiveStudent), which stay with the batch's own teacher even as viewing/monitoring widens. */
 async function assertStudentOwnership(teacherId, studentId) {
   const student = await Student.findOne({ _id: studentId, teacher: teacherId });
   if (!student) throw ApiError.notFound('Student not found.', 'STUDENT_NOT_FOUND');
   return student;
 }
 
+/** Course-access-widened standing for VIEWING a student's full profile (monitoring) - any teacher sharing the student's class's course, not only its owner. */
+async function assertStudentVisible(teacherId, studentId) {
+  const student = await Student.findById(studentId);
+  if (!student || !(await canActOnClass(teacherId, student.class))) {
+    throw ApiError.notFound('Student not found.', 'STUDENT_NOT_FOUND');
+  }
+  return student;
+}
+
 export async function getStudentDetail(teacherId, studentId) {
-  const student = await assertStudentOwnership(teacherId, studentId);
-  await student.populate('class', 'name');
+  const student = await assertStudentVisible(teacherId, studentId);
+  await student.populate('class', 'name teacher');
 
   const submissions = await Submission.find({ student: studentId })
     .populate('assignment', 'title maxScore dueDate')
@@ -117,9 +176,10 @@ export async function getStudentDetail(teacherId, studentId) {
     .lean();
 
   const scoreTimeline = await buildScoreTimeline(studentId, student.metrics?.classAverage ?? 0);
+  const teacherNameById = await resolveTeacherNames([student.class?.teacher]);
 
   return {
-    ...shapeStudentSummary(student),
+    ...shapeStudentSummary(student, teacherId, teacherNameById),
     // The student's profile as the student portal holds it - visible to this
     // teacher because the student is on their roster (assertStudentOwnership).
     grade: student.grade || null,

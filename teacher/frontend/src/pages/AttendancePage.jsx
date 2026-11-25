@@ -19,6 +19,12 @@ export default function AttendancePage() {
   const [date, setDate] = useState(todayStr());
   const [roster, setRoster] = useState([]);
   const [statuses, setStatuses] = useState({});
+  // Per-student optimistic-concurrency baseline (the attendance row's
+  // updatedAt when this page last read it, or null when none exists yet) -
+  // sent back as expectedUpdatedAt so a second course-access teacher
+  // correcting the same day's attendance is caught as a conflict, never
+  // silently overwritten.
+  const [baseline, setBaseline] = useState({});
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingRoster, setIsLoadingRoster] = useState(false);
   const [error, setError] = useState(null);
@@ -27,7 +33,7 @@ export default function AttendancePage() {
 
   useEffect(() => {
     teacherApiService
-      .getClasses()
+      .getAccessibleClasses()
       .then((data) => {
         setClasses(data || []);
         if (data?.length) setSelectedClassId(data[0].id);
@@ -47,13 +53,19 @@ export default function AttendancePage() {
       const students = studentsRes?.data || [];
       setRoster(students);
       const initial = {};
+      const initialBaseline = {};
       students.forEach((s) => {
         initial[s.id] = 'present';
+        // No existing row yet for this student/date - the concurrency guard
+        // below expects null, not undefined, to mean "nothing here yet".
+        initialBaseline[s.id] = null;
       });
       (attendanceRecords || []).forEach((r) => {
         initial[r.studentId] = r.status;
+        initialBaseline[r.studentId] = r.updatedAt ?? null;
       });
       setStatuses(initial);
+      setBaseline(initialBaseline);
     } catch (err) {
       setError(err instanceof ApiClientError ? err.message : 'Failed to load roster.');
     } finally {
@@ -69,12 +81,27 @@ export default function AttendancePage() {
     setIsSaving(true);
     setSaveMessage('');
     try {
-      const records = roster.map((s) => ({ studentId: s.id, status: statuses[s.id] || 'present' }));
+      const records = roster.map((s) => ({
+        studentId: s.id,
+        status: statuses[s.id] || 'present',
+        expectedUpdatedAt: baseline[s.id] ?? null,
+      }));
       await teacherApiService.markAttendance(selectedClassId, date, records);
       setSaveMessage('Attendance saved.');
       setTimeout(() => setSaveMessage(''), 3000);
+      // Refreshes the baseline to the rows just written, so saving again
+      // (e.g. one more correction) checks against what's really there now,
+      // not the pre-save timestamps - otherwise a second save this session
+      // would misreport its own first save as a conflict.
+      loadRosterAndAttendance();
     } catch (err) {
-      setSaveMessage(err instanceof ApiClientError ? err.message : 'Failed to save attendance.');
+      if (err instanceof ApiClientError && err.code === 'ATTENDANCE_CHANGED') {
+        const count = err.details?.conflicts?.length;
+        setSaveMessage(`Attendance for ${count ? `${count} student(s)` : 'one or more students'} here was just changed by someone else. Reloaded the latest — please review before saving again.`);
+        loadRosterAndAttendance();
+      } else {
+        setSaveMessage(err instanceof ApiClientError ? err.message : 'Failed to save attendance.');
+      }
     } finally {
       setIsSaving(false);
     }
@@ -101,6 +128,7 @@ export default function AttendancePage() {
                 <button
                   key={c.id}
                   onClick={() => setSelectedClassId(c.id)}
+                  title={c.isOwn === false ? `${c.teacherName || 'Another teacher'}'s batch` : undefined}
                   className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap border ${
                     selectedClassId === c.id
                       ? 'bg-[#22355E] text-white border-[#16233F] shadow-xs'
@@ -108,6 +136,11 @@ export default function AttendancePage() {
                   }`}
                 >
                   {c.name} ({c.attendanceRate}%)
+                  {c.isOwn === false && (
+                    <span className={`ml-1.5 font-normal ${selectedClassId === c.id ? 'text-white/70' : 'text-[#9B9690]'}`}>
+                      · {c.teacherName || 'shared'}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>

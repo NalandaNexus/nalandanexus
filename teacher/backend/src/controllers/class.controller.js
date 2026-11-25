@@ -4,6 +4,7 @@ import * as classService from '../services/class.service.js';
 import * as studentService from '../services/student.service.js';
 import * as leaderboardService from '../services/leaderboard.service.js';
 import { fetchStudentCourseCatalog } from '../services/studentBridge.service.js';
+import { assertCourseAccessForClass } from '../services/courseAccess.service.js';
 
 /**
  * The course picker's options. `meta.catalogAvailable` is reported honestly so
@@ -18,6 +19,12 @@ export const getStudentCourseOptions = catchAsync(async (req, res) => {
 
 export const listClasses = catchAsync(async (req, res) => {
   const classes = await classService.listClasses(req.teacher._id, { status: req.query.status });
+  sendSuccess(res, { data: classes });
+});
+
+/** Every class this teacher may act on - own, union course-access - for pickers that must span a whole course, not just this teacher's own batches (Attendance, Students). */
+export const listAccessibleClasses = catchAsync(async (req, res) => {
+  const classes = await classService.listAccessibleClasses(req.teacher._id);
   sendSuccess(res, { data: classes });
 });
 
@@ -41,8 +48,9 @@ export const archiveClass = catchAsync(async (req, res) => {
   sendSuccess(res, { message: 'Class archived successfully.', data: result });
 });
 
+/** Course-access-widened: any teacher sharing this class's course may see its roster, not only its own batch's teacher. */
 export const getClassStudents = catchAsync(async (req, res) => {
-  await classService.assertClassOwnership(req.teacher._id, req.params.id);
+  await assertCourseAccessForClass(req.teacher._id, req.params.id);
   const { students, meta } = await studentService.listStudents(req.teacher._id, { ...req.query, classId: req.params.id });
   sendSuccess(res, { data: students, meta });
 });
@@ -69,4 +77,4 @@ export const getClassLeaderboard = catchAsync(async (req, res) => {
   sendSuccess(res, { data: leaderboard });
 });
 
-export default { listClasses, getClass, createClass, updateClass, archiveClass, getClassStudents, syncClassEnrollment, getClassLeaderboard, getStudentCourseOptions };
+export default { listClasses, listAccessibleClasses, getClass, createClass, updateClass, archiveClass, getClassStudents, syncClassEnrollment, getClassLeaderboard, getStudentCourseOptions };
