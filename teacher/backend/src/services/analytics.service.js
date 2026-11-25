@@ -3,18 +3,20 @@ import { Student } from '../models/Student.js';
 import { Submission } from '../models/Submission.js';
 import { Assignment } from '../models/Assignment.js';
 import { recomputeConceptAnalytics } from './metrics.service.js';
+import { getAccessibleClassIds } from './courseAccess.service.js';
 
 const oid = (id) => new mongoose.Types.ObjectId(id);
 
 /**
  * Cohort score distribution (quartile-style breakdown behind the "Avg
  * Score" stat card's drill-down modal). Every number here is computed from
- * `Student.metrics.currentScore` across the teacher's active roster — for a
- * brand-new teacher with zero students this correctly returns all zeros
- * instead of a fabricated distribution.
+ * `Student.metrics.currentScore` across every class this teacher may act on
+ * (own, union course-access) — for a brand-new teacher with zero students
+ * this correctly returns all zeros instead of a fabricated distribution.
  */
 export async function getAvgScoreBreakdown(teacherId) {
-  const students = await Student.find({ teacher: teacherId, status: 'active', linkedUserId: { $ne: null } }).select('metrics.currentScore').lean();
+  const accessibleClassIds = await getAccessibleClassIds(teacherId);
+  const students = await Student.find({ class: { $in: accessibleClassIds }, status: 'active', linkedUserId: { $ne: null } }).select('metrics.currentScore').lean();
 
   if (!students.length) {
     return {
@@ -72,7 +74,8 @@ function buildInterpretation({ classAverage, studentsBelow60, studentsAbove90, n
  */
 export async function getConceptPerformance(teacherId) {
   const rows = await recomputeConceptAnalytics(teacherId);
-  const classAverage = round1(avg((await Student.find({ teacher: teacherId, status: 'active', linkedUserId: { $ne: null } }).select('metrics.currentScore').lean()).map((s) => s.metrics?.currentScore || 0)));
+  const accessibleClassIds = await getAccessibleClassIds(teacherId);
+  const classAverage = round1(avg((await Student.find({ class: { $in: accessibleClassIds }, status: 'active', linkedUserId: { $ne: null } }).select('metrics.currentScore').lean()).map((s) => s.metrics?.currentScore || 0)));
   // `id` stays the human-readable key (used for UI selection/routing); the
   // real Mongo _id is exposed separately as `conceptId` because that's what
   // createAssignment's conceptId field (and anything else addressing the
@@ -89,9 +92,15 @@ export async function getConceptPerformance(teacherId) {
  */
 export async function getPerformanceTrend(teacherId, { range = 'thisWeek', classId, studentIds = [] } = {}) {
   const { since, dateFormat } = rangeConfig(range);
+  const accessibleClassIds = await getAccessibleClassIds(teacherId);
 
-  const match = { teacher: oid(teacherId), status: 'graded', gradedAt: { $gte: since } };
-  if (classId && classId !== 'all') match.class = oid(classId);
+  const match = { class: { $in: accessibleClassIds.map(oid) }, status: 'graded', gradedAt: { $gte: since } };
+  // A specific class must still be one of the ones just resolved above - an
+  // arbitrary classId query param must not be able to replace that
+  // restriction outright and reach a class outside it.
+  if (classId && classId !== 'all' && accessibleClassIds.some((id) => String(id) === String(classId))) {
+    match.class = oid(classId);
+  }
 
   const classAvgRows = await Submission.aggregate([
     { $match: match },
@@ -150,13 +159,20 @@ export async function getPerformanceTrend(teacherId, { range = 'thisWeek', class
  * "ungraded" and "graded at 0%" are different, real facts).
  */
 export async function getGradebook(teacherId, classId) {
-  const studentFilter = { teacher: teacherId, status: 'active', linkedUserId: { $ne: null } };
-  if (classId) studentFilter.class = classId;
+  const accessibleClassIds = await getAccessibleClassIds(teacherId);
+  const classFilterValue = classId && accessibleClassIds.some((id) => String(id) === String(classId))
+    ? classId
+    : { $in: accessibleClassIds };
+
+  const studentFilter = { class: classFilterValue, status: 'active', linkedUserId: { $ne: null } };
   const students = await Student.find(studentFilter).select('name email rollNumber class').sort({ name: 1 }).lean();
   if (!students.length) return { assignments: [], students: [] };
 
-  const assignmentFilter = { teacher: teacherId };
-  if (classId) assignmentFilter.class = classId;
+  // Every assignment targeting these classes, not only ones this teacher
+  // personally authored - a shared gradebook grid needs every column a
+  // student's course actually has, including assignments another
+  // course-access teacher created.
+  const assignmentFilter = { class: classFilterValue };
   const assignments = await Assignment.find(assignmentFilter).select('title maxScore dueDate class').sort({ dueDate: 1 }).lean();
   const assignmentIds = assignments.map((a) => a._id);
 
