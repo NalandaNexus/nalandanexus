@@ -7,6 +7,7 @@ import { LessonProgress } from '../models/LessonProgress.js';
 import { recordActivity } from '../services/progression/engine.service.js';
 import { resolveLessonSubject } from '../services/progression/subject.service.js';
 import { shapeLessonVideoForStudent, shapeModuleVideoForStudent } from '../services/lessonVideo.service.js';
+import { computeLockState } from '../services/courseGating.service.js';
 
 /**
  * GET /api/student/courses - courses the authenticated student is enrolled in,
@@ -55,9 +56,10 @@ export const getEnrolledCourseContent = asyncHandler(async (req, res) => {
   const course = await Course.findById(req.courseId);
   if (!course) throw AppError.notFound('Course not found', 'COURSE_NOT_FOUND');
 
-  const [progressDocs, enrollment] = await Promise.all([
+  const [progressDocs, enrollment, lockState] = await Promise.all([
     LessonProgress.find({ userId: req.user._id, courseId: course._id }),
     Enrollment.findOne({ userId: req.user._id, courseId: course._id }),
+    computeLockState(course, req.user._id),
   ]);
   const completedLessonIds = new Set(progressDocs.filter((p) => p.completed).map((p) => p.lessonId));
 
@@ -67,10 +69,25 @@ export const getEnrolledCourseContent = asyncHandler(async (req, res) => {
       moduleId: m.moduleId,
       title: m.title,
       order: m.order,
+      description: m.description || '',
       // The module's published introduction video, or null. Not a lesson: it
       // carries no completion and awards nothing.
       video: shapeModuleVideoForStudent(m),
+      // The mandatory-progression gate (see courseGating.service.js) - a
+      // module has no lock output at all before this; computeLockState
+      // covers every module on the course, so these always resolve.
+      isLocked: lockState.modules[m.moduleId]?.locked ?? false,
+      lockReason: lockState.modules[m.moduleId]?.reason ?? null,
+      missingTasks: lockState.modules[m.moduleId]?.missingTasks ?? [],
+      missingQuizzes: lockState.modules[m.moduleId]?.missingQuizzes ?? [],
+      // Draft lessons (isPublished: false) are withheld the same way a draft
+      // video already was - an editor saving a lesson as a work-in-progress
+      // must not make it appear for real students. This filter was missing
+      // until courseStructure.service.js gave isPublished a real write path:
+      // every existing lesson defaults isPublished to true, so nothing that
+      // was visible before this fix becomes hidden now.
       lessons: m.lessons
+        .filter((l) => l.isPublished !== false)
         .sort((a, b) => a.order - b.order)
         .map((l) => ({
           lessonId: l.lessonId,
@@ -86,7 +103,12 @@ export const getEnrolledCourseContent = asyncHandler(async (req, res) => {
           summary: l.summary,
           content: l.content,
           subject: l.subject,
-          isLocked: l.isLocked,
+          // Computed (module gate, previous-lesson gate, manual override),
+          // not the static flag alone - see courseGating.service.js. The
+          // fallback only matters if a lesson id somehow isn't in lockState,
+          // which computeLockState never actually leaves out.
+          isLocked: lockState.lessons[l.lessonId]?.locked ?? Boolean(l.isLocked),
+          lockReason: lockState.lessons[l.lessonId]?.reason ?? null,
           completed: completedLessonIds.has(l.lessonId),
           isCurrent: l.lessonId === enrollment?.currentLessonId,
         })),
@@ -131,7 +153,16 @@ export const markLessonComplete = asyncHandler(async (req, res) => {
     }
   }
   if (!targetLesson) throw AppError.notFound('Lesson not found in this course', 'LESSON_NOT_FOUND');
-  if (targetLesson.isLocked) throw AppError.forbidden('This lesson is locked.', 'LESSON_LOCKED');
+
+  // Computed (module gate, previous-lesson gate, manual override) rather
+  // than the flat `targetLesson.isLocked` check this used to be - see
+  // courseGating.service.js. The real reason rides along in the error so
+  // the student is told what to do, not just that they can't.
+  const preWriteLockState = await computeLockState(course, req.user._id);
+  const lock = preWriteLockState.lessons[lessonId];
+  if (lock?.locked) {
+    throw AppError.forbidden(lock.reason || 'This lesson is locked.', 'LESSON_LOCKED', { reason: lock.reason });
+  }
 
   const existing = await LessonProgress.findOne({ userId: req.user._id, lessonId });
   const alreadyCompleted = existing?.completed;
@@ -178,7 +209,12 @@ export const markLessonComplete = asyncHandler(async (req, res) => {
   const totalLessons = course.totalLessons || 1;
   const progressPercent = Math.min(100, Math.round((completedCount / totalLessons) * 100));
 
-  const nextLesson = findNextLesson(course, lessonId);
+  // Recomputed, not reused: completing this lesson may have just unlocked
+  // the very next one (the per-lesson gate above depends on exactly this
+  // completion), and the pre-write lockState above would still show it
+  // locked.
+  const postWriteLockState = await computeLockState(course, req.user._id);
+  const nextLesson = findNextLesson(course, lessonId, postWriteLockState);
 
   const enrollment = await Enrollment.findOneAndUpdate(
     { userId: req.user._id, courseId: course._id },
@@ -196,16 +232,17 @@ export const markLessonComplete = asyncHandler(async (req, res) => {
   });
 });
 
-function findNextLesson(course, currentLessonId) {
+/** The next lesson after `currentLessonId` that isn't locked under `lockState` (see courseGating.service.js), or null past the end of the course. */
+function findNextLesson(course, currentLessonId, lockState) {
   const flat = [];
   for (const m of [...course.modules].sort((a, b) => a.order - b.order)) {
     for (const l of [...m.lessons].sort((a, b) => a.order - b.order)) {
-      flat.push({ moduleId: m.moduleId, lessonId: l.lessonId, isLocked: l.isLocked });
+      flat.push({ moduleId: m.moduleId, lessonId: l.lessonId });
     }
   }
   const idx = flat.findIndex((l) => l.lessonId === currentLessonId);
   if (idx === -1) return null;
-  return flat.slice(idx + 1).find((l) => !l.isLocked) || null;
+  return flat.slice(idx + 1).find((l) => !lockState.lessons[l.lessonId]?.locked) || null;
 }
 
 /** Helper used by middleware/routes to resolve a courseId from a :slug param. */

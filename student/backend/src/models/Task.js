@@ -7,6 +7,12 @@ const taskSchema = new Schema(
   {
     taskId: { type: String, required: true, unique: true, index: true }, // e.g. "orientation-reflection"
     courseId: { type: Schema.Types.ObjectId, ref: 'Course', required: true, index: true },
+    // Which module this counts toward for the mandatory-progression gate
+    // (see services/courseGating.service.js) - the real id from
+    // Course.modules[], not the free-text moduleTitle label below. Null
+    // means "not tagged", which the gating engine treats as exempt from
+    // that module's requirement rather than miscounting it as missing.
+    moduleId: { type: String, default: null, index: true },
     // What this actually teaches. Null means "not explicitly set", which the
     // subject resolver fills in from the course pillar - see
     // progression/subject.service.js. Null is meaningfully different from

@@ -68,9 +68,10 @@ function toResourceFormData(resourceData) {
  */
 const DEFAULT_TIMEOUT_MS = 20000;
 const COLD_START_TIMEOUT_MS = 45000;
-// Lesson-video calls are proxied to the student service, which sleeps when
-// idle too, so they get the same budget as a cold sign-in.
-const COLD_START_PATHS = ['/auth/me', '/auth/login', '/lesson-videos'];
+// Lesson-video and course-structure calls are proxied to the student
+// service, which sleeps when idle too, so they get the same budget as a cold
+// sign-in.
+const COLD_START_PATHS = ['/auth/me', '/auth/login', '/lesson-videos', '/course-structure'];
 
 function timeoutFor(path) {
   return COLD_START_PATHS.some((p) => path.startsWith(p)) ? COLD_START_TIMEOUT_MS : DEFAULT_TIMEOUT_MS;
@@ -109,6 +110,8 @@ function courseVideoPath(slug, target) {
   const node = target.moduleId ? `modules/${encodeURIComponent(target.moduleId)}` : `lessons/${encodeURIComponent(target.lessonId)}`;
   return `/lesson-videos/courses/${encodeURIComponent(slug)}/${node}`;
 }
+
+const courseStructureBase = (slug) => `/course-structure/courses/${encodeURIComponent(slug)}`;
 
 async function request(path, { method = 'GET', body, query, isFormData = false, signal } = {}) {
   const url = new URL(`${API_BASE}${path}`);
@@ -564,6 +567,74 @@ export const adminApi = {
 
   async removeCourseVideo(slug, target, payload = {}) {
     const json = await request(courseVideoPath(slug, target), { method: 'DELETE', body: payload });
+    return json.data;
+  },
+
+  // Module/lesson structure (rename, reorder, add, edit, remove). Proxied to
+  // the student service, which owns modules and lessons; this portal gates
+  // (courses.manage) and audits. Every write except removeLesson returns the
+  // course's full fresh structure, so a caller can set it as the new state
+  // directly rather than patching one node by hand.
+  async getCourseStructure(slug) {
+    const json = await request(courseStructureBase(slug));
+    return json.data || null;
+  },
+
+  async updateCourseSettings(slug, payload) {
+    const json = await request(courseStructureBase(slug), { method: 'PATCH', body: payload });
+    return json.data;
+  },
+
+  // Preview-before-flip for the mandatory-progression gate: reports who
+  // would newly lose access to what if this course's gate were turned on
+  // right now. Writes nothing - this is the required check before actually
+  // flipping progressionGatingEnabled on a course with enrolled students.
+  async previewCourseGatingImpact(slug) {
+    const json = await request(`${courseStructureBase(slug)}/gating/dry-run`, { method: 'POST', body: {} });
+    return json.data || null;
+  },
+
+  async addCourseModule(slug, payload) {
+    const json = await request(`${courseStructureBase(slug)}/modules`, { method: 'POST', body: payload });
+    return json.data;
+  },
+
+  async updateCourseModule(slug, moduleId, payload) {
+    const json = await request(`${courseStructureBase(slug)}/modules/${encodeURIComponent(moduleId)}`, { method: 'PATCH', body: payload });
+    return json.data;
+  },
+
+  async reorderCourseModules(slug, orderedModuleIds) {
+    const json = await request(`${courseStructureBase(slug)}/modules/order`, { method: 'PUT', body: { orderedModuleIds } });
+    return json.data;
+  },
+
+  async addCourseLesson(slug, moduleId, payload) {
+    const json = await request(`${courseStructureBase(slug)}/modules/${encodeURIComponent(moduleId)}/lessons`, { method: 'POST', body: payload });
+    return json.data;
+  },
+
+  async updateCourseLesson(slug, moduleId, lessonId, payload) {
+    const json = await request(`${courseStructureBase(slug)}/modules/${encodeURIComponent(moduleId)}/lessons/${encodeURIComponent(lessonId)}`, {
+      method: 'PATCH',
+      body: payload,
+    });
+    return json.data;
+  },
+
+  async reorderCourseLessons(slug, moduleId, orderedLessonIds) {
+    const json = await request(`${courseStructureBase(slug)}/modules/${encodeURIComponent(moduleId)}/lessons/order`, {
+      method: 'PUT',
+      body: { orderedLessonIds },
+    });
+    return json.data;
+  },
+
+  async removeCourseLesson(slug, moduleId, lessonId, payload = {}) {
+    const json = await request(`${courseStructureBase(slug)}/modules/${encodeURIComponent(moduleId)}/lessons/${encodeURIComponent(lessonId)}`, {
+      method: 'DELETE',
+      body: payload,
+    });
     return json.data;
   },
 

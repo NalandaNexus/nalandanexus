@@ -1081,8 +1081,8 @@ export const adminGetCourseContent = asyncHandler(async (req, res) => {
   }
 
   const [quizzes, tasks] = await Promise.all([
-    Quiz.find({ courseId: course._id }).select('quizId title subject').lean(),
-    Task.find({ courseId: course._id }).select('taskId title subject').lean(),
+    Quiz.find({ courseId: course._id }).select('quizId title subject moduleId passingScore').lean(),
+    Task.find({ courseId: course._id }).select('taskId title subject moduleId').lean(),
   ]);
 
   return sendSuccess(res, {
@@ -1091,8 +1091,23 @@ export const adminGetCourseContent = asyncHandler(async (req, res) => {
       title: course.title,
       pillar: course.pillar,
       modules,
-      quizzes: quizzes.map((q) => ({ quizId: q.quizId, title: q.title, subject: q.subject || null })),
-      tasks: tasks.map((t) => ({ taskId: t.taskId, title: t.title, subject: t.subject || null })),
+      // moduleId: which module this counts toward for the mandatory-
+      // progression gate (see services/courseGating.service.js) - null means
+      // untagged, which the gating engine treats as exempt from any module's
+      // requirement rather than miscounting it as missing.
+      quizzes: quizzes.map((q) => ({
+        quizId: q.quizId,
+        title: q.title,
+        subject: q.subject || null,
+        moduleId: q.moduleId || null,
+        passingScore: q.passingScore ?? 50,
+      })),
+      tasks: tasks.map((t) => ({
+        taskId: t.taskId,
+        title: t.title,
+        subject: t.subject || null,
+        moduleId: t.moduleId || null,
+      })),
     },
   });
 });
@@ -1113,6 +1128,21 @@ export const adminSetContentSubjects = asyncHandler(async (req, res) => {
 
   const course = await Course.findOne({ slug: req.params.slug });
   if (!course) throw AppError.notFound('Course not found', 'COURSE_NOT_FOUND');
+
+  // Validated before anything is written: a moduleId that isn't one of this
+  // course's real modules would tag a quiz/task to a module the gating
+  // engine (courseGating.service.js) can never find, silently exempting it
+  // from gating forever instead of ever actually requiring it.
+  const validModuleIds = new Set(course.modules.map((m) => m.moduleId));
+  const badModuleIds = [...quizzes, ...tasks]
+    .map((item) => item.moduleId)
+    .filter((id) => id != null && !validModuleIds.has(id));
+  if (badModuleIds.length) {
+    throw AppError.badRequest(
+      `Unknown module id(s) for this course: ${[...new Set(badModuleIds)].join(', ')}.`,
+      'MODULE_ID_UNKNOWN'
+    );
+  }
 
   const clean = (v) => (v === null || v === '' ? null : String(v).trim().toUpperCase());
   let changed = 0;
@@ -1137,16 +1167,54 @@ export const adminSetContentSubjects = asyncHandler(async (req, res) => {
 
   if (modules.length || lessons.length) await course.save();
 
+  // Both subject and moduleId are tri-state at the wire level (field absent
+  // = leave alone, null = explicitly clear, a string = set) - each written
+  // only when the caller actually sent that key, so tagging a quiz/task's
+  // module can never accidentally blank out its subject, or vice versa.
+  // `clean(undefined)` would otherwise stringify to the literal text
+  // "UNDEFINED" instead of leaving the field alone - exactly the silent
+  // corruption this guards against.
   for (const q of quizzes) {
-    const r = await Quiz.updateOne({ quizId: q.quizId, courseId: course._id }, { $set: { subject: clean(q.subject) } });
+    const set = {};
+    if (Object.prototype.hasOwnProperty.call(q, 'subject')) set.subject = clean(q.subject);
+    if (Object.prototype.hasOwnProperty.call(q, 'moduleId')) set.moduleId = q.moduleId || null;
+    if (!Object.keys(set).length) continue;
+    const r = await Quiz.updateOne({ quizId: q.quizId, courseId: course._id }, { $set: set });
     changed += r.modifiedCount || 0;
   }
   for (const t of tasks) {
-    const r = await Task.updateOne({ taskId: t.taskId, courseId: course._id }, { $set: { subject: clean(t.subject) } });
+    const set = {};
+    if (Object.prototype.hasOwnProperty.call(t, 'subject')) set.subject = clean(t.subject);
+    if (Object.prototype.hasOwnProperty.call(t, 'moduleId')) set.moduleId = t.moduleId || null;
+    if (!Object.keys(set).length) continue;
+    const r = await Task.updateOne({ taskId: t.taskId, courseId: course._id }, { $set: set });
     changed += r.modifiedCount || 0;
   }
 
   return sendSuccess(res, { message: `${changed} item(s) updated.`, data: { slug: course.slug, changed } });
+});
+
+/**
+ * Preview-before-flip for the mandatory-progression gate: reports exactly
+ * which actively-enrolled students would newly lose access to which module
+ * or lesson if `progressionGatingEnabled` were turned on for this course (or
+ * every course, with `all: true`) right now - without writing anything. See
+ * courseGating.service.js#dryRunImpact for the comparison itself; this is
+ * only the HTTP wrapper the rollout plan's "preview impact" admin control
+ * calls before anyone actually flips the switch.
+ */
+export const adminModuleGatingDryRun = asyncHandler(async (req, res) => {
+  const { slug, all } = req.body;
+  if (!all && !slug) throw AppError.badRequest('Provide a course slug, or set all: true.', 'SLUG_REQUIRED');
+
+  const { dryRunImpact } = await import('../services/courseGating.service.js');
+  const courses = all ? await Course.find() : await Course.find({ slug });
+  if (!courses.length) {
+    throw AppError.notFound(all ? 'No courses found.' : 'Course not found', 'COURSE_NOT_FOUND');
+  }
+
+  const reports = await Promise.all(courses.map((c) => dryRunImpact(c)));
+  return sendSuccess(res, { data: { reports } });
 });
 
 /** The subjects an administrator may choose from. */

@@ -18,6 +18,7 @@ import { adminApi } from '../services/adminApi';
  */
 
 const INHERIT = '__inherit__';
+const UNTAGGED = '__untagged__';
 
 function SubjectSelect({ value, subjects, onChange, inherited, resolved, disabled }) {
   return (
@@ -42,12 +43,51 @@ function SubjectSelect({ value, subjects, onChange, inherited, resolved, disable
   );
 }
 
+/**
+ * Which module a quiz or assignment counts toward for the mandatory-
+ * progression gate (see courseGating.service.js, student backend) - a
+ * wholly separate decision from the subject it teaches, so this is its own
+ * control next to SubjectSelect rather than folded into it. Untagged is a
+ * real, valid choice: an untagged quiz/task is simply never checked by the
+ * gate, not an error.
+ */
+function ModuleSelect({ value, modules, onChange, disabled }) {
+  return (
+    <select
+      value={value || UNTAGGED}
+      onChange={(e) => onChange(e.target.value === UNTAGGED ? null : e.target.value)}
+      disabled={disabled}
+      className={`text-xs rounded-lg border px-2 py-1.5 min-w-[11rem] ${
+        value ? 'bg-white border-slate-300 text-slate-800' : 'bg-slate-50 border-slate-200 text-slate-500 italic'
+      } disabled:opacity-50`}
+      aria-label="Module (progression gate)"
+    >
+      <option value={UNTAGGED}>Not required for progression</option>
+      {modules.map((m) => (
+        <option key={m.moduleId} value={m.moduleId}>
+          Required for: {m.title}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+/** Merges two per-id pending maps (subject, moduleId) into one payload array, each field sent only when actually staged. */
+function mergeModuleTagging(subjectMap, moduleMap, idKey) {
+  const ids = new Set([...Object.keys(subjectMap), ...Object.keys(moduleMap)]);
+  return [...ids].map((id) => ({
+    [idKey]: id,
+    ...(id in subjectMap ? { subject: subjectMap[id] } : {}),
+    ...(id in moduleMap ? { moduleId: moduleMap[id] } : {}),
+  }));
+}
+
 export default function CourseSubjectsPage() {
   const [courses, setCourses] = useState([]);
   const [slug, setSlug] = useState('');
   const [subjects, setSubjects] = useState([]);
   const [content, setContent] = useState(null);
-  const [pending, setPending] = useState({ modules: {}, lessons: {}, quizzes: {}, tasks: {} });
+  const [pending, setPending] = useState({ modules: {}, lessons: {}, quizzes: {}, tasks: {}, quizModules: {}, taskModules: {} });
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
@@ -70,7 +110,7 @@ export default function CourseSubjectsPage() {
     if (!courseSlug) return;
     setIsLoading(true);
     setError('');
-    setPending({ modules: {}, lessons: {}, quizzes: {}, tasks: {} });
+    setPending({ modules: {}, lessons: {}, quizzes: {}, tasks: {}, quizModules: {}, taskModules: {} });
     try {
       setContent(await adminApi.getCourseContent(courseSlug));
     } catch (err) {
@@ -98,8 +138,8 @@ export default function CourseSubjectsPage() {
       const payload = {
         modules: Object.entries(pending.modules).map(([moduleId, subject]) => ({ moduleId, subject })),
         lessons: Object.entries(pending.lessons).map(([lessonId, subject]) => ({ lessonId, subject })),
-        quizzes: Object.entries(pending.quizzes).map(([quizId, subject]) => ({ quizId, subject })),
-        tasks: Object.entries(pending.tasks).map(([taskId, subject]) => ({ taskId, subject })),
+        quizzes: mergeModuleTagging(pending.quizzes, pending.quizModules, 'quizId'),
+        tasks: mergeModuleTagging(pending.tasks, pending.taskModules, 'taskId'),
       };
       const result = await adminApi.setCourseSubjects(slug, payload);
       setNotice(`${result?.changed ?? pendingCount} item(s) updated. Future activity will be credited accordingly.`);
@@ -129,7 +169,7 @@ export default function CourseSubjectsPage() {
           <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
-              onClick={() => setPending({ modules: {}, lessons: {}, quizzes: {}, tasks: {} })}
+              onClick={() => setPending({ modules: {}, lessons: {}, quizzes: {}, tasks: {}, quizModules: {}, taskModules: {} })}
               disabled={isSaving}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-sm font-semibold disabled:opacity-50"
             >
@@ -246,19 +286,31 @@ export default function CourseSubjectsPage() {
         <div className="rounded-xl bg-white border border-slate-200 overflow-hidden">
           <div className="px-4 py-3 bg-slate-50 border-b border-slate-200">
             <h2 className="text-sm font-bold text-[#22355E]">Quizzes</h2>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              Subject feeds a skill score. "Required for" feeds the mandatory-progression gate instead - a student
+              must pass a quiz tagged to a module before the next module unlocks.
+            </p>
           </div>
           <ul className="divide-y divide-slate-100">
             {content.quizzes.map((q) => (
               <li key={q.quizId} className="px-4 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <p className="text-sm text-slate-800 truncate min-w-0">{q.title}</p>
-                <SubjectSelect
-                  value={valueFor('quizzes', q.quizId, q.subject)}
-                  subjects={subjects}
-                  inherited={!valueFor('quizzes', q.quizId, q.subject)}
-                  resolved={null}
-                  onChange={(v) => stage('quizzes', q.quizId, v)}
-                  disabled={isSaving}
-                />
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  <SubjectSelect
+                    value={valueFor('quizzes', q.quizId, q.subject)}
+                    subjects={subjects}
+                    inherited={!valueFor('quizzes', q.quizId, q.subject)}
+                    resolved={null}
+                    onChange={(v) => stage('quizzes', q.quizId, v)}
+                    disabled={isSaving}
+                  />
+                  <ModuleSelect
+                    value={valueFor('quizModules', q.quizId, q.moduleId)}
+                    modules={content.modules}
+                    onChange={(v) => stage('quizModules', q.quizId, v)}
+                    disabled={isSaving}
+                  />
+                </div>
               </li>
             ))}
           </ul>
@@ -269,19 +321,31 @@ export default function CourseSubjectsPage() {
         <div className="rounded-xl bg-white border border-slate-200 overflow-hidden">
           <div className="px-4 py-3 bg-slate-50 border-b border-slate-200">
             <h2 className="text-sm font-bold text-[#22355E]">Assignments</h2>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              Subject feeds a skill score. "Required for" feeds the mandatory-progression gate instead - a student
+              must complete an assignment tagged to a module before the next module unlocks.
+            </p>
           </div>
           <ul className="divide-y divide-slate-100">
             {content.tasks.map((t) => (
               <li key={t.taskId} className="px-4 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <p className="text-sm text-slate-800 truncate min-w-0">{t.title}</p>
-                <SubjectSelect
-                  value={valueFor('tasks', t.taskId, t.subject)}
-                  subjects={subjects}
-                  inherited={!valueFor('tasks', t.taskId, t.subject)}
-                  resolved={null}
-                  onChange={(v) => stage('tasks', t.taskId, v)}
-                  disabled={isSaving}
-                />
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  <SubjectSelect
+                    value={valueFor('tasks', t.taskId, t.subject)}
+                    subjects={subjects}
+                    inherited={!valueFor('tasks', t.taskId, t.subject)}
+                    resolved={null}
+                    onChange={(v) => stage('tasks', t.taskId, v)}
+                    disabled={isSaving}
+                  />
+                  <ModuleSelect
+                    value={valueFor('taskModules', t.taskId, t.moduleId)}
+                    modules={content.modules}
+                    onChange={(v) => stage('taskModules', t.taskId, v)}
+                    disabled={isSaving}
+                  />
+                </div>
               </li>
             ))}
           </ul>
