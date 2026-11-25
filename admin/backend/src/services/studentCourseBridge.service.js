@@ -236,7 +236,7 @@ function couponsUnavailable() {
   );
 }
 
-async function couponCall(path, options) {
+export async function couponCall(path, options) {
   if (!isConfigured()) throw couponsUnavailable();
   try {
     return await call(path, options);

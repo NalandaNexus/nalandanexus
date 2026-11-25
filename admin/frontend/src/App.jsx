@@ -27,6 +27,7 @@ const StudentsPage = lazy(() => import('./pages/StudentsPage'));
 const CourseGovernancePage = lazy(() => import('./pages/CourseGovernancePage'));
 const BatchesPage = lazy(() => import('./pages/BatchesPage'));
 const CouponsPage = lazy(() => import('./pages/CouponsPage'));
+const CourseContentPage = lazy(() => import('./pages/CourseContentPage'));
 const CourseSubjectsPage = lazy(() => import('./pages/CourseSubjectsPage'));
 const LessonVideosPage = lazy(() => import('./pages/LessonVideosPage'));
 const ProgressionPage = lazy(() => import('./pages/ProgressionPage'));
@@ -140,6 +141,7 @@ export default function App() {
                 <Route path="courses" element={<CourseGovernancePage />} />
                 <Route path="batches" element={<BatchesPage />} />
                 <Route path="coupons" element={<CouponsPage />} />
+                <Route path="course-content" element={<CourseContentPage />} />
                 <Route path="course-subjects" element={<CourseSubjectsPage />} />
                 <Route path="lesson-videos" element={<LessonVideosPage />} />
                 <Route path="progression" element={<ProgressionPage />} />

@@ -1,6 +1,6 @@
-import { env } from '../config/env.js';
 import { CourseAccess } from '../models/CourseAccess.js';
-import { ApiError } from '../utils/ApiError.js';
+import { assertCourseAccess } from './courseAccess.service.js';
+import { callStudentBridge } from './studentBridgeClient.service.js';
 
 /**
  * Lesson videos for the courses a teacher is assigned.
@@ -10,99 +10,24 @@ import { ApiError } from '../utils/ApiError.js';
  * one that already decides whose students a teacher may see. It is consulted on
  * every request, so taking a course away from a teacher takes away their
  * ability to edit its videos in the same moment. There is no second assignment
- * system here.
+ * system here. (assertCourseAccess itself now lives in courseAccess.service.js,
+ * shared with course-structure editing and course-wide grading/attendance -
+ * re-exported below so existing imports of it from this file keep working.)
  *
  * Lessons themselves live in the student service; this forwards an authorised
- * edit there over the service-key bridge, naming the teacher who made it. The
- * student service validates the link and is the only writer.
+ * edit there over the service-key bridge (studentBridgeClient.service.js,
+ * shared with course-structure editing - the retry/timeout/error-propagation
+ * rules are identical, since both treat the student backend as the sole
+ * source of truth), naming the teacher who made it. The student service
+ * validates the link and is the only writer.
  */
 
-const SLUG = /^[a-z0-9-]{1,100}$/;
-const normSlug = (s) => String(s || '').trim().toLowerCase();
+export { assertCourseAccess };
 
-// The student service sleeps when idle and can take 30-60s to answer the first
-// request. Two attempts, the second long enough to outlast a cold start; only
-// transport failures and 5xx are retried, and PUT/DELETE here are idempotent.
-const ATTEMPT_TIMEOUTS_MS = [8000, 35000];
-const RETRY_BACKOFF_MS = 1000;
-
-function unavailable() {
-  return ApiError.serviceUnavailable(
-    'The Student service is unavailable, so lesson videos cannot be loaded or saved right now. Nothing was changed - please try again in a moment.',
-    'STUDENT_SERVICE_UNAVAILABLE'
-  );
-}
-
-async function attempt(path, options, timeoutMs) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(`${env.studentBridge.url}${path}`, {
-      ...options,
-      headers: { 'Content-Type': 'application/json', 'X-Internal-Service-Key': env.studentBridge.serviceKey },
-      signal: controller.signal,
-    });
-    const text = await res.text().catch(() => '');
-    let body = null;
-    try {
-      body = text ? JSON.parse(text) : null;
-    } catch {
-      body = null;
-    }
-    if (res.ok) return { body };
-    if (res.status >= 400 && res.status < 500) {
-      // The student service judged the request on its merits (unsupported
-      // link, unknown lesson, unpublishable video). That answer is the useful
-      // one, so its status and code reach the teacher unchanged.
-      const err = new ApiError(
-        res.status,
-        body?.error?.message || body?.message || 'The Student service rejected this request.',
-        body?.error?.code || body?.code || 'STUDENT_SERVICE_REJECTED',
-        body?.error?.details
-      );
-      err.retryable = false;
-      throw err;
-    }
-    const err = new Error(`Student backend returned ${res.status}`);
-    err.retryable = true;
-    throw err;
-  } catch (err) {
-    if (err instanceof ApiError || err.retryable !== undefined) throw err;
-    const wrapped = new Error(err.name === 'AbortError' ? `Timed out after ${timeoutMs}ms` : err.message);
-    wrapped.retryable = true;
-    throw wrapped;
-  } finally {
-    clearTimeout(timer);
-  }
-}
+const UNAVAILABLE_LABEL = 'lesson videos cannot be loaded or saved right now';
 
 async function call(path, options) {
-  if (!env.studentBridge.url || !env.studentBridge.serviceKey) throw unavailable();
-  let last;
-  for (let i = 0; i < ATTEMPT_TIMEOUTS_MS.length; i += 1) {
-    try {
-      const { body } = await attempt(path, options, ATTEMPT_TIMEOUTS_MS[i]);
-      return body?.data ?? null;
-    } catch (err) {
-      last = err;
-      if (!err.retryable || i === ATTEMPT_TIMEOUTS_MS.length - 1) break;
-      await new Promise((r) => setTimeout(r, RETRY_BACKOFF_MS));
-    }
-  }
-  if (last instanceof ApiError) throw last;
-  console.error('[lessonVideo] Student service call failed:', path, last?.message);
-  throw unavailable();
-}
-
-/** Throws 403 unless an administrator has assigned this course to this teacher. */
-export async function assertCourseAccess(teacherId, slug) {
-  const studentCourseSlug = normSlug(slug);
-  if (!SLUG.test(studentCourseSlug)) throw ApiError.badRequest('Invalid course.', 'INVALID_COURSE');
-  const allowed = await CourseAccess.exists({ teacher: teacherId, studentCourseSlug });
-  if (!allowed) {
-    throw ApiError.forbidden('This course has not been assigned to you, so you cannot manage its videos.', 'COURSE_NOT_ASSIGNED');
-  }
-  return studentCourseSlug;
+  return callStudentBridge(path, options, UNAVAILABLE_LABEL);
 }
 
 /** The teacher's assigned courses, with lesson and video counts from the student service. */

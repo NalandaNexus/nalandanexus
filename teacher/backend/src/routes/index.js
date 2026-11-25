@@ -12,6 +12,7 @@ import analyticsRoutes from './analytics.routes.js';
 import notificationRoutes from './notification.routes.js';
 import courseRoutes from './course.routes.js';
 import lessonVideoRoutes from './lessonVideo.routes.js';
+import courseStructureRoutes from './courseStructure.routes.js';
 import examRoutes from './exam.routes.js';
 import resourceRoutes from './resource.routes.js';
 import messageRoutes from './message.routes.js';
@@ -53,6 +54,9 @@ router.use('/notifications', notificationRoutes);
 router.use('/courses', courseRoutes);
 // YouTube videos on the lessons of a teacher's assigned courses.
 router.use('/lesson-videos', lessonVideoRoutes);
+// Module/lesson structure (rename, reorder, add, edit, remove) on the same
+// assigned courses - a separate concern from the video on one lesson/module.
+router.use('/course-structure', courseStructureRoutes);
 router.use('/exams', examRoutes);
 router.use('/resources', resourceRoutes);
 router.use('/messages', messageRoutes);

@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { X, Youtube, GraduationCap, Layers, Tags, ShieldCheck, SlidersHorizontal, Ticket, ArrowRight } from 'lucide-react';
+import { X, Youtube, GraduationCap, Layers, Tags, ShieldCheck, SlidersHorizontal, Ticket, ArrowRight, FolderTree } from 'lucide-react';
 import { splitCourseTitle, isCourseActive, moduleAndLessonCounts } from './CourseCard';
 
 /**
@@ -14,6 +14,7 @@ import { splitCourseTitle, isCourseActive, moduleAndLessonCounts } from './Cours
  */
 const MANAGE_LINKS = [
   { label: 'Teachers', description: 'Assign teachers to this course', path: '/teachers', icon: GraduationCap },
+  { label: 'Course Content', description: 'Rename, reorder, add or remove modules and lessons', path: '/course-content', icon: FolderTree },
   { label: 'Lesson Videos', description: 'Module and lesson videos', path: '/lesson-videos', icon: Youtube },
   { label: 'Batches', description: 'Batches, capacity and batch teachers', path: '/batches', icon: Layers },
   { label: 'Course Subjects', description: 'Subjects taught in the course', path: '/course-subjects', icon: Tags },
