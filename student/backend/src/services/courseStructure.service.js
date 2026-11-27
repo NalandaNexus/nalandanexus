@@ -1,9 +1,11 @@
 import { Course } from '../models/Course.js';
 import { LessonProgress } from '../models/LessonProgress.js';
+import { Quiz } from '../models/Quiz.js';
+import { Task } from '../models/Task.js';
 import { AppError } from '../utils/AppError.js';
 import { logger } from '../utils/logger.js';
 import { stripHtml } from '../utils/sanitize.js';
-import { legacyVideoUrlFor, retireVideoStorage } from './lessonVideo.service.js';
+import { legacyVideoUrlFor, retireVideoStorage, announceModuleChange } from './lessonVideo.service.js';
 
 /**
  * Module and lesson structure: the one place a course's modules and lessons
@@ -226,6 +228,7 @@ export async function addModule(slug, input, actor) {
   await Course.updateOne({ _id: course._id }, { $push: { modules: newModule } });
   logger.info(`[courseStructure] ${actor?.portal}:${actor?.userId || '?'} added module ${moduleId} to ${slug}`);
   await notifyStudents(course._id, slug);
+  announceModuleChange({ _id: course._id, slug }, moduleId, 'module_added', actor);
   return getCourseStructure(slug);
 }
 
@@ -246,6 +249,63 @@ export async function updateModule(slug, moduleId, input, actor) {
 }
 
 /** Re-numbers every module's `order` to match the posted sequence. Refuses a list that doesn't name exactly the course's current modules. */
+/**
+ * Removes a module and its lessons outright - only while nothing depends on
+ * it. A student who has opened or completed any of its lessons has history
+ * there, and a quiz or assignment set for the module would be left pointing at
+ * nothing (and the progression gate reads them), so either refuses the
+ * deletion with the reason. The remaining modules are renumbered 1..n so the
+ * next added module lands at the end. Uploaded video files of the module and
+ * its lessons are retired for safe deletion; links need nothing.
+ */
+export async function removeModule(slug, moduleId, actor) {
+  const { course, mod } = await locate(slug, { moduleId });
+  const lessonIds = (mod.lessons || []).map((l) => l.lessonId);
+
+  const [progressCount, quizCount, taskCount] = await Promise.all([
+    LessonProgress.countDocuments({ courseId: course._id, $or: [{ moduleId }, { lessonId: { $in: lessonIds } }] }),
+    Quiz.countDocuments({ courseId: course._id, moduleId }),
+    Task.countDocuments({ courseId: course._id, moduleId }),
+  ]);
+  if (progressCount > 0) {
+    throw new AppError(
+      `Students have already opened or completed lessons in this module (${progressCount} record${progressCount === 1 ? '' : 's'}), so it can't be deleted. ` +
+        'Hide its lessons instead (turn off "Published") to keep their history intact.',
+      409,
+      'MODULE_HAS_PROGRESS',
+      { progressCount }
+    );
+  }
+  if (quizCount + taskCount > 0) {
+    const parts = [quizCount ? `${quizCount} quiz${quizCount === 1 ? '' : 'zes'}` : null, taskCount ? `${taskCount} assignment${taskCount === 1 ? '' : 's'}` : null].filter(Boolean);
+    throw new AppError(
+      `This module has ${parts.join(' and ')} set for it, so it can't be deleted. Remove or move them first.`,
+      409,
+      'MODULE_HAS_COURSEWORK',
+      { quizCount, taskCount }
+    );
+  }
+
+  await Course.updateOne({ _id: course._id }, { $pull: { modules: { moduleId } } });
+  // Close the gap so orders stay 1..n.
+  const remaining = [...(course.modules || [])].filter((m) => m.moduleId !== moduleId).sort((a, b) => a.order - b.order);
+  if (remaining.length) {
+    await Course.bulkWrite(
+      remaining.map((m, idx) => ({
+        updateOne: { filter: { _id: course._id }, update: { $set: { 'modules.$[m].order': idx + 1 } }, arrayFilters: [{ 'm.moduleId': m.moduleId }] },
+      }))
+    );
+  }
+  for (const video of [mod.video, ...(mod.lessons || []).map((l) => l.video)]) {
+    if (video?.provider === 'upload') await retireVideoStorage(video);
+  }
+
+  logger.info(`[courseStructure] ${actor?.portal}:${actor?.userId || '?'} removed module ${moduleId} (${lessonIds.length} lessons) from ${slug}`);
+  await notifyStudents(course._id, slug);
+  announceModuleChange(course, moduleId, 'module_removed', actor);
+  return getCourseStructure(slug);
+}
+
 export async function reorderModules(slug, orderedModuleIds, actor) {
   const course = await Course.findOne({ slug }).select('_id modules.moduleId').lean();
   if (!course) throw AppError.notFound('Course not found', 'COURSE_NOT_FOUND');
@@ -362,6 +422,7 @@ export default {
   updateCourseSettings,
   addModule,
   updateModule,
+  removeModule,
   reorderModules,
   addLesson,
   updateLesson,

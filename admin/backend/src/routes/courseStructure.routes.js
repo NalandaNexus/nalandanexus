@@ -78,6 +78,7 @@ router.patch(
   validate({ ...lessonParams, body: updateLessonBody }),
   controller.updateLesson
 );
+router.delete('/courses/:slug/modules/:moduleId', validate({ ...moduleParams, body: removeLessonBody }), controller.removeModule);
 router.delete(
   '/courses/:slug/modules/:moduleId/lessons/:lessonId',
   validate({ ...lessonParams, body: removeLessonBody }),

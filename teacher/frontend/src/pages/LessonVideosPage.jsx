@@ -24,6 +24,8 @@ const API = {
   resume: (slug, uploadId) => teacherApiService.resumeCourseVideoUpload(slug, uploadId),
   complete: (slug, uploadId, body) => teacherApiService.completeCourseVideoUpload(slug, uploadId, body),
   abortUpload: (slug, uploadId) => teacherApiService.abortCourseVideoUpload(slug, uploadId),
+  addModule: (slug, payload) => teacherApiService.addCourseModule(slug, payload),
+  removeModule: (slug, moduleId) => teacherApiService.removeCourseModule(slug, moduleId),
 };
 
 // Live notices for this teacher's courses (the backend only sends those), and

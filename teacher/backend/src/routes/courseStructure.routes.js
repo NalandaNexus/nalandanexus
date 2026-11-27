@@ -114,6 +114,8 @@ router.patch(
   controller.updateLesson
 );
 
+router.delete('/courses/:slug/modules/:moduleId', slugParam, moduleParam, validate, controller.removeModule);
+
 router.delete(
   '/courses/:slug/modules/:moduleId/lessons/:lessonId',
   slugParam,

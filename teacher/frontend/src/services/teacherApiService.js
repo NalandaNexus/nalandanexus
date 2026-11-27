@@ -490,6 +490,10 @@ class TeacherApiService {
   addCourseModule(slug, payload) {
     return post(`${courseStructureBase(slug)}/modules`, payload).then((r) => r.data);
   }
+  // Refused (409) while students have history in it or it has quizzes/assignments.
+  removeCourseModule(slug, moduleId) {
+    return del(`${courseStructureBase(slug)}/modules/${encodeURIComponent(moduleId)}`).then((r) => r.data);
+  }
   updateCourseModule(slug, moduleId, payload) {
     return patch(`${courseStructureBase(slug)}/modules/${encodeURIComponent(moduleId)}`, payload).then((r) => r.data);
   }

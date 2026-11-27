@@ -236,3 +236,15 @@ test('an unreachable student service is a 503, never a false success', async () 
   assert.equal(res.status, 503);
   assert.equal(res.body.error?.code || res.body.code, 'STUDENT_SERVICE_UNAVAILABLE');
 });
+
+test('an assigned teacher can delete a module; anyone else cannot, and the refusal reaches the teacher', async () => {
+  assert.equal((await api('DELETE', `${base}/modules/mod-2`)).status, 401);
+  const forbidden = await api('DELETE', '/api/teacher/course-structure/courses/yoddha/modules/mod-1', { cookie: alice.cookie });
+  assert.equal(forbidden.status, 403);
+  assert.equal(forbidden.body.error?.code || forbidden.body.code, 'COURSE_NOT_ASSIGNED');
+
+  const removed = await api('DELETE', `${base}/modules/mod-2`, { cookie: alice.cookie });
+  assert.equal(removed.status, 200, JSON.stringify(removed.body));
+  const { AuditLog } = await import('../src/models/AuditLog.js');
+  assert.ok(await AuditLog.exists({ action: 'course.module.removed', 'metadata.moduleId': 'mod-2' }), 'audited');
+});

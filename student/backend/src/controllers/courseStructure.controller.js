@@ -55,6 +55,11 @@ export const reorderLessons = asyncHandler(async (req, res) => {
   return sendSuccess(res, { message: 'Lessons reordered', data });
 });
 
+export const removeModule = asyncHandler(async (req, res) => {
+  const data = await courseStructure.removeModule(req.params.slug, req.params.moduleId, req.body?.actor);
+  return sendSuccess(res, { message: 'Module removed', data });
+});
+
 export const removeLesson = asyncHandler(async (req, res) => {
   const result = await courseStructure.removeLesson(req.params.slug, req.params.moduleId, req.params.lessonId, req.body?.actor);
   return sendSuccess(res, { message: 'Lesson removed', data: result });
@@ -69,5 +74,6 @@ export default {
   addLesson,
   updateLesson,
   reorderLessons,
+  removeModule,
   removeLesson,
 };

@@ -637,6 +637,12 @@ export const adminApi = {
     return json.data;
   },
 
+  // Refused (409) while students have history in it or it has quizzes/assignments.
+  async removeCourseModule(slug, moduleId) {
+    const json = await request(`${courseStructureBase(slug)}/modules/${encodeURIComponent(moduleId)}`, { method: 'DELETE', body: {} });
+    return json.data;
+  },
+
   async updateCourseModule(slug, moduleId, payload) {
     const json = await request(`${courseStructureBase(slug)}/modules/${encodeURIComponent(moduleId)}`, { method: 'PATCH', body: payload });
     return json.data;

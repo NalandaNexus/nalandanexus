@@ -720,6 +720,18 @@ async function retireStoredObject(video, { immediately = false } = {}) {
 }
 
 /**
+ * Tells the staff portals' open Module Videos pages that a module was added or
+ * removed (courseStructure.service.js already tells students), so the list
+ * changes without a reload. A notice only; they re-read through their API.
+ */
+export function announceModuleChange(course, moduleId, action, actor) {
+  broadcastVideoChange(
+    { courseId: course._id, slug: course.slug, moduleId, lessonId: null, action, provider: null, isPublished: null, version: null, actor: actor || null },
+    { students: false }
+  ).catch((err) => logger.warn(`[lessonVideo] module change notice failed: ${err.message}`));
+}
+
+/**
  * For code that deletes a lesson or module outright (courseStructure.service.js):
  * the uploaded file it played is retired, then deleted by the storage sweep
  * once no playback URL for it can still be live. Links need nothing.

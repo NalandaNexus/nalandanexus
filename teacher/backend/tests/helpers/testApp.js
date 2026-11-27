@@ -469,6 +469,10 @@ async function startFakeStudentPortal() {
           });
         }
 
+        if (req.method === 'DELETE' && /^\/api\/internal\/course-structure\/courses\/[^/]+\/modules\/[^/]+$/.test(url.pathname)) {
+          return send(200, { success: true, data: { ...baseCourse, modules: [] } });
+        }
+
         return send(404, { success: false, error: { code: 'NOT_FOUND', message: 'No such course-structure route in the fake.' } });
       });
     }

@@ -167,6 +167,22 @@ export const reorderLessons = catchAsync(async (req, res) => {
   sendSuccess(res, { message: 'Lessons reordered', data });
 });
 
+export const removeModule = catchAsync(async (req, res) => {
+  const { slug, moduleId } = req.params;
+  const data = await courseStructure.removeModule(slug, moduleId, { actor: actorOf(req) });
+
+  await recordAuditLog({
+    actor: req.admin,
+    action: 'course.module.removed',
+    entityType: 'Course',
+    entityId: slug,
+    metadata: { slug, moduleId },
+    req,
+  });
+
+  sendSuccess(res, { message: 'Module removed', data });
+});
+
 export const removeLesson = catchAsync(async (req, res) => {
   const { slug, moduleId, lessonId } = req.params;
   const data = await courseStructure.removeLesson(slug, moduleId, lessonId, { actor: actorOf(req) });
@@ -202,6 +218,7 @@ export default {
   addLesson,
   updateLesson,
   reorderLessons,
+  removeModule,
   removeLesson,
   previewGatingImpact,
 };

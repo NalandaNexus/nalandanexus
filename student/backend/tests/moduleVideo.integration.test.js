@@ -629,3 +629,74 @@ test('deleting a lesson through course editing retires its uploaded file; the st
   assert.ok(sweep.deleted >= 1);
   assert.ok(!s3.objects.has(record.objectKey));
 });
+
+test('modules can be added and deleted; a deleted module retires its uploaded files and the rest are renumbered', async () => {
+  const structure = () => request.get('/api/internal/course-structure/courses/prarambh').set(KEY);
+  const before = (await structure()).body.data.modules;
+
+  // Add a module (it lands at the end) and give it, and a lesson of its own, uploaded videos.
+  broadcasts = [];
+  const added = await request.post('/api/internal/course-structure/courses/prarambh/modules').set(KEY).send({ title: 'Module 7: Extra', actor: TEACHER_A });
+  assert.equal(added.status, 200, JSON.stringify(added.body));
+  const extra = added.body.data.modules.find((m) => m.title === 'Module 7: Extra');
+  assert.equal(extra.order, before.length + 1);
+  assert.ok(broadcasts.some((b) => b.action === 'module_added' && b.moduleId === extra.moduleId && b.students === false), 'open Module Videos pages are told');
+  const lessonRes = await request.post(`/api/internal/course-structure/courses/prarambh/modules/${extra.moduleId}/lessons`).set(KEY).send({ title: 'Extra lesson', actor: ADMIN });
+  assert.equal(lessonRes.status, 200, JSON.stringify(lessonRes.body));
+  const extraLesson = lessonRes.body.data.modules.find((m) => m.moduleId === extra.moduleId).lessons[0];
+
+  const moduleUpload = await uploadVideo(extra.moduleId, fakeVideoBytes(16 * 1024, 'mp4'), { fileName: 'extra.mp4' });
+  assert.equal(moduleUpload.done.status, 200, JSON.stringify(moduleUpload.done.body));
+  const lessonBytes = fakeVideoBytes(16 * 1024, 'mp4');
+  const lessonStart = await request
+    .post(`/api/internal/lesson-videos/courses/prarambh/lessons/${extraLesson.lessonId}/uploads`)
+    .set(KEY)
+    .send({ actor: ADMIN, fileName: 'extra-lesson.mp4', fileSize: lessonBytes.length, mimeType: 'video/mp4' });
+  await sendParts(lessonStart.body.data, lessonBytes);
+  assert.equal((await uploadCall('prarambh', lessonStart.body.data.uploadId, 'complete', { actor: ADMIN })).status, 200);
+
+  // Delete a module in the middle as well, to check renumbering: mod-3 has no progress or coursework.
+  broadcasts = [];
+  const removed = await request.delete('/api/internal/course-structure/courses/prarambh/modules/mod-3').set(KEY).send({ actor: ADMIN });
+  assert.equal(removed.status, 200, JSON.stringify(removed.body));
+  const removedExtra = await request.delete(`/api/internal/course-structure/courses/prarambh/modules/${extra.moduleId}`).set(KEY).send({ actor: TEACHER_A });
+  assert.equal(removedExtra.status, 200, JSON.stringify(removedExtra.body));
+  assert.ok(broadcasts.some((b) => b.action === 'module_removed' && b.moduleId === extra.moduleId));
+
+  const after = (await structure()).body.data.modules;
+  assert.deepEqual(after.map((m) => m.moduleId), before.map((m) => m.moduleId).filter((id) => id !== 'mod-3'));
+  assert.deepEqual(after.map((m) => m.order), after.map((_, i) => i + 1), 'orders are 1..n with no gap');
+  assert.equal((await studentContent()).modules.some((m) => m.moduleId === extra.moduleId || m.moduleId === 'mod-3'), false, 'students no longer see them');
+
+  for (const uploadId of [moduleUpload.session.uploadId, lessonStart.body.data.uploadId]) {
+    assert.equal((await M.VideoUpload.findById(uploadId).lean()).status, 'retired', 'uploaded files are queued for safe deletion, not orphaned');
+  }
+
+  // The next module added lands at the end without clashing.
+  const next = await request.post('/api/internal/course-structure/courses/prarambh/modules').set(KEY).send({ title: 'Module after delete', actor: ADMIN });
+  const orders = next.body.data.modules.map((m) => m.order);
+  assert.equal(new Set(orders).size, orders.length, 'no two modules share an order');
+  assert.equal(next.body.data.modules.at(-1).title, 'Module after delete');
+});
+
+test('a module students have started, or with a quiz or assignment, is not deleted', async () => {
+  // mod-4: the student completed l-4 earlier in this file.
+  const started = await request.delete('/api/internal/course-structure/courses/prarambh/modules/mod-4').set(KEY).send({ actor: ADMIN });
+  assert.equal(started.status, 409);
+  assert.equal(started.body.error.code, 'MODULE_HAS_PROGRESS');
+
+  const { Quiz } = await import('../src/models/Quiz.js');
+  await Quiz.create({ courseId: prarambh._id, moduleId: 'mod-6', title: 'Module 6 check', questions: [] }).catch(async () => {
+    // Fall back to the raw collection if the schema wants more fields than this test cares about.
+    await Quiz.collection.insertOne({ courseId: prarambh._id, moduleId: 'mod-6', title: 'Module 6 check' });
+  });
+  const withQuiz = await request.delete('/api/internal/course-structure/courses/prarambh/modules/mod-6').set(KEY).send({ actor: ADMIN });
+  assert.equal(withQuiz.status, 409);
+  assert.equal(withQuiz.body.error.code, 'MODULE_HAS_COURSEWORK');
+  assert.match(withQuiz.body.error.message, /1 quiz/);
+
+  const view = (await request.get('/api/internal/course-structure/courses/prarambh').set(KEY)).body.data.modules.map((m) => m.moduleId);
+  assert.ok(view.includes('mod-4') && view.includes('mod-6'), 'nothing was deleted');
+  const unknown = await request.delete('/api/internal/course-structure/courses/prarambh/modules/mod-404').set(KEY).send({ actor: ADMIN });
+  assert.equal(unknown.status, 404);
+});

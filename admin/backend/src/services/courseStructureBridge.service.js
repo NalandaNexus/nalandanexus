@@ -78,6 +78,14 @@ export async function reorderLessons(slug, moduleId, payload) {
   return body?.data || null;
 }
 
+export async function removeModule(slug, moduleId, payload) {
+  const body = await call(`${base(slug)}/modules/${encodeURIComponent(moduleId)}`, {
+    method: 'DELETE',
+    body: JSON.stringify(payload || {}),
+  });
+  return body?.data || null;
+}
+
 export async function removeLesson(slug, moduleId, lessonId, payload) {
   const body = await call(`${base(slug)}/modules/${encodeURIComponent(moduleId)}/lessons/${encodeURIComponent(lessonId)}`, {
     method: 'DELETE',
@@ -111,6 +119,7 @@ export default {
   addLesson,
   updateLesson,
   reorderLessons,
+  removeModule,
   removeLesson,
   previewGatingImpact,
 };

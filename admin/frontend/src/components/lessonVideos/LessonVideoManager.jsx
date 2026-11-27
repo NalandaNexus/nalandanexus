@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Clapperboard, RefreshCw, Lock, EyeOff, Film, ChevronDown, ChevronRight, HardDrive, Radio } from 'lucide-react';
+import { Clapperboard, RefreshCw, Lock, EyeOff, Film, ChevronDown, ChevronRight, HardDrive, Radio, Plus, Trash2 } from 'lucide-react';
 import LessonVideoEditor from './LessonVideoEditor';
 import YouTubeThumbnail from './YouTubeThumbnail';
 import VideoActivityPanel from './VideoActivityPanel';
@@ -14,7 +14,10 @@ import { VIDEO_SOURCES, formatBytes, formatDuration, formatWhen, byline } from '
  * save/update/remove(slug, target, payload), startUpload(slug, target, payload),
  * partUrls(slug, uploadId, numbers), resume(slug, uploadId),
  * complete(slug, uploadId, body), abortUpload(slug, uploadId),
- * listActivity?(slug) }, where target is { moduleId } or { lessonId }. Which
+ * listActivity?(slug), addModule?(slug, { title }), removeModule?(slug, moduleId) },
+ * where target is { moduleId } or { lessonId }. Adding and deleting modules
+ * goes through the course-structure API (the same one Course Content uses);
+ * the controls appear only when the portal passes those two functions. Which
  * courses appear, and whether a change is allowed, is decided by the backend
  * behind it - the Admin portal sees every course, a teacher only their
  * assigned ones - never by this component.
@@ -94,6 +97,8 @@ const ACTION_NOTICE = {
   upload_failed: 'had an upload fail',
   upload_aborted: 'cancelled an upload',
   availability_changed: 'availability changed',
+  module_added: 'added a module',
+  module_removed: 'deleted a module',
 };
 
 export default function LessonVideoManager({ api, portal = 'staff', heading, description, emptyMessage, live, refreshKey }) {
@@ -109,6 +114,9 @@ export default function LessonVideoManager({ api, portal = 'staff', heading, des
   const [onlyMissing, setOnlyMissing] = useState(false);
   const [uploadBusy, setUploadBusy] = useState(false);
   const [activitySignal, setActivitySignal] = useState(0);
+  const [newModuleTitle, setNewModuleTitle] = useState('');
+  const [moduleBusy, setModuleBusy] = useState(null); // 'add' | moduleId being deleted
+  const [confirmDelete, setConfirmDelete] = useState(null);
   const slugRef = useRef('');
   slugRef.current = slug;
 
@@ -195,7 +203,8 @@ export default function LessonVideoManager({ api, portal = 'staff', heading, des
       }
       reload();
       if (event.action && ACTION_NOTICE[event.action] && event.actor?.name) {
-        setNotice(`Live update: ${event.actor.name} (${event.actor.portal}) ${ACTION_NOTICE[event.action]} on ${event.moduleId && !event.lessonId ? 'a module' : 'a lesson'}.`);
+        const where = event.action.startsWith('module_') ? '' : ` on ${event.moduleId && !event.lessonId ? 'a module' : 'a lesson'}`;
+        setNotice(`Live update: ${event.actor.name} (${event.actor.portal}) ${ACTION_NOTICE[event.action]}${where}.`);
       }
     };
     const unsubscribe = live.subscribe(onChange, reload);
@@ -312,6 +321,49 @@ export default function LessonVideoManager({ api, portal = 'staff', heading, des
       />
     </div>
   );
+
+  // Modules themselves: add one at the end, or delete one. The student
+  // service refuses to delete a module with student history, quizzes or
+  // assignments, and says why; that reason is shown as it comes.
+  const addModule = async (e) => {
+    e.preventDefault();
+    const title = newModuleTitle.trim();
+    if (!title || !api.addModule) return;
+    setModuleBusy('add');
+    setError('');
+    setNotice('');
+    try {
+      await api.addModule(slug, { title });
+      setNewModuleTitle('');
+      await loadContent(slug, { quiet: true });
+      loadCourses({ quiet: true });
+      setNotice(`Module “${title}” added. Add its video below.`);
+    } catch (err) {
+      setError(err?.message || 'Could not add the module.');
+    } finally {
+      setModuleBusy(null);
+    }
+  };
+
+  const removeModule = async (mod) => {
+    if (!api.removeModule) return;
+    setModuleBusy(mod.moduleId);
+    setError('');
+    setNotice('');
+    try {
+      await api.removeModule(slug, mod.moduleId);
+      setConfirmDelete(null);
+      if (openKey === keyOf({ moduleId: mod.moduleId }) || mod.lessons.some((l) => openKey === keyOf({ lessonId: l.lessonId }))) setOpenKey(null);
+      await loadContent(slug, { quiet: true });
+      loadCourses({ quiet: true });
+      setNotice(`Module “${mod.title}” deleted.`);
+    } catch (err) {
+      setConfirmDelete(null);
+      setError(err?.message || 'Could not delete the module.');
+    } finally {
+      setModuleBusy(null);
+    }
+  };
 
   const toggleButton = (key, hasVideo, label) => {
     const isOpen = openKey === key;
@@ -500,7 +552,49 @@ export default function LessonVideoManager({ api, portal = 'staff', heading, des
                     </div>
                   </div>
                   {toggleButton(moduleKey, Boolean(mod.video), mod.title)}
+                  {api.removeModule && (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDelete(confirmDelete === mod.moduleId ? null : mod.moduleId)}
+                      disabled={uploadBusy || Boolean(moduleBusy)}
+                      aria-label={`Delete module: ${mod.title}`}
+                      title="Delete module"
+                      className="shrink-0 p-2 rounded-lg text-[#C1352B] hover:bg-[#C1352B]/10 disabled:opacity-50"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
+                {confirmDelete === mod.moduleId && (
+                  <div
+                    role="alert"
+                    className="mt-3 p-3 rounded-lg bg-[#C1352B]/10 border border-[#C1352B]/30 text-[#9A2820] text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                    data-testid={`confirm-delete-${mod.moduleId}`}
+                  >
+                    <span>
+                      Delete “{mod.title}”{mod.lessons.length ? ` and its ${mod.lessons.length} lesson${mod.lessons.length === 1 ? '' : 's'}` : ''}? Students stop seeing it at
+                      once, and this cannot be undone. A module that students have started, or that has quizzes or assignments, cannot be deleted.
+                    </span>
+                    <span className="flex shrink-0 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => removeModule(mod)}
+                        disabled={Boolean(moduleBusy)}
+                        className="px-3 py-1.5 rounded-lg bg-[#C1352B] hover:bg-[#A42C23] text-white font-semibold disabled:opacity-60"
+                      >
+                        {moduleBusy === mod.moduleId ? 'Deleting…' : 'Yes, delete module'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDelete(null)}
+                        disabled={Boolean(moduleBusy)}
+                        className="px-3 py-1.5 rounded-lg bg-[#EDEAE0] hover:bg-[#DFDACB] text-[#22355E] font-semibold"
+                      >
+                        Keep
+                      </button>
+                    </span>
+                  </div>
+                )}
                 {openKey === moduleKey && renderEditor(moduleNode, moduleTarget, mod.title)}
               </div>
 
@@ -561,6 +655,36 @@ export default function LessonVideoManager({ api, portal = 'staff', heading, des
             </section>
           );
         })}
+
+      {!loadingContent && content && api.addModule && (
+        <form
+          onSubmit={addModule}
+          className="p-4 rounded-xl bg-white border border-dashed border-[#D8D3C5] flex flex-col sm:flex-row sm:items-end gap-3"
+          data-testid="add-module"
+        >
+          <div className="min-w-0 flex-1">
+            <label htmlFor="new-module-title" className="block text-xs font-semibold text-[#22355E] mb-1">
+              Add a module to {currentCourse?.title || 'this course'}
+            </label>
+            <input
+              id="new-module-title"
+              value={newModuleTitle}
+              onChange={(e) => setNewModuleTitle(e.target.value)}
+              maxLength={200}
+              placeholder={`Module ${content.modules.length + 1}: …`}
+              disabled={uploadBusy || Boolean(moduleBusy)}
+              className="w-full bg-[#FAF9F4] border border-[#D8D3C5] rounded-lg px-3 py-2 text-sm text-[#2B2B28] disabled:opacity-60"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={!newModuleTitle.trim() || uploadBusy || Boolean(moduleBusy)}
+            className="shrink-0 inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold bg-[#22355E] hover:bg-[#16233F] text-white disabled:opacity-50"
+          >
+            <Plus className="w-3.5 h-3.5" /> {moduleBusy === 'add' ? 'Adding…' : 'Add module'}
+          </button>
+        </form>
+      )}
 
       {content && api.listActivity && (
         <VideoActivityPanel

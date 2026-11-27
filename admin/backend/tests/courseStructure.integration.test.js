@@ -299,3 +299,26 @@ test('a malformed version is refused before the bridge', async () => {
   assert.equal(res.status, 422);
   assert.equal(received.length, 0);
 });
+
+test('deleting a module needs courses.manage, forwards the acting admin, is audited, and passes refusals through', async () => {
+  const staff = await login('staff@test.local');
+  assert.equal((await call(`${BASE}/modules/mod-2`, { method: 'DELETE' })).status, 401);
+  assert.equal((await call(`${BASE}/modules/mod-2`, { method: 'DELETE', cookie: staff })).status, 403);
+  assert.equal(received.length, 0, 'nothing refused here reaches the student service');
+
+  const cookie = await login('super@test.local');
+  const removed = await call(`${BASE}/modules/mod-2`, { method: 'DELETE', cookie });
+  assert.equal(removed.status, 200, JSON.stringify(removed.body));
+  assert.equal(received.at(-1).method, 'DELETE');
+  assert.equal(received.at(-1).url, '/api/internal/course-structure/courses/prarambh/modules/mod-2');
+  assert.equal(received.at(-1).key, 'admin_to_student_key');
+  assert.equal(received.at(-1).body.actor.portal, 'admin');
+  const { AuditLog } = await import('../src/models/AuditLog.js');
+  assert.ok(await AuditLog.exists({ action: 'course.module.removed', entityRef: 'prarambh' }), 'audited: course.module.removed');
+
+  // The student service's refusal (students already started it) reaches the admin as-is.
+  fake.rejectNext = { status: 409, code: 'MODULE_HAS_PROGRESS', message: 'Students have already opened or completed lessons in this module.' };
+  const refused = await call(`${BASE}/modules/mod-1`, { method: 'DELETE', cookie });
+  assert.equal(refused.status, 409);
+  assert.equal(refused.body.code || refused.body.error?.code, 'MODULE_HAS_PROGRESS');
+});

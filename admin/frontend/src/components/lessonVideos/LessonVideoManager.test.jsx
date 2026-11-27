@@ -195,3 +195,56 @@ describe('LessonVideoManager', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('The Student service is unavailable');
   });
 });
+
+describe('LessonVideoManager - adding and deleting modules', () => {
+  it('adds a module at the end of the course and shows it', async () => {
+    const api = makeApi({ addModule: vi.fn().mockResolvedValue({}), removeModule: vi.fn() });
+    render(<LessonVideoManager api={api} heading="Module Videos" description="" emptyMessage="none" />);
+    await screen.findByTestId('module-video-mod-1');
+    const form = screen.getByTestId('add-module');
+    expect(within(form).getByRole('button', { name: /Add module/ })).toBeDisabled();
+
+    const withNew = course();
+    withNew.modules.push({ moduleId: 'mod-4', title: 'Module 4: New', video: null, activeUpload: null, lessons: [] });
+    api.getCourse.mockResolvedValue(withNew);
+    fireEvent.change(within(form).getByLabelText(/Add a module to/), { target: { value: '  Module 4: New ' } });
+    fireEvent.click(within(form).getByRole('button', { name: /Add module/ }));
+    await waitFor(() => expect(api.addModule).toHaveBeenCalledWith('prarambh', { title: 'Module 4: New' }));
+    expect(await screen.findByTestId('module-video-mod-4')).toHaveTextContent('Module 4: New');
+    expect(screen.getByRole('status')).toHaveTextContent('Module “Module 4: New” added');
+  });
+
+  it('deletes a module only after confirming, and shows the reason when it is refused', async () => {
+    const api = makeApi({
+      addModule: vi.fn(),
+      removeModule: vi
+        .fn()
+        .mockRejectedValueOnce(Object.assign(new Error('Students have already opened or completed lessons in this module, so it can’t be deleted.'), { status: 409 }))
+        .mockResolvedValueOnce({}),
+    });
+    render(<LessonVideoManager api={api} heading="Module Videos" description="" emptyMessage="none" />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete module: Module 1' }));
+    expect(api.removeModule).not.toHaveBeenCalled();
+    expect(screen.getByTestId('confirm-delete-mod-1')).toHaveTextContent('Delete “Module 1” and its 2 lessons?');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Yes, delete module' }));
+    expect(await screen.findByText(/already opened or completed lessons/)).toBeInTheDocument();
+    expect(screen.getByTestId('module-video-mod-1')).toBeInTheDocument();
+
+    const without = course();
+    without.modules = without.modules.filter((m) => m.moduleId !== 'mod-1');
+    api.getCourse.mockResolvedValue(without);
+    fireEvent.click(screen.getByRole('button', { name: 'Delete module: Module 1' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Yes, delete module' }));
+    await waitFor(() => expect(api.removeModule).toHaveBeenLastCalledWith('prarambh', 'mod-1'));
+    await waitFor(() => expect(screen.queryByTestId('module-video-mod-1')).toBeNull());
+    expect(screen.getByRole('status')).toHaveTextContent('Module “Module 1” deleted.');
+  });
+
+  it('shows no add or delete controls when the portal does not offer them', async () => {
+    render(<LessonVideoManager api={makeApi()} heading="Module Videos" description="" emptyMessage="none" />);
+    await screen.findByTestId('module-video-mod-1');
+    expect(screen.queryByTestId('add-module')).toBeNull();
+    expect(screen.queryByRole('button', { name: /Delete module/ })).toBeNull();
+  });
+});

@@ -26,6 +26,8 @@ const API = {
   resume: (slug, uploadId) => adminApi.resumeCourseVideoUpload(slug, uploadId),
   complete: (slug, uploadId, body) => adminApi.completeCourseVideoUpload(slug, uploadId, body),
   abortUpload: (slug, uploadId) => adminApi.abortCourseVideoUpload(slug, uploadId),
+  addModule: (slug, payload) => adminApi.addCourseModule(slug, payload),
+  removeModule: (slug, moduleId) => adminApi.removeCourseModule(slug, moduleId),
 };
 
 // Every signed-in administrator hears about every video change, whoever made it.

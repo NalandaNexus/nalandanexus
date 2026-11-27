@@ -30,6 +30,7 @@ import {
   addLessonSchema,
   updateLessonSchema,
   reorderLessonsSchema,
+  removeModuleSchema,
   removeLessonSchema,
 } from '../validators/courseStructure.validators.js';
 import { requireInternalServiceKey } from '../middleware/internalService.js';
@@ -122,6 +123,7 @@ router.patch(
   validate(updateLessonSchema),
   courseStructureController.updateLesson
 );
+router.delete('/course-structure/courses/:slug/modules/:moduleId', validate(removeModuleSchema), courseStructureController.removeModule);
 router.delete(
   '/course-structure/courses/:slug/modules/:moduleId/lessons/:lessonId',
   validate(removeLessonSchema),

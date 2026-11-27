@@ -177,6 +177,25 @@ export const reorderLessons = catchAsync(async (req, res) => {
   sendSuccess(res, { message: 'Lessons reordered', data });
 });
 
+export const removeModule = catchAsync(async (req, res) => {
+  const slug = await assertCourseAccess(req.teacher._id, req.params.slug);
+  const { moduleId } = req.params;
+  const data = await courseStructure.removeModule(slug, moduleId, { actor: actorOf(req) });
+
+  // Reached only on a real removal: an unknown module, or one with student
+  // history or coursework, is a 404/409 the student service already threw.
+  await logAudit({
+    actorId: req.user._id,
+    action: 'course.module.removed',
+    targetType: 'Course',
+    targetId: null,
+    metadata: { slug, moduleId },
+    ip: req.ip,
+  });
+
+  sendSuccess(res, { message: 'Module removed', data });
+});
+
 export const removeLesson = catchAsync(async (req, res) => {
   const slug = await assertCourseAccess(req.teacher._id, req.params.slug);
   const { moduleId, lessonId } = req.params;
@@ -208,5 +227,6 @@ export default {
   addLesson,
   updateLesson,
   reorderLessons,
+  removeModule,
   removeLesson,
 };

@@ -89,6 +89,11 @@ export const reorderLessonsSchema = z.object({
   body: z.object({ orderedLessonIds: z.array(lessonId).min(1), actor }),
 });
 
+export const removeModuleSchema = z.object({
+  params: z.object({ slug, moduleId }),
+  body: z.object({ actor }).optional().default({}),
+});
+
 export const removeLessonSchema = z.object({
   params: z.object({ slug, moduleId, lessonId }),
   body: z.object({ actor }).optional().default({}),
