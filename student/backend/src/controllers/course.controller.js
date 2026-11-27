@@ -205,7 +205,16 @@ export const markLessonComplete = asyncHandler(async (req, res) => {
     await profile.save();
   }
 
-  const completedCount = await LessonProgress.countDocuments({ userId: req.user._id, courseId: course._id, completed: true });
+  // Measured against the lessons a student can take now: a completed lesson that
+  // was later made a draft no longer counts, just as the draft no longer counts
+  // toward the total.
+  const publishedLessonIds = (course.modules || []).flatMap((m) => (m.lessons || []).filter((l) => l.isPublished !== false).map((l) => l.lessonId));
+  const completedCount = await LessonProgress.countDocuments({
+    userId: req.user._id,
+    courseId: course._id,
+    completed: true,
+    lessonId: { $in: publishedLessonIds },
+  });
   const totalLessons = course.totalLessons || 1;
   const progressPercent = Math.min(100, Math.round((completedCount / totalLessons) * 100));
 

@@ -23,8 +23,13 @@ const setSchema = {
   body: z.object({
     modules: z.array(assignment.extend({ moduleId: z.string().trim().min(1) })).max(200).optional(),
     lessons: z.array(assignment.extend({ lessonId: z.string().trim().min(1) })).max(500).optional(),
-    quizzes: z.array(assignment.extend({ quizId: z.string().trim().min(1) })).max(500).optional(),
-    tasks: z.array(assignment.extend({ taskId: z.string().trim().min(1) })).max(500).optional(),
+    // moduleId is which module a quiz/task counts toward for module gating:
+    // absent = leave the tag alone, null = untag, an id = tag. It must be
+    // declared here - zod strips unknown keys, and without it the Course
+    // Subjects page's module tags were silently dropped before reaching the
+    // student service, which checks the id against the course's real modules.
+    quizzes: z.array(assignment.extend({ quizId: z.string().trim().min(1), moduleId: z.string().trim().min(1).nullish() })).max(500).optional(),
+    tasks: z.array(assignment.extend({ taskId: z.string().trim().min(1), moduleId: z.string().trim().min(1).nullish() })).max(500).optional(),
   }),
 };
 

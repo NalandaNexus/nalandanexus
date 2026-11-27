@@ -58,6 +58,14 @@ function startFakeStudentService() {
           return send(200, { success: true, data: { slug: 'prarambh', progressionGatingEnabled: Boolean(body?.progressionGatingEnabled), updatedAt: now } });
         }
         if (req.method === 'POST') {
+          // Only the student service's real path answers. A loose stub here is
+          // how a missing /api/internal prefix went unnoticed.
+          if (url.includes('module-gating')) {
+            if (url !== '/api/internal/progression/module-gating/dry-run') {
+              return send(404, { success: false, error: { code: 'ROUTE_NOT_FOUND', message: `no route ${url}` } });
+            }
+            return send(200, { success: true, data: { reports: [{ slug: body?.slug, wouldLoseAccess: [] }] } });
+          }
           if (url.endsWith('/lessons')) {
             return send(201, { success: true, data: { lessonId: 'l-9', moduleId: 'mod-1', title: body?.title, updatedAt: now } });
           }
@@ -298,4 +306,31 @@ test('a malformed version is refused before the bridge', async () => {
   const res = await call(`${BASE}/modules/mod-1/lessons/l-1`, { method: 'PATCH', body: { title: 'x', expectedUpdatedAt: 'soon' }, cookie });
   assert.equal(res.status, 422);
   assert.equal(received.length, 0);
+});
+
+test('the gating impact preview reaches the student service on its real internal path', async () => {
+  const cookie = await login('super@test.local');
+  const res = await call(`${BASE}/gating/dry-run`, { method: 'POST', cookie });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  const sent = received.find((r) => r.url.includes('module-gating'));
+  assert.equal(sent.url, '/api/internal/progression/module-gating/dry-run');
+  assert.equal(sent.body.slug, 'prarambh');
+});
+
+test('a quiz or task module tag from the Course Subjects page reaches the student service, including an explicit untag', async () => {
+  const cookie = await login('super@test.local');
+  const res = await call('/api/admin/course-content/prarambh/subjects', {
+    method: 'PATCH',
+    cookie,
+    body: {
+      quizzes: [{ quizId: 'q-1', moduleId: 'mod-2' }, { quizId: 'q-2', moduleId: null }, { quizId: 'q-3', subject: 'maths' }],
+      tasks: [{ taskId: 't-1', moduleId: 'mod-1', subject: null }],
+    },
+  });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  const sent = received.at(-1).body;
+  assert.equal(sent.quizzes[0].moduleId, 'mod-2', 'a module tag is forwarded, not stripped');
+  assert.ok(Object.prototype.hasOwnProperty.call(sent.quizzes[1], 'moduleId') && sent.quizzes[1].moduleId === null, 'null untags');
+  assert.ok(!Object.prototype.hasOwnProperty.call(sent.quizzes[2], 'moduleId'), 'absent leaves the tag alone');
+  assert.equal(sent.tasks[0].moduleId, 'mod-1');
 });

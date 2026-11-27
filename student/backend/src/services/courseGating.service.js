@@ -148,7 +148,14 @@ export async function computeLockState(course, userId) {
       missingQuizzes: moduleLocked ? previousReq.missingQuizzes : [],
     };
 
-    const lessonsSorted = [...(mod.lessons || [])].sort((a, b) => a.order - b.order);
+    // Only published lessons form the sequence. A draft is withheld from students,
+    // so letting it sit in the chain locked the lesson after it behind something
+    // no student could ever open. A draft itself is unavailable, which also keeps
+    // it out of "next lesson" and refuses an attempt to complete it.
+    for (const draft of (mod.lessons || []).filter((l) => l.isPublished === false)) {
+      lessons[draft.lessonId] = { locked: true, reason: 'This lesson is not available yet.' };
+    }
+    const lessonsSorted = [...(mod.lessons || [])].filter((l) => l.isPublished !== false).sort((a, b) => a.order - b.order);
     lessonsSorted.forEach((lesson, i) => {
       const prevLessonLocked = Boolean(moduleGated && i > 0 && !completedLessonIds.has(lessonsSorted[i - 1].lessonId));
       const manuallyLocked = Boolean(lesson.isLocked);

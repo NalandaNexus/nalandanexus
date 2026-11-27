@@ -47,20 +47,38 @@ function shapeUpdatedBy(updatedBy) {
 // --- id generation -----------------------------------------------------------
 
 /*
- * Module and lesson ids are stable, human-legible slugs ("mod-2", "l-4"), not
- * ObjectIds - lessonId in particular is course-wide unique, not reset per
- * module (the seed data runs l-1..l-13 straight across all 5 of PRARAMBH's
- * modules), because LessonProgress, Task and Quiz all key on it alone. A new
- * id continues that same numbering rather than starting a second scheme.
+ * Module and lesson ids are stable, human-legible strings, not ObjectIds, and a
+ * lesson id has to be unique across EVERY course: LessonProgress is unique on
+ * { userId, lessonId } and lessons are looked up by id alone when a student
+ * completes one (course.controller.js). The courses already use different
+ * schemes - PRARAMBH runs l-1..l-13, GARUD and YODDHA use garud-m01-l01 - so
+ * continuing "l-N" from one course's own ids gave GARUD's first new lesson the
+ * id "l-1", which is a PRARAMBH lesson.
+ *
+ * New ids therefore carry their course's slug ("garud-l-1", "garud-m-1") and are
+ * checked against every course, and a lesson id also against recorded progress,
+ * so an id is never reused even after the lesson that had it was removed.
  */
-function nextId(prefix, existingIds) {
-  const re = new RegExp(`^${prefix}-(\\d+)$`);
-  let max = 0;
-  for (const id of existingIds) {
+const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+async function newContentId(course, kind) {
+  const prefix = `${course.slug}-${kind}-`;
+  const re = new RegExp(`^${escapeRegex(prefix)}(\\d+)$`);
+  const ownIds = kind === 'l' ? allLessonIds(course) : allModuleIds(course);
+  let n = 0;
+  for (const id of ownIds) {
     const m = re.exec(String(id || ''));
-    if (m) max = Math.max(max, Number(m[1]));
+    if (m) n = Math.max(n, Number(m[1]));
   }
-  return `${prefix}-${max + 1}`;
+  const field = kind === 'l' ? 'modules.lessons.lessonId' : 'modules.moduleId';
+  for (let tries = 0; tries < 1000; tries += 1) {
+    n += 1;
+    const candidate = `${prefix}${n}`;
+    // eslint-disable-next-line no-await-in-loop
+    const taken = (await Course.exists({ [field]: candidate })) || (kind === 'l' && (await LessonProgress.exists({ lessonId: candidate })));
+    if (!taken) return candidate;
+  }
+  throw AppError.conflict('Could not allocate a new id; please try again.', 'ID_ALLOCATION_FAILED');
 }
 const allModuleIds = (course) => (course.modules || []).map((m) => m.moduleId);
 const allLessonIds = (course) => (course.modules || []).flatMap((m) => (m.lessons || []).map((l) => l.lessonId));
@@ -204,10 +222,10 @@ export async function updateCourseSettings(slug, input, actor) {
 // --- modules -----------------------------------------------------------------
 
 export async function addModule(slug, input, actor) {
-  const course = await Course.findOne({ slug }).select('_id modules.moduleId modules.order').lean();
+  const course = await Course.findOne({ slug }).select('_id slug modules.moduleId modules.order').lean();
   if (!course) throw AppError.notFound('Course not found', 'COURSE_NOT_FOUND');
 
-  const moduleId = nextId('mod', allModuleIds(course));
+  const moduleId = await newContentId(course, 'm');
   const order = Number.isFinite(input.order) ? input.order : (course.modules || []).length + 1;
   const now = new Date();
   const newModule = {
@@ -220,7 +238,9 @@ export async function addModule(slug, input, actor) {
     updatedAt: now,
     updatedBy: shapeActor(actor),
   };
-  await Course.updateOne({ _id: course._id }, { $push: { modules: newModule } });
+  // The id is free when chosen; the filter keeps it that way if another add won the race.
+  const pushed = await Course.updateOne({ _id: course._id, 'modules.moduleId': { $ne: moduleId } }, { $push: { modules: newModule } });
+  if (!pushed.modifiedCount) throw AppError.conflict('Someone added a module at the same moment. Please try again.', 'ID_TAKEN');
   logger.info(`[courseStructure] ${actor?.portal}:${actor?.userId || '?'} added module ${moduleId} to ${slug}`);
   await notifyStudents(course._id, slug);
   return getCourseStructure(slug);
@@ -266,7 +286,7 @@ export async function reorderModules(slug, orderedModuleIds, actor) {
 
 export async function addLesson(slug, moduleId, input, actor) {
   const { course, mod } = await locate(slug, { moduleId });
-  const lessonId = nextId('l', allLessonIds(course));
+  const lessonId = await newContentId(course, 'l');
   const order = Number.isFinite(input.order) ? input.order : (mod.lessons || []).length + 1;
   const now = new Date();
   const newLesson = {
@@ -281,7 +301,12 @@ export async function addLesson(slug, moduleId, input, actor) {
     updatedAt: now,
     updatedBy: shapeActor(actor),
   };
-  await Course.updateOne({ _id: course._id }, { $push: { 'modules.$[m].lessons': newLesson } }, { arrayFilters: [{ 'm.moduleId': moduleId }] });
+  const pushed = await Course.updateOne(
+    { _id: course._id, 'modules.lessons.lessonId': { $ne: lessonId } },
+    { $push: { 'modules.$[m].lessons': newLesson } },
+    { arrayFilters: [{ 'm.moduleId': moduleId }] }
+  );
+  if (!pushed.modifiedCount) throw AppError.conflict('Someone added a lesson at the same moment. Please try again.', 'ID_TAKEN');
   logger.info(`[courseStructure] ${actor?.portal}:${actor?.userId || '?'} added lesson ${lessonId} to ${slug}/${moduleId}`);
   await notifyStudents(course._id, slug);
   return getCourseStructure(slug);

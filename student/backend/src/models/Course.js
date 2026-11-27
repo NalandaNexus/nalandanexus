@@ -200,8 +200,11 @@ const courseSchema = new Schema(
 
 courseSchema.index({ sourceId: 1 }, { unique: true, sparse: true });
 
+// Lessons a student can actually take: a draft (isPublished false) is withheld
+// from students, so counting it made the catalogue overstate the course and kept
+// every student's progress short of 100%.
 courseSchema.virtual('totalLessons').get(function computeTotalLessons() {
-  return (this.modules || []).reduce((sum, m) => sum + (m.lessons?.length || 0), 0);
+  return (this.modules || []).reduce((sum, m) => sum + (m.lessons || []).filter((l) => l.isPublished !== false).length, 0);
 });
 
 courseSchema.set('toJSON', { virtuals: true });

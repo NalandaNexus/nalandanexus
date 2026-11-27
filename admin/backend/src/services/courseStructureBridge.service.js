@@ -95,7 +95,9 @@ export async function removeLesson(slug, moduleId, lessonId, payload) {
  * preview, same as getCourseStructure above.
  */
 export async function previewGatingImpact(slug) {
-  const body = await call('/progression/module-gating/dry-run', {
+  // The student service mounts every internal route under /api/internal; without
+  // the prefix this preview answered 404 and the button could never work.
+  const body = await call('/api/internal/progression/module-gating/dry-run', {
     method: 'POST',
     body: JSON.stringify({ slug }),
   });

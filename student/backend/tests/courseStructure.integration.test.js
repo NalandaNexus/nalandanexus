@@ -156,15 +156,15 @@ test('malformed input is rejected by validation before it reaches the service', 
   assert.deepEqual(structure.body.data.modules.map((m) => m.moduleId), ['mod-1', 'mod-2']);
 });
 
-test('adding a module appends it, numbers it after the existing ones, and strips markup from its title', async () => {
+test('adding a module appends it with an id carrying the course slug, and strips markup from its title', async () => {
   const res = await postModule('prarambh', { title: '  <b>Capstone</b>  ', description: 'Final unit' });
   assert.equal(res.status, 200, JSON.stringify(res.body));
   assert.deepEqual(
     res.body.data.modules.map((m) => m.moduleId),
-    ['mod-1', 'mod-2', 'mod-3'],
-    'continues the existing numbering, does not restart it'
+    ['mod-1', 'mod-2', 'prarambh-m-1'],
+    'a new id that names its course, so it cannot clash with another course'
   );
-  const added = moduleOf(res.body, 'mod-3');
+  const added = moduleOf(res.body, 'prarambh-m-1');
   assert.equal(added.title, 'Capstone');
   assert.equal(added.order, 3);
   assert.equal(added.lessonCount, 0);
@@ -174,9 +174,9 @@ test('adding a module appends it, numbers it after the existing ones, and strips
 test('editing a module touches only that module, and the first-ever edit is not a false conflict', async () => {
   const prior = (await get('prarambh')).body.data;
   const mod2Before = prior.modules.find((m) => m.moduleId === 'mod-2');
-  const mod3Before = prior.modules.find((m) => m.moduleId === 'mod-3');
+  const newModuleBefore = prior.modules.find((m) => m.moduleId === 'prarambh-m-1');
   assert.equal(mod2Before.updatedAt, null, 'never touched since course creation');
-  assert.ok(mod3Before.updatedAt, 'addModule stamps updatedAt at creation time, unlike the seeded modules');
+  assert.ok(newModuleBefore.updatedAt, 'addModule stamps updatedAt at creation time, unlike the seeded modules');
 
   const res = await patchModule('prarambh', 'mod-2', {
     description: 'Overcoming self-doubt',
@@ -191,11 +191,11 @@ test('editing a module touches only that module, and the first-ever edit is not 
   assert.equal(updated.gatingEnabled, false);
   assert.ok(updated.updatedAt);
 
-  // mod-1 (seeded, never touched) is still at the schema default; mod-3
+  // mod-1 (seeded, never touched) is still at the schema default; prarambh-m-1
   // (added in the previous test) keeps exactly the timestamp it was created
   // with. Neither was touched by this edit to mod-2.
   assert.equal(moduleOf(res.body, 'mod-1').updatedAt, null);
-  assert.equal(moduleOf(res.body, 'mod-3').updatedAt, mod3Before.updatedAt, 'unaffected by an edit to a sibling module');
+  assert.equal(moduleOf(res.body, 'prarambh-m-1').updatedAt, newModuleBefore.updatedAt, 'unaffected by an edit to a sibling module');
 });
 
 test('a stale expectedUpdatedAt on a module is a 409 naming who changed it, not a silent overwrite', async () => {
@@ -210,36 +210,37 @@ test('a stale expectedUpdatedAt on a module is a 409 naming who changed it, not 
 });
 
 test('reordering modules renumbers order and refuses a list that is not exactly the existing set', async () => {
-  const res = await putModuleOrder('prarambh', { orderedModuleIds: ['mod-3', 'mod-1', 'mod-2'] });
+  const res = await putModuleOrder('prarambh', { orderedModuleIds: ['prarambh-m-1', 'mod-1', 'mod-2'] });
   assert.equal(res.status, 200, JSON.stringify(res.body));
-  assert.deepEqual(res.body.data.modules.map((m) => m.moduleId), ['mod-3', 'mod-1', 'mod-2']);
+  assert.deepEqual(res.body.data.modules.map((m) => m.moduleId), ['prarambh-m-1', 'mod-1', 'mod-2']);
   assert.deepEqual(res.body.data.modules.map((m) => m.order), [1, 2, 3]);
 
-  const bad = await putModuleOrder('prarambh', { orderedModuleIds: ['mod-1', 'mod-2'] }); // missing mod-3
+  const bad = await putModuleOrder('prarambh', { orderedModuleIds: ['mod-1', 'mod-2'] }); // missing prarambh-m-1
   assert.equal(bad.status, 400, JSON.stringify(bad.body));
   assert.equal(bad.body.error.code, 'MODULE_ORDER_MISMATCH');
 
   // Restore a predictable order for the remaining tests.
-  const restored = await putModuleOrder('prarambh', { orderedModuleIds: ['mod-1', 'mod-2', 'mod-3'] });
-  assert.deepEqual(restored.body.data.modules.map((m) => m.moduleId), ['mod-1', 'mod-2', 'mod-3']);
+  const restored = await putModuleOrder('prarambh', { orderedModuleIds: ['mod-1', 'mod-2', 'prarambh-m-1'] });
+  assert.deepEqual(restored.body.data.modules.map((m) => m.moduleId), ['mod-1', 'mod-2', 'prarambh-m-1']);
 });
 
-test('adding a lesson continues the course-wide id sequence, not a per-module count', async () => {
+test('adding a lesson gives it an id carrying the course slug, numbered across the whole course', async () => {
   // Existing ids across the whole course so far: l-1, l-2 (mod-1), l-3 (mod-2).
+  // New ids name their course (see newContentId): "l-N" collided across courses.
   const toMod2 = await postLesson('prarambh', 'mod-2', { title: 'Grit' });
   assert.equal(toMod2.status, 200, JSON.stringify(toMod2.body));
   assert.deepEqual(
     moduleOf(toMod2.body, 'mod-2').lessons.map((l) => l.lessonId),
-    ['l-3', 'l-4']
+    ['l-3', 'prarambh-l-1']
   );
 
-  // Adding to an EARLIER module must still continue from the course-wide
-  // maximum (l-5), not restart mod-1's own count or redo l-4's successor.
+  // Adding to an EARLIER module still takes the next number across the whole
+  // course (prarambh-l-2), not mod-1's own count.
   const toMod1 = await postLesson('prarambh', 'mod-1', { title: '  <i>New skill</i>  ' });
   assert.equal(toMod1.status, 200, JSON.stringify(toMod1.body));
   const mod1Lessons = moduleOf(toMod1.body, 'mod-1').lessons;
-  assert.deepEqual(mod1Lessons.map((l) => l.lessonId), ['l-1', 'l-2', 'l-5']);
-  const newest = mod1Lessons.find((l) => l.lessonId === 'l-5');
+  assert.deepEqual(mod1Lessons.map((l) => l.lessonId), ['l-1', 'l-2', 'prarambh-l-2']);
+  const newest = mod1Lessons.find((l) => l.lessonId === 'prarambh-l-2');
   assert.equal(newest.title, 'New skill', 'markup stripped and trimmed');
   assert.equal(newest.isPublished, true, 'defaults to published');
 });
@@ -247,9 +248,9 @@ test('adding a lesson continues the course-wide id sequence, not a per-module co
 test('editing a lesson touches only that lesson, and the first-ever edit is not a false conflict', async () => {
   const priorStructure = await get('prarambh');
   const l1Before = lessonOf(priorStructure.body, 'mod-1', 'l-1');
-  const l5Before = lessonOf(priorStructure.body, 'mod-1', 'l-5');
+  const newLessonBefore = lessonOf(priorStructure.body, 'mod-1', 'prarambh-l-2');
   assert.equal(l1Before.updatedAt, null, 'never edited since course creation');
-  assert.ok(l5Before.updatedAt, 'addLesson stamps updatedAt at creation time, unlike the seeded lessons');
+  assert.ok(newLessonBefore.updatedAt, 'addLesson stamps updatedAt at creation time, unlike the seeded lessons');
 
   const res = await patchLesson('prarambh', 'mod-1', 'l-1', {
     summary: 'Updated hello',
@@ -263,11 +264,11 @@ test('editing a lesson touches only that lesson, and the first-ever edit is not 
   assert.equal(updated.isPublished, false);
   assert.equal(updated.title, 'Welcome', 'untouched field is unchanged');
   assert.equal(updated.content, 'Read me', 'untouched field is unchanged');
-  // l-2 (seeded, never touched) is still at the schema default; l-5 (added in
+  // l-2 (seeded, never touched) is still at the schema default; prarambh-l-2 (added in
   // an earlier test) keeps exactly the timestamp it was created with. Neither
   // was touched by this edit to l-1.
   assert.equal(lessonOf(res.body, 'mod-1', 'l-2').updatedAt, null);
-  assert.equal(lessonOf(res.body, 'mod-1', 'l-5').updatedAt, l5Before.updatedAt, 'unaffected by an edit to a sibling lesson');
+  assert.equal(lessonOf(res.body, 'mod-1', 'prarambh-l-2').updatedAt, newLessonBefore.updatedAt, 'unaffected by an edit to a sibling lesson');
 });
 
 test('a stale expectedUpdatedAt on a lesson is a 409 naming who changed it', async () => {
@@ -295,7 +296,7 @@ test('an unpublished lesson is withheld from the enrolled student, and reappears
 
 test('reordering lessons renumbers order within one module and leaves every other module untouched', async () => {
   const priorStructure = await get('prarambh');
-  const mod2Ids = moduleOf(priorStructure.body, 'mod-2').lessons.map((l) => l.lessonId); // ['l-3','l-4']
+  const mod2Ids = moduleOf(priorStructure.body, 'mod-2').lessons.map((l) => l.lessonId); // ['l-3','prarambh-l-1']
 
   const res = await putLessonOrder('prarambh', 'mod-2', { orderedLessonIds: [...mod2Ids].reverse() });
   assert.equal(res.status, 200, JSON.stringify(res.body));
@@ -316,7 +317,7 @@ test('reordering lessons renumbers order within one module and leaves every othe
   // mod-1's lessons were never touched by mod-2's reorder.
   assert.deepEqual(
     moduleOf(res.body, 'mod-1').lessons.map((l) => l.lessonId),
-    ['l-1', 'l-2', 'l-5']
+    ['l-1', 'l-2', 'prarambh-l-2']
   );
 });
 
@@ -332,14 +333,14 @@ test('a lesson added as a draft does not reach the student until published', asy
 });
 
 test('removing a lesson no student has touched deletes it outright, visible to the student right away', async () => {
-  // l-4 ("Grit") has never been opened or completed by anyone.
-  const res = await delLesson('prarambh', 'mod-2', 'l-4');
+  // prarambh-l-1 ("Grit") has never been opened or completed by anyone.
+  const res = await delLesson('prarambh', 'mod-2', 'prarambh-l-1');
   assert.equal(res.status, 200, JSON.stringify(res.body));
   assert.equal(res.body.data.removed, true);
 
   const structure = await get('prarambh');
   assert.equal(
-    moduleOf(structure.body, 'mod-2').lessons.some((l) => l.lessonId === 'l-4'),
+    moduleOf(structure.body, 'mod-2').lessons.some((l) => l.lessonId === 'prarambh-l-1'),
     false
   );
 });
@@ -363,8 +364,40 @@ test('removing a lesson a student has already progressed on is refused, naming h
 });
 
 test('deleting a lesson that no longer exists is a 404, not a silent success', async () => {
-  // l-4 was already removed two tests ago.
-  const res = await delLesson('prarambh', 'mod-2', 'l-4');
+  // prarambh-l-1 was already removed two tests ago.
+  const res = await delLesson('prarambh', 'mod-2', 'prarambh-l-1');
   assert.equal(res.status, 404, JSON.stringify(res.body));
   assert.equal(res.body.error.code, 'LESSON_NOT_FOUND');
+});
+
+test('a new lesson never reuses an id from another course, or one that still has progress recorded', async () => {
+  const { Course } = await import('../src/models/Course.js');
+  const { LessonProgress } = await import('../src/models/LessonProgress.js');
+  // GARUD's real scheme. Its first new lesson used to become "l-1", a PRARAMBH lesson.
+  const garud = await Course.create({
+    slug: 'garud',
+    title: 'GARUD',
+    priceInPaise: 0,
+    isPublished: true,
+    pillar: 'communicate',
+    modules: [{ moduleId: 'garud-m01', title: 'Flight', order: 1, lessons: [{ lessonId: 'garud-m01-l01', title: 'Lift', order: 1 }] }],
+  });
+
+  const first = await postLesson('garud', 'garud-m01', { title: 'Thermals' });
+  assert.equal(first.status, 200, JSON.stringify(first.body));
+  const ids = moduleOf(first.body, 'garud-m01').lessons.map((l) => l.lessonId);
+  assert.deepEqual(ids, ['garud-m01-l01', 'garud-l-1']);
+  const prarambh = await get('prarambh');
+  const prarambhIds = prarambh.body.data.modules.flatMap((m) => m.lessons.map((l) => l.lessonId));
+  assert.ok(!prarambhIds.includes('garud-l-1'), 'unique across courses');
+
+  // Progress outlives a removed lesson; its id must never be handed out again.
+  await LessonProgress.create({ userId: student.user.id || student.user._id, courseId: garud._id, moduleId: 'garud-m01', lessonId: 'garud-l-2', completed: true });
+  const second = await postLesson('garud', 'garud-m01', { title: 'Gliding' });
+  assert.equal(second.status, 200, JSON.stringify(second.body));
+  assert.deepEqual(moduleOf(second.body, 'garud-m01').lessons.map((l) => l.lessonId), ['garud-m01-l01', 'garud-l-1', 'garud-l-3']);
+
+  const mod = await postModule('garud', { title: 'Storms' });
+  assert.equal(mod.status, 200, JSON.stringify(mod.body));
+  assert.deepEqual(mod.body.data.modules.map((m) => m.moduleId), ['garud-m01', 'garud-m-1']);
 });
