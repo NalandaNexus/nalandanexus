@@ -163,7 +163,8 @@ test('a graded submission is audited under the teacher who actually graded it', 
   const { AuditLog } = await import('../src/models/AuditLog.js');
   const entry = await AuditLog.findOne({ action: 'submission.graded', targetId: submission._id }).lean();
   assert.ok(entry, 'the grading action is audited');
-  assert.equal(String(entry.actorId), String(helper.teacher._id), 'the audited actor is whoever actually graded it');
+  // AuditLog stores the acting teacher as `actor` (audit.service.js#logAudit maps actorId -> actor).
+  assert.equal(String(entry.actor), String(helper.teacher._id), 'the audited actor is whoever actually graded it');
 });
 
 test('a course-access teacher marks attendance for a batch they do not own, and the batch keeps its own home teacher', async () => {
