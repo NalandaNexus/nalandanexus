@@ -17,6 +17,12 @@ const quizSchema = new Schema(
   {
     quizId: { type: String, required: true, unique: true, index: true },
     courseId: { type: Schema.Types.ObjectId, ref: 'Course', required: true, index: true },
+    // Which module this counts toward for the mandatory-progression gate
+    // (see services/courseGating.service.js) - the real id from
+    // Course.modules[], not the free-text moduleTitle label below. Null
+    // means "not tagged", which the gating engine treats as exempt from
+    // that module's requirement rather than miscounting it as missing.
+    moduleId: { type: String, default: null, index: true },
     // What this actually teaches. Null means "not explicitly set", which the
     // subject resolver fills in from the course pillar - see
     // progression/subject.service.js. Null is meaningfully different from
@@ -26,6 +32,13 @@ const quizSchema = new Schema(
     moduleTitle: { type: String, default: '' },
     pointsReward: { type: Number, default: 50 },
     timeLimitMins: { type: Number, default: 10 },
+    // The mandatory-progression gate's bar for this quiz (see
+    // services/courseGating.service.js) - a student must score at least this
+    // to count as having passed it. Previously only ever read as `?? 50` at
+    // grading time (quiz.controller.js#submitQuiz); this makes that default
+    // a real, persisted field an admin can actually change, rather than a
+    // number baked into the code with nothing to edit.
+    passingScore: { type: Number, default: 50, min: 0, max: 100 },
     questions: [questionSchema],
     isPublished: { type: Boolean, default: true },
     // Set only for quizzes delivered by teacher/backend's cross-portal

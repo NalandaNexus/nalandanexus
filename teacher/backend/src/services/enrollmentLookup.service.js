@@ -1,6 +1,7 @@
 import { Student } from '../models/Student.js';
 import { ApiError } from '../utils/ApiError.js';
 import { lookupStudentByEnrollmentNumber } from './studentBridge.service.js';
+import { getAccessibleClassIds } from './courseAccess.service.js';
 
 /**
  * Finding one of a teacher's students by enrollment number.
@@ -10,10 +11,12 @@ import { lookupStudentByEnrollmentNumber } from './studentBridge.service.js';
  * here: the roster. So the authorization is done here, in three steps, and none
  * of them trusts the one before.
  *
- *   1. The roster query is always `{ teacher: teacherId, status: 'active' }`, and
- *      only the identities that survive it - linked student accounts, and the
- *      enrollment IDs of places in this teacher's batches - are ever sent to the
- *      student portal as the scope of the question.
+ *   1. The roster query always covers every class this teacher may act on -
+ *      their own, union any class whose course they hold CourseAccess for
+ *      (see courseAccess.service.js) - and only the identities that survive
+ *      it - linked student accounts, and the enrollment IDs of places in
+ *      those batches - are ever sent to the student portal as the scope of
+ *      the question.
  *   2. The student portal answers only within that scope.
  *   3. The answer is checked against the roster again before anything is
  *      returned, and cut down to the enrolments this teacher actually teaches.
@@ -45,8 +48,9 @@ export async function findStudentForTeacher(teacherId, rawNumber) {
   // Roster rows that stand for a real student: matched to an account by sync, or
   // placed into this batch by the student portal at purchase. A row a teacher
   // typed in by hand carries neither and grants nothing.
+  const accessibleClassIds = await getAccessibleClassIds(teacherId);
   const rows = await Student.find({
-    teacher: teacherId,
+    class: { $in: accessibleClassIds },
     status: 'active',
     $or: [{ linkedUserId: { $ne: null } }, { enrollmentId: { $exists: true, $ne: null } }],
   })

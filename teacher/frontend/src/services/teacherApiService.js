@@ -60,7 +60,7 @@ const COLD_START_TIMEOUT_MS = 45000;
 // idle too, so they get the same budget as a cold sign-in.
 // The public password pages are often the first thing a teacher opens after an
 // email, so they meet a sleeping backend as often as sign-in does.
-const COLD_START_PATHS = ['/auth/me', '/auth/login', '/auth/forgot-password', '/auth/setup-password', '/lesson-videos'];
+const COLD_START_PATHS = ['/auth/me', '/auth/login', '/auth/forgot-password', '/auth/setup-password', '/lesson-videos', '/course-structure'];
 
 function timeoutFor(path) {
   return COLD_START_PATHS.some((p) => path.startsWith(p)) ? COLD_START_TIMEOUT_MS : DEFAULT_TIMEOUT_MS;
@@ -175,6 +175,8 @@ function courseVideoPath(slug, target) {
   return `/lesson-videos/courses/${encodeURIComponent(slug)}/${node}`;
 }
 
+const courseStructureBase = (slug) => `/course-structure/courses/${encodeURIComponent(slug)}`;
+
 class TeacherApiService {
   // ---- Auth ----
   login(email, password, rememberMe) {
@@ -233,6 +235,10 @@ class TeacherApiService {
   // ---- Classes ----
   getClasses(status) {
     return get('/classes', { status }).then((r) => r.data);
+  }
+  /** Every class this teacher may act on - own, union course-access - for pickers that must span a whole course (Attendance, Students). getClasses() above stays this teacher's own batches, for batch administration. */
+  getAccessibleClasses() {
+    return get('/classes/accessible').then((r) => r.data);
   }
   getClassById(classId) {
     return get(`/classes/${classId}`).then((r) => r.data);
@@ -336,8 +342,8 @@ class TeacherApiService {
   recordSubmission(submissionId, payload) {
     return patch(`/submissions/${submissionId}/record`, payload).then((r) => r.data);
   }
-  gradeSubmission(submissionId, score, feedback) {
-    return patch(`/submissions/${submissionId}/grade`, { score, feedback }).then((r) => r.data);
+  gradeSubmission(submissionId, score, feedback, expectedUpdatedAt) {
+    return patch(`/submissions/${submissionId}/grade`, { score, feedback, expectedUpdatedAt }).then((r) => r.data);
   }
 
   // ---- Schedule ----
@@ -473,6 +479,39 @@ class TeacherApiService {
   }
   abortCourseVideoUpload(slug, uploadId) {
     return del(courseUploadPath(slug, uploadId)).then((r) => r.data);
+  }
+
+  // ---- Module/lesson structure (assigned courses only; enforced by the
+  // backend). Every write except removeLesson returns the course's full,
+  // fresh structure. ----
+  getCourseStructure(slug) {
+    return get(courseStructureBase(slug)).then((r) => r.data);
+  }
+  addCourseModule(slug, payload) {
+    return post(`${courseStructureBase(slug)}/modules`, payload).then((r) => r.data);
+  }
+  updateCourseModule(slug, moduleId, payload) {
+    return patch(`${courseStructureBase(slug)}/modules/${encodeURIComponent(moduleId)}`, payload).then((r) => r.data);
+  }
+  reorderCourseModules(slug, orderedModuleIds) {
+    return put(`${courseStructureBase(slug)}/modules/order`, { orderedModuleIds }).then((r) => r.data);
+  }
+  addCourseLesson(slug, moduleId, payload) {
+    return post(`${courseStructureBase(slug)}/modules/${encodeURIComponent(moduleId)}/lessons`, payload).then((r) => r.data);
+  }
+  updateCourseLesson(slug, moduleId, lessonId, payload) {
+    return patch(`${courseStructureBase(slug)}/modules/${encodeURIComponent(moduleId)}/lessons/${encodeURIComponent(lessonId)}`, payload).then(
+      (r) => r.data
+    );
+  }
+  reorderCourseLessons(slug, moduleId, orderedLessonIds) {
+    return put(`${courseStructureBase(slug)}/modules/${encodeURIComponent(moduleId)}/lessons/order`, { orderedLessonIds }).then((r) => r.data);
+  }
+  removeCourseLesson(slug, moduleId, lessonId, payload = {}) {
+    return request(`${courseStructureBase(slug)}/modules/${encodeURIComponent(moduleId)}/lessons/${encodeURIComponent(lessonId)}`, {
+      method: 'DELETE',
+      body: payload,
+    }).then((r) => r.data);
   }
 
   // ---- Exams ----

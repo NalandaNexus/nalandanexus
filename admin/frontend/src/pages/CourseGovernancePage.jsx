@@ -1,13 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { BookOpen, Check, X, ShieldCheck, Plus, FileText, CheckCircle2, AlertTriangle } from 'lucide-react';
-import StatusBadge from '../components/common/StatusBadge';
+import { BookOpen, Plus, CheckCircle2, AlertTriangle, RefreshCw } from 'lucide-react';
 import { adminApi } from '../services/adminApi';
 import { useRealtimeEvents } from '../hooks/useRealtimeEvents';
+import CourseCard from '../components/courses/CourseCard';
+import ManageCourseDialog from '../components/courses/ManageCourseDialog';
+import ErrorState from '../components/common/ErrorState';
+import EmptyState from '../components/common/EmptyState';
 
 export default function CourseGovernancePage() {
   const [courses, setCourses] = useState([]);
   const [teachers, setTeachers] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+  // Whether the student catalogue (PRARAMBH, GARUD, YODDHA...) could be read.
+  // When it cannot, the list is missing those courses and the page must say so.
+  const [catalog, setCatalog] = useState({ available: true });
+  const [managedCourse, setManagedCourse] = useState(null);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [toastMsg, setToastMsg] = useState(null);
 
@@ -32,10 +40,17 @@ export default function CourseGovernancePage() {
   const fetchCourses = async () => {
     try {
       setIsLoading(true);
-      const data = await adminApi.getCourses({ limit: 100 });
-      setCourses(data);
+      setLoadError(null);
+      const { items, meta } = await adminApi.getCoursesWithMeta({ limit: 100 });
+      setCourses(items);
+      setCatalog({
+        available: meta.catalogAvailable !== false,
+        reason: meta.catalogError,
+        detail: meta.catalogErrorDetail,
+        host: meta.catalogHost,
+      });
     } catch (err) {
-      showToast(err.message, 'error');
+      setLoadError(err);
     } finally {
       setIsLoading(false);
     }
@@ -129,109 +144,78 @@ export default function CourseGovernancePage() {
         </div>
       )}
 
-      {/* Courses List */}
-      <div className="space-y-3">
-        {courses.map((course) => {
-          const isPending = course.status === 'PENDING_REVIEW';
-
-          return (
-            <div
-              key={course.id}
-              className={`p-5 rounded-2xl bg-white border transition-all shadow-card hover:shadow-hover flex flex-col md:flex-row md:items-center justify-between gap-4 ${
-                isPending ? 'border-[#C99A2E]' : 'border-[#DFDACB]'
-              }`}
-            >
-              <div className="space-y-1.5 min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-mono font-bold text-xs bg-[#EDEAE0] text-[#22355E] px-2 py-0.5 rounded">
-                    {course.code}
-                  </span>
-                  <h3 className="text-sm font-bold text-[#22355E] truncate">{course.title}</h3>
-                  <StatusBadge status={course.status} size="xs" />
-                  {/* Says why this course has no review actions: it is defined in
-                      the student catalogue, so this portal has no record to act
-                      on. Without the badge it just looks like a broken card. */}
-                  {course.readOnly && (
-                    <span
-                      className="text-[10px] font-semibold uppercase tracking-wider bg-[#22355E]/8 text-[#22355E] border border-[#22355E]/20 px-2 py-0.5 rounded"
-                      title="Defined in the student catalogue — managed there, shown here for reference and selection"
-                    >
-                      Student catalogue
-                    </span>
-                  )}
-                  {/* A course can be fully approved and simply not open for
-                      enrolment yet. Saying so beats letting it read as retired. */}
-                  {course.isPurchasable === false && (
-                    <span
-                      className="text-[10px] font-semibold uppercase tracking-wider bg-[#C99A2E]/15 text-[#8a6a1c] border border-[#C99A2E]/30 px-2 py-0.5 rounded"
-                      title="Published, but not yet open for enrolment"
-                    >
-                      Not open yet
-                    </span>
-                  )}
-                </div>
-
-                <p className="text-xs text-[#9B9690]">
-                  Lead Instructor: <strong className="text-[#2B2B28]">{course.instructor?.name || 'Unassigned'}</strong>
-                  {course.department ? <> • Department of {course.department}</> : null}
-                  {typeof course.priceInPaise === 'number' && (
-                    <> • <strong className="text-[#2B2B28]">₹{(course.priceInPaise / 100).toLocaleString('en-IN')}</strong></>
-                  )}
-                </p>
-
-                {course.notes && (
-                  <p className="text-xs text-[#C99A2E] bg-[#C99A2E]/10 p-2 rounded-lg border border-[#C99A2E]/20">
-                    <strong>Review Note:</strong> {course.notes}
-                  </p>
-                )}
-
-                <div className="flex items-center gap-4 text-[11px] text-[#9B9690] pt-1">
-                  {/* Credits and module counts are this portal's own bookkeeping;
-                      a catalogue entry has neither, and printing "undefined
-                      Academic Credits" would be worse than omitting them. */}
-                  {!course.readOnly && (
-                    <>
-                      <span><strong>{course.credits}</strong> Academic Credits</span>
-                      <span>•</span>
-                      <span><strong>{course.modulesCount || 0}</strong> Modules</span>
-                    </>
-                  )}
-                  {course.status === 'APPROVED' && (
-                    <>
-                      <span>•</span>
-                      <span className="text-[#5C7A5E] font-semibold">{course.completionRate}% Completion Rate</span>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex items-center gap-2 flex-shrink-0 self-end md:self-auto">
-                {isPending ? (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => handleUpdateStatus(course.id, 'APPROVED')}
-                      className="px-3.5 py-1.5 rounded-xl bg-[#5C7A5E] hover:bg-[#4A644C] text-white text-xs font-semibold transition-colors flex items-center gap-1.5 shadow-sm"
-                    >
-                      <Check className="w-3.5 h-3.5" />
-                      <span>Approve Syllabus</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleUpdateStatus(course.id, 'REJECTED')}
-                      className="px-3.5 py-1.5 rounded-xl bg-[#C1352B]/10 hover:bg-[#C1352B] text-[#C1352B] hover:text-white border border-[#C1352B]/30 text-xs font-semibold transition-colors flex items-center gap-1.5"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                      <span>Reject</span>
-                    </button>
-                  </>
-                ) : null}
-              </div>
+      {/* The student catalogue holds PRARAMBH, GARUD, YODDHA and the rest. When it
+          cannot be read they are missing from the list below, and an empty page
+          must never pass for "there are no courses". */}
+      {!isLoading && !loadError && !catalog.available && (
+        <div role="alert" className="bg-[#C1352B]/8 border border-[#C1352B]/30 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+          <div className="flex items-start gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-[#C1352B]/15 text-[#C1352B] flex items-center justify-center flex-shrink-0">
+              <AlertTriangle className="w-5 h-5" />
             </div>
-          );
-        })}
-      </div>
+            <div className="min-w-0 space-y-1">
+              <h3 className="text-xs font-bold text-[#22355E]">
+                The student course catalogue could not be loaded, so PRARAMBH, GARUD, YODDHA and the other catalogue courses are missing below
+              </h3>
+              <p className="text-[11px] text-[#2B2B28]/80 leading-relaxed">
+                {catalog.reason === 'NOT_CONFIGURED'
+                  ? 'This Admin service has no Student service address configured (STUDENT_BACKEND_URL).'
+                  : <>
+                      This Admin service tried the Student service at{' '}
+                      <code className="font-mono bg-white/70 px-1 rounded">{catalog.host || 'its configured address'}</code>
+                      {catalog.detail ? <> and got: {catalog.detail}</> : null}. If that is not the live Student service, set STUDENT_BACKEND_URL on
+                      this Admin service to the Student service's address. If it is, the Student service may still be waking up; retry in a minute.
+                    </>}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={fetchCourses}
+            className="px-3.5 py-1.5 rounded-xl bg-white border border-[#DFDACB] hover:bg-[#EDEAE0] text-xs font-semibold text-[#22355E] flex items-center gap-1.5 flex-shrink-0 self-start"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>Retry</span>
+          </button>
+        </div>
+      )}
+
+      {/* Courses */}
+      {isLoading && courses.length === 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4" aria-busy="true">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="h-64 rounded-2xl bg-white border border-[#DFDACB] animate-pulse" />
+          ))}
+        </div>
+      ) : loadError ? (
+        <ErrorState error={loadError} onRetry={fetchCourses} title="Courses could not be loaded" />
+      ) : courses.length === 0 ? (
+        <EmptyState
+          icon={BookOpen}
+          title="No courses to show"
+          description={
+            catalog.available
+              ? 'Neither this portal nor the student catalogue has any courses yet. Use Create Course to add one.'
+              : 'Nothing could be read from the student catalogue (see above), and this portal has no courses of its own.'
+          }
+          actionText="Reload"
+          onAction={fetchCourses}
+        />
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {courses.map((course) => (
+            <CourseCard
+              key={course.id}
+              course={course}
+              onManage={setManagedCourse}
+              onApprove={(c) => handleUpdateStatus(c.id, 'APPROVED')}
+              onReject={(c) => handleUpdateStatus(c.id, 'REJECTED')}
+            />
+          ))}
+        </div>
+      )}
+
+      <ManageCourseDialog course={managedCourse} onClose={() => setManagedCourse(null)} />
 
       {/* Create Course Modal */}
       {createModalOpen && (

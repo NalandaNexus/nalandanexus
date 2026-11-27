@@ -27,6 +27,7 @@ const SetupPasswordPage = lazy(() => import('./pages/SetupPasswordPage'));
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const ClassesPage = lazy(() => import('./pages/ClassesPage'));
 const CoursesPage = lazy(() => import('./pages/CoursesPage'));
+const CourseContentPage = lazy(() => import('./pages/CourseContentPage'));
 const LessonVideosPage = lazy(() => import('./pages/LessonVideosPage'));
 const GradingPage = lazy(() => import('./pages/GradingPage'));
 const StudentsPage = lazy(() => import('./pages/StudentsPage'));
@@ -152,6 +153,7 @@ export default function App() {
                   <Route index element={<DashboardPage />} />
                   <Route path="classes" element={<ClassesPage />} />
                   <Route path="courses" element={<CoursesPage />} />
+                  <Route path="course-content" element={<CourseContentPage />} />
                   <Route path="lesson-videos" element={<LessonVideosPage />} />
                   <Route path="grading" element={<GradingPage />} />
                   <Route path="assignments" element={<GradingPage />} />

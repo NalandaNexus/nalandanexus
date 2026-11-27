@@ -1,5 +1,5 @@
 import { Student } from '../models/Student.js';
-import { assertClassOwnership } from './class.service.js';
+import { assertCourseAccessForClass } from './courseAccess.service.js';
 import { dicebearAvatar } from './student.service.js';
 
 const SORT_FIELD_MAP = {
@@ -17,9 +17,12 @@ const SORT_FIELD_MAP = {
  * recalculated the moment grading or attendance changes anything.
  */
 export async function getClassLeaderboard(teacherId, classId, { sortBy = 'score', sortOrder = 'desc', filterBy = 'all', search = '' } = {}) {
-  await assertClassOwnership(teacherId, classId);
+  await assertCourseAccessForClass(teacherId, classId);
 
-  const filter = { teacher: teacherId, class: classId, status: 'active', linkedUserId: { $ne: null } };
+  // Scoped by class alone, not `teacher` - the access check above already
+  // decided standing, and the class may hold students whose roster row was
+  // created under a different teacher.
+  const filter = { class: classId, status: 'active', linkedUserId: { $ne: null } };
   if (filterBy === 'below_75') filter['metrics.currentScore'] = { $lt: 75 };
   else if (filterBy === 'low_attendance') filter['metrics.attendanceRate'] = { $lt: 75 };
   else if (filterBy === 'low_submission') filter['metrics.submissionRate'] = { $lt: 70 };

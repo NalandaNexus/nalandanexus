@@ -598,3 +598,34 @@ test('the course content response is never cached, because it carries signed URL
   const res = await request.get('/api/student/courses/prarambh/content').set(bearer(student.accessToken));
   assert.equal(res.headers['cache-control'], 'no-store');
 });
+
+test('deleting a lesson through course editing retires its uploaded file; the structure view counts every video source', async () => {
+  // A fresh lesson nobody has opened, with an uploaded video of its own.
+  await M.Course.updateOne(
+    { slug: 'prarambh', 'modules.moduleId': 'mod-6' },
+    { $push: { 'modules.$.lessons': { lessonId: 'l-6b', title: 'Lesson 6.2', order: 2 } } }
+  );
+  const bytes = fakeVideoBytes(32 * 1024, 'mp4');
+  const started = await request
+    .post('/api/internal/lesson-videos/courses/prarambh/lessons/l-6b/uploads')
+    .set(KEY)
+    .send({ actor: ADMIN, fileName: 'l6b.mp4', fileSize: bytes.length, mimeType: 'video/mp4' });
+  assert.equal(started.status, 201, JSON.stringify(started.body));
+  await sendParts(started.body.data, bytes);
+  const done = await uploadCall('prarambh', started.body.data.uploadId, 'complete', { actor: ADMIN });
+  assert.equal(done.status, 200, JSON.stringify(done.body));
+
+  const structure = await request.get('/api/internal/course-structure/courses/prarambh').set(KEY);
+  assert.equal(structure.status, 200, JSON.stringify(structure.body));
+  const lessons = structure.body.data.modules.flatMap((m) => m.lessons);
+  assert.equal(lessons.find((l) => l.lessonId === 'l-6b').hasVideo, true, 'an uploaded file counts as a video');
+  assert.equal(lessons.find((l) => l.lessonId === 'l-1').hasVideo, false, 'the retired fixed file does not');
+
+  const removed = await request.delete('/api/internal/course-structure/courses/prarambh/modules/mod-6/lessons/l-6b').set(KEY).send({ actor: ADMIN });
+  assert.equal(removed.status, 200, JSON.stringify(removed.body));
+  const record = await M.VideoUpload.findById(started.body.data.uploadId).lean();
+  assert.equal(record.status, 'retired', 'the file is queued for safe deletion, not orphaned');
+  const sweep = await lessonVideo.sweepVideoStorage({ now: new Date(Date.now() + 3 * 60 * 60 * 1000) });
+  assert.ok(sweep.deleted >= 1);
+  assert.ok(!s3.objects.has(record.objectKey));
+});

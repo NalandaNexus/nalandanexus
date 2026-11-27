@@ -8,6 +8,7 @@ import batchRoutes from './batch.routes.js';
 import couponRoutes from './coupon.routes.js';
 import courseSubjectRoutes from './courseSubject.routes.js';
 import lessonVideoRoutes from './lessonVideo.routes.js';
+import courseStructureRoutes from './courseStructure.routes.js';
 import progressionRoutes from './progression.routes.js';
 import resourceRoutes from './resource.routes.js';
 import enrollmentRoutes from './enrollment.routes.js';
@@ -43,6 +44,10 @@ router.use('/course-content', courseSubjectRoutes);
 // YouTube videos on lessons - also proxied to the student service, which owns
 // lessons and validates every link.
 router.use('/lesson-videos', lessonVideoRoutes);
+// Module/lesson structure (rename, reorder, add, edit, remove) on any
+// course - a separate concern from the video on one lesson/module, and from
+// the subject tagging at /course-content.
+router.use('/course-structure', courseStructureRoutes);
 // The progression control centre: every configurable number the engine
 // consults, edited in one place rather than scattered across controllers.
 router.use('/progression', progressionRoutes);

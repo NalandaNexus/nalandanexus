@@ -24,6 +24,13 @@ export default function ParambhCoursePage() {
   const [courseContent, setCourseContent] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  // Separate from `error`: that one means "the course itself failed to load"
+  // and switches the whole page to the purchase-prompt screen below. A
+  // failed mark-complete attempt (most often LESSON_LOCKED, now that locks
+  // are really computed rather than a static flag nobody could hit) is an
+  // action failing, not the course failing to load - it should not blank
+  // out a course the student is already looking at.
+  const [actionError, setActionError] = useState('');
   const [activeModuleId, setActiveModuleId] = useState(null);
   const [activeLessonId, setActiveLessonId] = useState(null);
   const [isMarking, setIsMarking] = useState(false);
@@ -118,14 +125,18 @@ export default function ParambhCoursePage() {
   const videoKey = (scope, v) => `${scope}:${v.provider}:${v.videoId || v.externalVideoId || v.uploadedAt || v.fileSize || ''}`;
 
   const handleMarkComplete = async () => {
-    if (!activeLesson || activeLesson.completed) return;
+    // The button is hidden whenever the lesson is locked (see the locked-state
+    // card below), but guarded here too: `activeLessonId` can change out from
+    // under an in-flight click if a realtime update lands first.
+    if (!activeLesson || activeLesson.completed || activeLesson.isLocked) return;
     setIsMarking(true);
+    setActionError('');
     try {
       await courseService.markLessonComplete(activeLesson.lessonId);
       await load();
       refreshData();
     } catch (err) {
-      setError(err.message || 'Could not mark this lesson complete.');
+      setActionError(err.message || 'Could not mark this lesson complete.');
     } finally {
       setIsMarking(false);
     }
@@ -236,6 +247,22 @@ export default function ParambhCoursePage() {
                   </div>
                 </div>
               </>
+            ) : activeLesson?.isLocked ? (
+              /* Computed by courseGating.service.js (student backend), not just
+                 the static isLocked flag - module gate, previous-lesson gate or
+                 a manual lock, each with its own real reason. `activeLesson`
+                 can legitimately be locked (the student's last-viewed lesson
+                 before a course turned gating on, or a sidebar click just to
+                 see why something is locked - see the lesson list below,
+                 which now lets a locked lesson be selected instead of only
+                 disabling it). */
+              <div className="bg-[#FAF9F4] border border-[#DFDACB] rounded-2xl p-8 shadow-xs text-center space-y-3">
+                <Lock className="w-9 h-9 mx-auto text-[#2B2B28]/30" />
+                <h2 className="font-heading font-bold text-base sm:text-lg text-[#22355E]">{activeLesson.title} is locked</h2>
+                <p className="text-sm text-[#2B2B28]/70 max-w-md mx-auto leading-relaxed">
+                  {activeLesson.lockReason || 'Complete the required work first to unlock this lesson.'}
+                </p>
+              </div>
             ) : (
             <>
             {/* What plays for the selected lesson, in order: the lesson's own
@@ -298,6 +325,12 @@ export default function ParambhCoursePage() {
                 </div>
               )}
 
+              {actionError && (
+                <div role="alert" className="p-3 rounded-lg bg-[#C1352B]/10 border border-[#C1352B]/30 text-[#9A2820] text-xs">
+                  {actionError}
+                </div>
+              )}
+
               <div className="pt-3 border-t border-[#DFDACB] flex flex-wrap items-center gap-2.5">
                 <button
                   type="button"
@@ -353,13 +386,28 @@ export default function ParambhCoursePage() {
                       onClick={() => setActiveModuleId(mod.moduleId)}
                       className="w-full flex items-center justify-between p-3.5 text-left bg-[#F2EFE6] hover:bg-[#EDEAE0] transition-colors border-b border-[#DFDACB]/60 student-focus"
                     >
-                      <span className="font-heading font-bold text-xs text-[#22355E] truncate">
-                        {mod.title}
+                      <span className="flex items-center gap-1.5 min-w-0">
+                        {mod.isLocked && (
+                          <Lock className="w-3 h-3 shrink-0 text-[#2B2B28]/40" aria-label="Locked" />
+                        )}
+                        <span className="font-heading font-bold text-xs text-[#22355E] truncate">
+                          {mod.title}
+                        </span>
                       </span>
                       <span className="text-[10px] font-data text-[#2B2B28]/60 shrink-0">
                         {mod.lessons.length} lessons
                       </span>
                     </button>
+
+                    {/* The module gate's own reason (courseGating.service.js) -
+                        shown once here rather than repeated on every lesson
+                        inside it, since a module-locked lesson's own reason is
+                        exactly this same sentence. */}
+                    {isActiveModule && mod.isLocked && mod.lockReason && (
+                      <p className="px-3.5 py-2 text-[11px] text-[#2B2B28]/70 bg-[#EDEAE0]/60 border-b border-[#DFDACB]/60">
+                        {mod.lockReason}
+                      </p>
+                    )}
 
                     {isActiveModule && (
                       <div className="p-2 space-y-1 divide-y divide-[#DFDACB]/40">
@@ -382,17 +430,20 @@ export default function ParambhCoursePage() {
                               key={lesson.lessonId}
                               type="button"
                               onClick={() => {
-                                if (!lesson.isLocked) {
-                                  setIntroModuleId(null);
-                                  setActiveLessonId(lesson.lessonId);
-                                }
+                                // Selectable even locked: a disabled dead button
+                                // told a student nothing. Selecting it shows the
+                                // real reason in the main pane instead (see the
+                                // locked-state card above) rather than just
+                                // refusing the click.
+                                setIntroModuleId(null);
+                                setActiveLessonId(lesson.lessonId);
                               }}
-                              disabled={lesson.isLocked}
+                              title={lesson.isLocked ? lesson.lockReason || 'Locked' : undefined}
                               className={`w-full flex items-center justify-between p-2.5 rounded-xl text-left transition-all min-h-[44px] student-focus ${
                                 isCurrent
                                   ? 'bg-[#22355E] text-white shadow-xs'
                                   : lesson.isLocked
-                                  ? 'opacity-50 cursor-not-allowed bg-transparent text-[#2B2B28]/50'
+                                  ? 'opacity-60 bg-transparent text-[#2B2B28]/50 hover:bg-[#EDEAE0]/60'
                                   : 'hover:bg-[#EDEAE0] text-[#2B2B28]'
                               }`}
                             >

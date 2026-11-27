@@ -60,7 +60,10 @@ export default function StudentsPage() {
   }, [fetchStudents]);
 
   useEffect(() => {
-    teacherApiService.getClasses().then(setClasses).catch(() => {});
+    // Every class this teacher may act on, not just the ones they own - the
+    // roster below is already this wide server-side (see
+    // student.service.js#listStudents), so the filter must offer the same set.
+    teacherApiService.getAccessibleClasses().then(setClasses).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -118,7 +121,11 @@ export default function StudentsPage() {
             <span className="text-[#6E6A64] font-semibold">Class:</span>
             <select value={selectedClass} onChange={(e) => setSelectedClass(e.target.value)} className="bg-[#F7F5EE] border border-[#DFDACB] rounded-lg px-2.5 py-1 text-xs text-[#22355E] font-bold">
               <option value="all">All Classes</option>
-              {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              {classes.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}{c.isOwn === false ? ` — ${c.teacherName || 'shared'}` : ''}
+                </option>
+              ))}
             </select>
           </div>
           <div className="flex items-center gap-1.5 text-xs">
@@ -162,7 +169,11 @@ export default function StudentsPage() {
                       {st.name}
                       {st.verified && <ShieldCheck className="w-3 h-3 text-[#5C7A5E]" title="Verified enrollment" />}
                     </h4>
-                    <p className="text-[11px] text-[#6E6A64] truncate">{st.className} • {st.email}</p>
+                    <p className="text-[11px] text-[#6E6A64] truncate">
+                      {st.className}
+                      {st.isOwnClass === false && <span className="text-[#AB5236] font-semibold"> ({st.classTeacherName || 'shared'})</span>}
+                      {' • '}{st.email}
+                    </p>
                     {/* The business identity the student quotes in support and
                         that cross-portal sync matches on. Shown because a
                         teacher cannot otherwise tie a person to their enrollment. */}

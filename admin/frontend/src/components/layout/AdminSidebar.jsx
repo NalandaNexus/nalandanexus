@@ -26,6 +26,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clapperboard,
+  FolderTree,
 } from 'lucide-react';
 import { useAdminAuth } from '../../context/AdminAuthContext';
 
@@ -42,6 +43,7 @@ const NAV_SECTIONS = [
       { name: 'Courses', path: '/courses', icon: BookOpen },
       { name: 'Batches', path: '/batches', icon: Layers },
       { name: 'Coupons', path: '/coupons', icon: Ticket },
+      { name: 'Course Content', path: '/course-content', icon: FolderTree },
       { name: 'Course Subjects', path: '/course-subjects', icon: Tags },
       { name: 'Module Videos', path: '/lesson-videos', icon: Clapperboard },
       { name: 'Progression', path: '/progression', icon: SlidersHorizontal },

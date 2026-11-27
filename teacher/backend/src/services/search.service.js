@@ -3,26 +3,36 @@ import { SchoolClass } from '../models/SchoolClass.js';
 import { Concept } from '../models/Concept.js';
 import { Assignment } from '../models/Assignment.js';
 import { dicebearAvatar } from './student.service.js';
+import { getAccessibleClassIds } from './courseAccess.service.js';
 
 /**
  * Backend-side global search across students/classes/concepts/assignments,
  * each capped to a handful of results — replaces the previous approach of
  * shipping the entire 256-student dataset to the browser just to filter it
  * client-side in GlobalSearchModal.
+ *
+ * Students/classes/assignments are scoped to every class this teacher may
+ * act on (own, union course-access), matching the rest of the monitoring
+ * and grading surface — a course-access teacher searching for a student or
+ * an assignment they didn't author should still find them here. Concepts
+ * stay author-scoped: a concept taxonomy is authored content, like an
+ * assignment's own definition (not its submissions), and isn't part of
+ * what this feature shares across a course.
  */
 export async function globalSearch(teacherId, rawQuery) {
   const q = (rawQuery || '').trim();
   if (!q) return [];
   const regex = new RegExp(escapeRegex(q), 'i');
+  const accessibleClassIds = await getAccessibleClassIds(teacherId);
 
   const [students, classes, concepts, assignments] = await Promise.all([
-    Student.find({ teacher: teacherId, status: 'active', linkedUserId: { $ne: null }, $or: [{ name: regex }, { email: regex }] })
+    Student.find({ class: { $in: accessibleClassIds }, status: 'active', linkedUserId: { $ne: null }, $or: [{ name: regex }, { email: regex }] })
       .populate('class', 'name')
       .limit(5)
       .lean(),
-    SchoolClass.find({ teacher: teacherId, $or: [{ name: regex }, { subject: regex }] }).limit(3).lean(),
+    SchoolClass.find({ _id: { $in: accessibleClassIds }, $or: [{ name: regex }, { subject: regex }] }).limit(3).lean(),
     Concept.find({ teacher: teacherId, $or: [{ name: regex }, { description: regex }] }).limit(3).lean(),
-    Assignment.find({ teacher: teacherId, status: { $ne: 'archived' }, title: regex }).populate('class', 'name').limit(3).lean(),
+    Assignment.find({ class: { $in: accessibleClassIds }, status: { $ne: 'archived' }, title: regex }).populate('class', 'name').limit(3).lean(),
   ]);
 
   const results = [];

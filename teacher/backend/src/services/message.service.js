@@ -6,6 +6,7 @@ import { ApiError } from '../utils/ApiError.js';
 import { dicebearAvatar } from './student.service.js';
 import { emitToTeacher } from '../sockets/index.js';
 import { pushMessageToStudent } from './studentBridge.service.js';
+import { canActOnClass } from './courseAccess.service.js';
 
 async function assertConversationOwnership(teacherId, conversationId) {
   const conversation = await Conversation.findOne({ _id: conversationId, teacher: teacherId });
@@ -28,9 +29,20 @@ export async function listConversations(teacherId) {
   }));
 }
 
+/**
+ * Only the creation gate widens here: a teacher may now open a conversation
+ * with any student in a course they hold access to, not just their own
+ * roster. Everything past this point (list/get/send/markRead) still works
+ * by straight Conversation ownership, unchanged, because a conversation
+ * stays one-per-creating-teacher-per-student by design (see Conversation.js)
+ * - merging a student's threads across multiple teachers into one shared
+ * thread is a bigger change than this covers.
+ */
 export async function getOrCreateConversation(teacherId, studentId) {
-  const student = await Student.findOne({ _id: studentId, teacher: teacherId });
-  if (!student) throw ApiError.notFound('Student not found.', 'STUDENT_NOT_FOUND');
+  const student = await Student.findById(studentId);
+  if (!student || !(await canActOnClass(teacherId, student.class))) {
+    throw ApiError.notFound('Student not found.', 'STUDENT_NOT_FOUND');
+  }
 
   let conversation = await Conversation.findOne({ teacher: teacherId, student: studentId });
   if (!conversation) {

@@ -719,6 +719,15 @@ async function retireStoredObject(video, { immediately = false } = {}) {
   if (!res.matchedCount) logger.warn(`[lessonVideo] retired object has no upload record; it will not be cleaned up automatically: ${video.storageKey}`);
 }
 
+/**
+ * For code that deletes a lesson or module outright (courseStructure.service.js):
+ * the uploaded file it played is retired, then deleted by the storage sweep
+ * once no playback URL for it can still be live. Links need nothing.
+ */
+export async function retireVideoStorage(video) {
+  await retireStoredObject(video);
+}
+
 async function isObjectReferenced(storageKey) {
   return Boolean(
     await Course.exists({ $or: [{ 'modules.video.storageKey': storageKey }, { 'modules.lessons.video.storageKey': storageKey }] })

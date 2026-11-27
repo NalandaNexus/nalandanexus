@@ -82,6 +82,9 @@ export default function DashboardPage() {
       {/* ========================================================================= */}
       {/* 2. CORE PERFORMANCE METRICS & INTERACTIVE AVG SCORE BREAKDOWN              */}
       {/* ========================================================================= */}
+      <p className="text-[11px] text-[#6E6A64] italic">
+        Student, assignment and grading figures below cover every class in your assigned courses, not just your own batches — the shared view course-access teachers now monitor together.
+      </p>
       <StatsGrid
         stats={coreStats}
         onOpenAvgScoreModal={() => setIsAvgScoreModalOpen(true)}

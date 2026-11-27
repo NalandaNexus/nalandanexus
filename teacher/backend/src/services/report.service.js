@@ -5,6 +5,7 @@ import { Assignment } from '../models/Assignment.js';
 import { Submission } from '../models/Submission.js';
 import { ApiError } from '../utils/ApiError.js';
 import { logAudit } from './audit.service.js';
+import { getAccessibleClassIds } from './courseAccess.service.js';
 
 function toCsv(rows, columns) {
   const header = columns.map((c) => c.label).join(',');
@@ -27,17 +28,23 @@ function dateRangeFilter(from, to) {
 /**
  * Every report queries the same live collections the dashboard/pages read
  * from — there is no separate "reporting" store, no cached snapshot, and
- * no synthetic total. `classId` (optional) scopes every type to a single
- * class the teacher actually owns; ownership is asserted by the caller
- * (controller) before this runs.
+ * no synthetic total. `classId` (optional) scopes every type (except
+ * 'classes', below) to a single class; standing to see that specific class
+ * (own or course-access) is asserted by the caller (controller) before this
+ * runs. With no classId, 'students'/'attendance'/'assignments'/'grades'
+ * cover every class this teacher may act on - the same course-wide scope as
+ * the dashboard and analytics views, so a CSV export shows the same data a
+ * teacher can already see on screen. 'classes' stays this teacher's own
+ * batches specifically (matching class.service.js#listClasses) - it is a
+ * roster of the batches they administer, not a monitoring view.
  */
 export async function generateReport(teacherId, type, filters = {}) {
   const { classId, from, to } = filters;
   const createdAtRange = dateRangeFilter(from, to);
+  const classScope = classId ? classId : { $in: await getAccessibleClassIds(teacherId) };
 
   if (type === 'students') {
-    const filter = { teacher: teacherId, status: 'active' };
-    if (classId) filter.class = classId;
+    const filter = { class: classScope, status: 'active' };
     const rows = await Student.find(filter).populate('class', 'name').lean();
     return toCsv(rows, [
       { label: 'Name', value: (r) => r.name },
@@ -54,8 +61,7 @@ export async function generateReport(teacherId, type, filters = {}) {
   }
 
   if (type === 'attendance') {
-    const filter = { teacher: teacherId };
-    if (classId) filter.class = classId;
+    const filter = { class: classScope };
     if (createdAtRange) filter.date = createdAtRange;
     const rows = await Attendance.find(filter).populate('student', 'name email rollNumber').populate('class', 'name').sort({ date: -1 }).lean();
     return toCsv(rows, [
@@ -69,8 +75,7 @@ export async function generateReport(teacherId, type, filters = {}) {
   }
 
   if (type === 'assignments') {
-    const filter = { teacher: teacherId };
-    if (classId) filter.class = classId;
+    const filter = { class: classScope };
     if (createdAtRange) filter.dueDate = createdAtRange;
     const assignments = await Assignment.find(filter).populate('class', 'name').sort({ dueDate: -1 }).lean();
     const rows = await Promise.all(
@@ -96,8 +101,7 @@ export async function generateReport(teacherId, type, filters = {}) {
   }
 
   if (type === 'grades') {
-    const filter = { teacher: teacherId };
-    if (classId) filter.class = classId;
+    const filter = { class: classScope };
     const assignments = await Assignment.find(filter).select('_id title maxScore').lean();
     const assignmentIds = assignments.map((a) => a._id);
     const submissions = await Submission.find({ assignment: { $in: assignmentIds }, status: 'graded' })

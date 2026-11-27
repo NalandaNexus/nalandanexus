@@ -5,11 +5,12 @@ import { Student } from '../models/Student.js';
 import { SchoolClass } from '../models/SchoolClass.js';
 import { Teacher } from '../models/Teacher.js';
 import { ApiError } from '../utils/ApiError.js';
-import { assertClassOwnership } from './class.service.js';
+import { assertCourseAccessForClass, getAccessibleClassIds } from './courseAccess.service.js';
 import { recalculateStudentMetrics } from './metrics.service.js';
 import { logAudit } from './audit.service.js';
 import { notifyTeacher } from './notification.service.js';
 import { pushAttendanceSummary } from './adminBridge.service.js';
+import { emitToCourse } from '../sockets/index.js';
 
 /**
  * Marks (or corrects, via upsert on the unique student+class+date index)
@@ -17,12 +18,20 @@ import { pushAttendanceSummary } from './adminBridge.service.js';
  * each affected student's cached attendance rate. Emits an attendance-alert
  * notification the moment a student crosses into a 3-consecutive-absence
  * streak, rather than on a schedule.
+ *
+ * Authorized by course-access now, not just batch ownership (see
+ * courseAccess.service.js#assertCourseAccessForClass) - any teacher sharing
+ * this class's course may mark attendance for it, not only the batch's own
+ * teacher.
  */
 export async function markAttendance(teacherId, { classId, date, records }, ip) {
-  await assertClassOwnership(teacherId, classId);
+  const classDoc = await assertCourseAccessForClass(teacherId, classId);
 
   const studentIds = records.map((r) => r.studentId);
-  const validStudents = await Student.find({ _id: { $in: studentIds }, teacher: teacherId, class: classId, linkedUserId: { $ne: null } }).select('_id name').lean();
+  // Membership in THIS class, not ownership by THIS teacher - the access
+  // check above already proved standing to act on the class; who the
+  // roster rows themselves belong to doesn't matter any more.
+  const validStudents = await Student.find({ _id: { $in: studentIds }, class: classId, linkedUserId: { $ne: null } }).select('_id name').lean();
   const validIds = new Set(validStudents.map((s) => String(s._id)));
   const nameById = new Map(validStudents.map((s) => [String(s._id), s.name]));
 
@@ -33,6 +42,44 @@ export async function markAttendance(teacherId, { classId, date, records }, ip) 
 
   const normalizedDate = Attendance.normalizeDate(date);
 
+  // Optimistic-concurrency pre-check: a record that names expectedUpdatedAt
+  // must still match the stored row, so two teachers correcting the same
+  // day's attendance can never silently overwrite one another. Checked for
+  // every such record BEFORE any write, so a conflict leaves nothing
+  // half-applied - unlike a per-record upsert filter, which would try to
+  // INSERT a second row on a mismatch and collide with the unique
+  // (student, class, date) index instead of reporting a clean conflict.
+  const withExpectation = records.filter((r) => r.expectedUpdatedAt !== undefined);
+  if (withExpectation.length) {
+    const existingRows = await Attendance.find({
+      student: { $in: withExpectation.map((r) => r.studentId) },
+      class: classId,
+      date: normalizedDate,
+    }).lean();
+    const existingByStudent = new Map(existingRows.map((row) => [String(row.student), row]));
+    const conflicts = [];
+    for (const r of withExpectation) {
+      const existingRow = existingByStudent.get(String(r.studentId));
+      const existingStamp = existingRow ? existingRow.updatedAt.getTime() : null;
+      const expectedStamp = r.expectedUpdatedAt === null ? null : new Date(r.expectedUpdatedAt).getTime();
+      if (existingStamp !== expectedStamp) {
+        conflicts.push({
+          studentId: r.studentId,
+          current: existingRow
+            ? { status: existingRow.status, remarks: existingRow.remarks, updatedAt: existingRow.updatedAt, markedBy: existingRow.markedBy }
+            : null,
+        });
+      }
+    }
+    if (conflicts.length) {
+      throw ApiError.conflict(
+        'Attendance for one or more students here was just changed by someone else. Review the latest version before saving again.',
+        'ATTENDANCE_CHANGED',
+        { conflicts }
+      );
+    }
+  }
+
   const ops = records.map((r) => ({
     updateOne: {
       filter: { student: r.studentId, class: classId, date: normalizedDate },
@@ -41,8 +88,17 @@ export async function markAttendance(teacherId, { classId, date, records }, ip) 
           status: r.status,
           remarks: r.remarks || null,
           markedBy: teacherId,
-          teacher: teacherId,
         },
+        // Set once, at creation, from the batch's own owning teacher - never
+        // overwritten on a correction. Before this fix it was set to
+        // whichever teacher happened to call this, on every single upsert
+        // (insert or update alike); that was harmless while only the owning
+        // teacher could ever call it, but once a second, course-access
+        // teacher can legitimately touch the same class's attendance,
+        // Attendance.teacher would otherwise silently become "whoever
+        // touched it last" - which would then make every `{teacher:
+        // teacherId}` read elsewhere lie about whose data it's showing.
+        $setOnInsert: { teacher: classDoc.teacher },
       },
       upsert: true,
     },
@@ -57,6 +113,10 @@ export async function markAttendance(teacherId, { classId, date, records }, ip) 
     metadata: { date: normalizedDate, count: records.length },
     ip,
   });
+
+  if (classDoc.studentCourseSlug) {
+    emitToCourse(classDoc.studentCourseSlug, 'attendance.marked', { classId: String(classId), date: normalizedDate.toISOString().slice(0, 10) });
+  }
 
   // Cross to the student service, which turns these into progression events and
   // scores them. Best-effort: the marks above are already saved, so a sleeping
@@ -81,7 +141,10 @@ export async function markAttendance(teacherId, { classId, date, records }, ip) 
   for (const r of records) {
     await recalculateStudentMetrics(r.studentId);
     if (r.status === 'absent') {
-      await checkConsecutiveAbsenceAlert(teacherId, r.studentId, classId, nameById.get(String(r.studentId)));
+      // Always the batch's own home teacher, never the acting teacher - so a
+      // visiting course-access teacher marking attendance doesn't start
+      // paging themselves for every alert on a class they don't actually run.
+      await checkConsecutiveAbsenceAlert(classDoc.teacher, r.studentId, classId, nameById.get(String(r.studentId)));
     }
   }
 
@@ -135,9 +198,13 @@ async function checkConsecutiveAbsenceAlert(teacherId, studentId, classId, stude
 }
 
 export async function getAttendanceForClassDate(teacherId, classId, date) {
-  await assertClassOwnership(teacherId, classId);
+  await assertCourseAccessForClass(teacherId, classId);
   const normalizedDate = Attendance.normalizeDate(date);
-  const records = await Attendance.find({ teacher: teacherId, class: classId, date: normalizedDate })
+  // Scoped by class, not by `teacher` any more - the access check above
+  // already decided whether this teacher may see this class's attendance at
+  // all, and a second teacher's marks for the same class/day must show up
+  // here too, not just the ones this caller happened to write themselves.
+  const records = await Attendance.find({ class: classId, date: normalizedDate })
     .populate('student', 'name email avatarUrl')
     .lean();
 
@@ -148,12 +215,23 @@ export async function getAttendanceForClassDate(teacherId, classId, date) {
     status: r.status,
     remarks: r.remarks,
     date: r.date.toISOString().slice(0, 10),
+    // The optimistic-concurrency baseline a later correction's
+    // expectedUpdatedAt is checked against (see markAttendance).
+    updatedAt: r.updatedAt,
   }));
 }
 
 export async function listAttendance(teacherId, { classId, studentId, date, page, limit } = {}) {
-  const filter = { teacher: teacherId };
-  if (classId) filter.class = classId;
+  let filter;
+  if (classId) {
+    await assertCourseAccessForClass(teacherId, classId);
+    filter = { class: classId };
+  } else {
+    // No specific class named - every class this teacher may act on, not
+    // just the ones they own, so "my attendance records" reads as the same
+    // shared, course-wide view as the rest of this feature.
+    filter = { class: { $in: await getAccessibleClassIds(teacherId) } };
+  }
   if (studentId) filter.student = studentId;
   if (date) filter.date = Attendance.normalizeDate(date);
 
@@ -173,17 +251,20 @@ export async function listAttendance(teacherId, { classId, studentId, date, page
     status: r.status,
     date: r.date.toISOString().slice(0, 10),
     remarks: r.remarks,
+    // Same concurrency baseline as getAttendanceForClassDate - this is the
+    // shape AttendancePage actually reads attendance through (GET /attendance).
+    updatedAt: r.updatedAt,
   }));
 }
 
 /** Class-wide attendance analytics: rolling daily rate + present/absent/late breakdown over a window. */
 export async function getAttendanceAnalytics(teacherId, classId, { days = 30 } = {}) {
-  await assertClassOwnership(teacherId, classId);
+  await assertCourseAccessForClass(teacherId, classId);
   const since = new Date();
   since.setDate(since.getDate() - days);
 
   const rows = await Attendance.aggregate([
-    { $match: { teacher: new mongoose.Types.ObjectId(teacherId), class: new mongoose.Types.ObjectId(classId), date: { $gte: since } } },
+    { $match: { class: new mongoose.Types.ObjectId(classId), date: { $gte: since } } },
     {
       $group: {
         _id: '$date',

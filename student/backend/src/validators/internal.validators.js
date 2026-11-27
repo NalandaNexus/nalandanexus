@@ -321,6 +321,17 @@ export const adminCourseSlugSchema = z.object({
   params: z.object({ slug: z.string().trim().min(1).max(120) }),
 });
 
+// Preview-before-flip for the mandatory-progression gate (see
+// courseGating.service.js#dryRunImpact) - exactly one of slug/all, enforced
+// in the controller rather than here since zod's cross-field refinements
+// read worse than one explicit check.
+export const adminModuleGatingDryRunSchema = z.object({
+  body: z.object({
+    slug: z.string().trim().min(1).max(120).optional(),
+    all: z.boolean().optional(),
+  }),
+});
+
 export const adminSetSubjectsSchema = z.object({
   params: z.object({ slug: z.string().trim().min(1).max(120) }),
   // Targeted changes only - never the whole course document - so two editors
@@ -328,8 +339,21 @@ export const adminSetSubjectsSchema = z.object({
   body: z.object({
     modules: z.array(subjectAssignment.extend({ moduleId: z.string().trim().min(1) })).max(200).optional(),
     lessons: z.array(subjectAssignment.extend({ lessonId: z.string().trim().min(1) })).max(500).optional(),
-    quizzes: z.array(subjectAssignment.extend({ quizId: z.string().trim().min(1) })).max(500).optional(),
-    tasks: z.array(subjectAssignment.extend({ taskId: z.string().trim().min(1) })).max(500).optional(),
+    // moduleId here is the mandatory-progression gate's tag (see
+    // courseGating.service.js), not a row identifier - which module THIS
+    // quiz/task counts toward. Nullable, so an admin can explicitly untag
+    // one; omitting the field entirely (vs. sending null) leaves the
+    // existing tag alone - see adminSetContentSubjects's hasOwnProperty
+    // check. Checked against the course's real module ids before anything
+    // is written (same controller).
+    quizzes: z
+      .array(subjectAssignment.extend({ quizId: z.string().trim().min(1), moduleId: z.string().trim().min(1).nullish() }))
+      .max(500)
+      .optional(),
+    tasks: z
+      .array(subjectAssignment.extend({ taskId: z.string().trim().min(1), moduleId: z.string().trim().min(1).nullish() }))
+      .max(500)
+      .optional(),
   }),
 });
 

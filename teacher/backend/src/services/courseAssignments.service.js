@@ -1,6 +1,7 @@
 import { Student } from '../models/Student.js';
 import { ApiError } from '../utils/ApiError.js';
 import { fetchCourseSubmissions, pushGradeToStudent } from './studentBridge.service.js';
+import { getAccessibleClassIds } from './courseAccess.service.js';
 
 /**
  * Course assignments, and grading them.
@@ -18,14 +19,17 @@ import { fetchCourseSubmissions, pushGradeToStudent } from './studentBridge.serv
  * that grades a bridged submission, and the student's task average is still
  * recalculated by the service that owns it.
  *
- * Ownership is enforced here, where the records live. The roster query is
- * always `{ teacher: teacherId }`, and only the linked user ids that survive it
- * are ever sent across the bridge - so a teacher cannot see a submission from a
- * student who is not theirs, whatever they ask for.
+ * Authorization is enforced here, where the records live. The roster query
+ * covers every class this teacher may act on - their own, union any class
+ * whose course they hold CourseAccess for (see courseAccess.service.js) -
+ * and only the linked user ids that survive it are ever sent across the
+ * bridge, so a teacher cannot see a submission from a student outside that
+ * set, whatever they ask for.
  */
 
 async function ownedUserIds(teacherId, { studentId = null } = {}) {
-  const query = { teacher: teacherId, linkedUserId: { $ne: null } };
+  const accessibleClassIds = await getAccessibleClassIds(teacherId);
+  const query = { class: { $in: accessibleClassIds }, linkedUserId: { $ne: null } };
   if (studentId) query._id = studentId;
 
   const students = await Student.find(query).select('name email linkedUserId').lean();
@@ -35,7 +39,7 @@ async function ownedUserIds(teacherId, { studentId = null } = {}) {
   };
 }
 
-/** Course-assignment submissions from this teacher's own students. */
+/** Course-assignment submissions from every student this teacher may act on. */
 export async function listCourseSubmissions(teacherId, { ungradedOnly = false, studentId = null } = {}) {
   const { ids, byUserId } = await ownedUserIds(teacherId, { studentId });
   if (!ids.length) return { items: [], meta: { available: true, students: 0 } };

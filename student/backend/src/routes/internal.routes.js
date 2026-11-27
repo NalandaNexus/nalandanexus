@@ -2,6 +2,7 @@ import { Router } from 'express';
 import * as internalController from '../controllers/internal.controller.js';
 import * as eligibilityController from '../controllers/eligibilityAdmin.controller.js';
 import * as lessonVideoController from '../controllers/lessonVideo.controller.js';
+import * as courseStructureController from '../controllers/courseStructure.controller.js';
 import {
   videoCatalogSchema,
   courseVideosSchema,
@@ -20,6 +21,17 @@ import {
   completeUploadSchema,
   abortUploadSchema,
 } from '../validators/lessonVideo.validators.js';
+import {
+  courseStructureParamsSchema,
+  updateCourseSettingsSchema,
+  addModuleSchema,
+  updateModuleSchema,
+  reorderModulesSchema,
+  addLessonSchema,
+  updateLessonSchema,
+  reorderLessonsSchema,
+  removeLessonSchema,
+} from '../validators/courseStructure.validators.js';
 import { requireInternalServiceKey } from '../middleware/internalService.js';
 import { validate } from '../middleware/validate.js';
 import {
@@ -50,6 +62,7 @@ import {
   adminRecordAttendanceSchema,
   adminCourseSlugSchema,
   adminSetSubjectsSchema,
+  adminModuleGatingDryRunSchema,
   adminListCampaignsSchema,
   adminCampaignIdSchema,
   adminUpdateCouponSchema,
@@ -87,6 +100,33 @@ router.post(`${uploadPath}/parts`, validate(uploadPartUrlsSchema), lessonVideoCo
 router.post(`${uploadPath}/resume`, validate(resumeUploadSchema), lessonVideoController.resumeUpload);
 router.post(`${uploadPath}/complete`, validate(completeUploadSchema), lessonVideoController.completeUpload);
 router.delete(uploadPath, validate(abortUploadSchema), lessonVideoController.abortUpload);
+
+// Module/lesson structure: rename, reorder, add, edit, remove. Modules and
+// lessons live only here, same arrangement as lesson videos just above - the
+// Admin and Teacher portals edit structure through these rather than holding
+// a copy. PUT .../order routes are distinct from the PATCH .../:id routes by
+// HTTP method, not by path shape, so "order" is never mistaken for an id.
+router.get('/course-structure/courses/:slug', validate(courseStructureParamsSchema), courseStructureController.getCourseStructure);
+router.patch('/course-structure/courses/:slug', validate(updateCourseSettingsSchema), courseStructureController.updateCourseSettings);
+router.post('/course-structure/courses/:slug/modules', validate(addModuleSchema), courseStructureController.addModule);
+router.put('/course-structure/courses/:slug/modules/order', validate(reorderModulesSchema), courseStructureController.reorderModules);
+router.patch('/course-structure/courses/:slug/modules/:moduleId', validate(updateModuleSchema), courseStructureController.updateModule);
+router.post('/course-structure/courses/:slug/modules/:moduleId/lessons', validate(addLessonSchema), courseStructureController.addLesson);
+router.put(
+  '/course-structure/courses/:slug/modules/:moduleId/lessons/order',
+  validate(reorderLessonsSchema),
+  courseStructureController.reorderLessons
+);
+router.patch(
+  '/course-structure/courses/:slug/modules/:moduleId/lessons/:lessonId',
+  validate(updateLessonSchema),
+  courseStructureController.updateLesson
+);
+router.delete(
+  '/course-structure/courses/:slug/modules/:moduleId/lessons/:lessonId',
+  validate(removeLessonSchema),
+  courseStructureController.removeLesson
+);
 
 router.post('/announcements', validate(createBridgedAnnouncementSchema), internalController.createBridgedAnnouncement);
 router.patch('/announcements/:sourceId', validate(updateBridgedAnnouncementSchema), internalController.updateBridgedAnnouncement);
@@ -178,6 +218,13 @@ router.post('/attendance', validate(adminRecordAttendanceSchema), internalContro
 router.get('/subjects', internalController.adminListSubjects);
 router.get('/courses/:slug/content', validate(adminCourseSlugSchema), internalController.adminGetCourseContent);
 router.patch('/courses/:slug/subjects', validate(adminSetSubjectsSchema), internalController.adminSetContentSubjects);
+// Preview-before-flip for the mandatory-progression gate - see
+// courseGating.service.js#dryRunImpact. Never writes anything.
+router.post(
+  '/progression/module-gating/dry-run',
+  validate(adminModuleGatingDryRunSchema),
+  internalController.adminModuleGatingDryRun
+);
 
 router.get('/coupon-campaigns', validate(adminListCampaignsSchema), internalController.adminListCampaigns);
 router.post('/coupon-campaigns', validate(adminCreateCampaignSchema), internalController.adminCreateCampaign);

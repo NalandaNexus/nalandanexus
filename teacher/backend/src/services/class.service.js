@@ -1,9 +1,11 @@
 import mongoose from 'mongoose';
 import { SchoolClass } from '../models/SchoolClass.js';
 import { Student } from '../models/Student.js';
+import { Teacher } from '../models/Teacher.js';
 import { ApiError } from '../utils/ApiError.js';
 import { logAudit } from './audit.service.js';
 import { fetchStudentCourseCatalog } from './studentBridge.service.js';
+import { listClassesForAccessibleCourses } from './courseAccess.service.js';
 
 /**
  * Aggregates live student-count / average-score / attendance / engagement /
@@ -154,6 +156,51 @@ export async function getClassById(teacherId, classId) {
   return shapeClass(cls, statsMap, catalog);
 }
 
+/** Batch-resolves {teacherId: name}, for the "whose batch" indicator below - one query per list, never one per row. */
+async function resolveTeacherNames(teacherIds) {
+  const ids = [...new Set(teacherIds.map((id) => (id ? String(id) : null)).filter(Boolean))];
+  if (!ids.length) return new Map();
+  const rows = await Teacher.find({ _id: { $in: ids } }).populate('user', 'name').lean();
+  return new Map(rows.map((t) => [String(t._id), t.user?.name || null]));
+}
+
+/**
+ * Every class this teacher may act on - own, union course-access (see
+ * courseAccess.service.js#listClassesForAccessibleCourses) - shaped for a
+ * flat picker that spans every accessible batch, not only ones this teacher
+ * owns. Lighter than listClasses: no course-catalog title lookup (the
+ * picker's own course context already names the course), but adds
+ * isOwn/teacherName so a batch that isn't this teacher's own can say whose
+ * it is - the same "whose batch" indicator the shared-monitoring feature
+ * needs on the students list (see student.service.js#shapeStudentSummary).
+ */
+export async function listAccessibleClasses(teacherId) {
+  const classes = await listClassesForAccessibleCourses(teacherId);
+  if (!classes.length) return [];
+
+  const [statsMap, teacherNameById] = await Promise.all([
+    getClassAggregateStatsMap(classes.map((c) => c._id)),
+    resolveTeacherNames(classes.map((c) => c.teacher)),
+  ]);
+
+  return classes.map((c) => {
+    const stats = statsMap.get(String(c._id)) || emptyStats();
+    const ownerId = c.teacher ? String(c.teacher) : null;
+    return {
+      id: c._id,
+      code: c.code,
+      name: c.name,
+      studentCourseSlug: c.studentCourseSlug || null,
+      status: c.status,
+      teacherId: ownerId,
+      isOwn: ownerId === String(teacherId),
+      teacherName: ownerId ? teacherNameById.get(ownerId) || null : null,
+      studentCount: stats.studentCount,
+      attendanceRate: stats.attendanceRate,
+    };
+  });
+}
+
 /** Throws 404 (not 403) for classes owned by another teacher, so IDs can't be used to probe existence. */
 export async function assertClassOwnership(teacherId, classId) {
   const cls = await SchoolClass.findOne({ _id: classId, teacher: teacherId });
@@ -288,4 +335,4 @@ function round1(n) {
   return Math.round((n + Number.EPSILON) * 10) / 10;
 }
 
-export default { listClasses, getClassById, createClass, updateClass, archiveClass, assertClassOwnership, getClassAggregateStatsMap };
+export default { listClasses, getClassById, listAccessibleClasses, createClass, updateClass, archiveClass, assertClassOwnership, getClassAggregateStatsMap };

@@ -90,6 +90,8 @@ async function startFakeStudentPortal() {
     calls: [],
     videoCalls: [],
     videoReject: null,
+    courseStructureCalls: [],
+    courseStructureReject: null,
   };
 
   const server = http.createServer((req, res) => {
@@ -256,6 +258,221 @@ async function startFakeStudentPortal() {
       });
     }
 
+    // Module/lesson structure: like the lesson-videos branch above, records
+    // what crossed (with the acting teacher) and answers with a plausible,
+    // canned-but-request-shaped structure - including the student service's
+    // own refusals via courseStructureReject. What is under test on the
+    // teacher side is its OWN logic (the CourseAccess gate, request shaping,
+    // error propagation, audit logging), not the student service's real
+    // numbering/locking rules, which student/backend's own
+    // courseStructure.integration.test.js already covers in full.
+    if (url.pathname.startsWith('/api/internal/course-structure/')) {
+      if (state.requireServiceKey && req.headers['x-internal-service-key'] !== 'test_service_key') {
+        return send(401, { success: false, message: 'Bad service key' });
+      }
+      let body = '';
+      req.on('data', (c) => (body += c));
+      return req.on('end', () => {
+        const parsed = body ? JSON.parse(body) : {};
+        state.courseStructureCalls.push({ method: req.method, path: url.pathname, query: url.search, body: parsed });
+        if (state.courseStructureReject) {
+          const r = state.courseStructureReject;
+          state.courseStructureReject = null;
+          return send(r.status, { success: false, error: { code: r.code, message: r.message, details: r.details } });
+        }
+
+        const slugMatch = url.pathname.match(/^\/api\/internal\/course-structure\/courses\/([^/]+)/);
+        const slug = slugMatch ? decodeURIComponent(slugMatch[1]) : 'unknown';
+        const updatedBy = parsed.actor ? { portal: parsed.actor.portal, name: parsed.actor.name || null } : null;
+        const baseCourse = { slug, title: slug.toUpperCase(), updatedAt: '2026-01-01T00:00:00.000Z', progressionGatingEnabled: true };
+
+        // GET /courses/:slug - the full structure.
+        if (req.method === 'GET' && /^\/api\/internal\/course-structure\/courses\/[^/]+$/.test(url.pathname)) {
+          return send(200, {
+            success: true,
+            data: {
+              ...baseCourse,
+              modules: [
+                {
+                  moduleId: 'mod-1',
+                  title: 'Module One',
+                  order: 1,
+                  description: '',
+                  gatingEnabled: null,
+                  lessonCount: 1,
+                  updatedAt: null,
+                  updatedBy: null,
+                  lessons: [
+                    {
+                      lessonId: 'l-1',
+                      title: 'Lesson One',
+                      order: 1,
+                      duration: '',
+                      summary: '',
+                      content: '',
+                      isPublished: true,
+                      isLocked: false,
+                      hasVideo: false,
+                      updatedAt: null,
+                      updatedBy: null,
+                    },
+                  ],
+                },
+              ],
+            },
+          });
+        }
+
+        // PATCH /courses/:slug - course settings.
+        if (req.method === 'PATCH' && /^\/api\/internal\/course-structure\/courses\/[^/]+$/.test(url.pathname)) {
+          return send(200, { success: true, data: { ...baseCourse, progressionGatingEnabled: Boolean(parsed.progressionGatingEnabled), modules: [] } });
+        }
+
+        // PUT /modules/order - echoes the reordered module ids back.
+        if (req.method === 'PUT' && /\/modules\/order$/.test(url.pathname)) {
+          return send(200, {
+            success: true,
+            data: { ...baseCourse, modules: (parsed.orderedModuleIds || []).map((id, i) => ({ moduleId: id, title: id, order: i + 1, lessons: [] })) },
+          });
+        }
+
+        // POST /modules - add a module; echoes what was posted.
+        if (req.method === 'POST' && /\/modules$/.test(url.pathname)) {
+          return send(200, {
+            success: true,
+            data: {
+              ...baseCourse,
+              modules: [
+                {
+                  moduleId: 'mod-99',
+                  title: parsed.title,
+                  order: parsed.order || 1,
+                  description: parsed.description || '',
+                  gatingEnabled: parsed.gatingEnabled ?? null,
+                  lessonCount: 0,
+                  updatedAt: '2026-01-02T00:00:00.000Z',
+                  updatedBy,
+                  lessons: [],
+                },
+              ],
+            },
+          });
+        }
+
+        // PUT .../lessons/order - echoes the reordered lesson ids back.
+        const lessonOrder = url.pathname.match(/\/modules\/([^/]+)\/lessons\/order$/);
+        if (req.method === 'PUT' && lessonOrder) {
+          return send(200, {
+            success: true,
+            data: {
+              ...baseCourse,
+              modules: [
+                {
+                  moduleId: lessonOrder[1],
+                  title: lessonOrder[1],
+                  order: 1,
+                  lessons: (parsed.orderedLessonIds || []).map((id, i) => ({ lessonId: id, title: id, order: i + 1 })),
+                },
+              ],
+            },
+          });
+        }
+
+        // POST .../lessons - add a lesson; echoes what was posted.
+        const addLesson = url.pathname.match(/\/modules\/([^/]+)\/lessons$/);
+        if (req.method === 'POST' && addLesson) {
+          return send(200, {
+            success: true,
+            data: {
+              ...baseCourse,
+              modules: [
+                {
+                  moduleId: addLesson[1],
+                  title: addLesson[1],
+                  order: 1,
+                  lessons: [
+                    {
+                      lessonId: 'l-99',
+                      title: parsed.title,
+                      order: parsed.order || 1,
+                      duration: parsed.duration || '',
+                      summary: parsed.summary || '',
+                      content: parsed.content || '',
+                      isPublished: parsed.isPublished !== false,
+                      isLocked: false,
+                      updatedAt: '2026-01-02T00:00:00.000Z',
+                      updatedBy,
+                    },
+                  ],
+                },
+              ],
+            },
+          });
+        }
+
+        // PATCH .../modules/:moduleId - update a module; echoes the patched fields.
+        const moduleNode = url.pathname.match(/\/modules\/([^/]+)$/);
+        if (req.method === 'PATCH' && moduleNode) {
+          return send(200, {
+            success: true,
+            data: {
+              ...baseCourse,
+              modules: [
+                {
+                  moduleId: moduleNode[1],
+                  title: parsed.title ?? 'Module One',
+                  order: 1,
+                  description: parsed.description ?? '',
+                  gatingEnabled: parsed.gatingEnabled ?? null,
+                  lessonCount: 0,
+                  updatedAt: '2026-01-02T00:00:00.000Z',
+                  updatedBy,
+                  lessons: [],
+                },
+              ],
+            },
+          });
+        }
+
+        // PATCH/DELETE .../lessons/:lessonId - update or remove a lesson.
+        const lessonNode = url.pathname.match(/\/modules\/([^/]+)\/lessons\/([^/]+)$/);
+        if (lessonNode && req.method === 'DELETE') {
+          return send(200, { success: true, data: { removed: true } });
+        }
+        if (lessonNode && req.method === 'PATCH') {
+          return send(200, {
+            success: true,
+            data: {
+              ...baseCourse,
+              modules: [
+                {
+                  moduleId: lessonNode[1],
+                  title: lessonNode[1],
+                  order: 1,
+                  lessons: [
+                    {
+                      lessonId: lessonNode[2],
+                      title: parsed.title ?? 'Lesson One',
+                      order: 1,
+                      duration: parsed.duration ?? '',
+                      summary: parsed.summary ?? '',
+                      content: parsed.content ?? '',
+                      isPublished: parsed.isPublished ?? true,
+                      isLocked: false,
+                      updatedAt: '2026-01-02T00:00:00.000Z',
+                      updatedBy,
+                    },
+                  ],
+                },
+              ],
+            },
+          });
+        }
+
+        return send(404, { success: false, error: { code: 'NOT_FOUND', message: 'No such course-structure route in the fake.' } });
+      });
+    }
+
     // Every other bridge call (announcements, materials, ...) is a best-effort
     // side channel that must never fail the action that triggered it.
     return send(200, { success: true, data: null });
@@ -283,6 +500,8 @@ async function startFakeStudentPortal() {
       state.calls = [];
       state.videoCalls = [];
       state.videoReject = null;
+      state.courseStructureCalls = [];
+      state.courseStructureReject = null;
     },
     close: () => new Promise((resolve) => server.close(resolve)),
   };

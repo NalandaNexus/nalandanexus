@@ -94,6 +94,17 @@ const lessonSchema = new Schema(
     // Set per lesson so one purchased course can teach - and score - all three
     // subjects. Falls back to the module's, then the course pillar's default.
     subject: { type: String, default: null, uppercase: true, trim: true },
+    // Who last changed this lesson's structure (title/summary/content/order/
+    // publish state) and when - via courseStructure.service.js, independent
+    // of `video.updatedAt`/`video.updatedBy` above, so editing a title cannot
+    // be blocked by (or silently race) editing its video. Absent on every
+    // lesson nobody has structurally edited since this field existed.
+    updatedAt: { type: Date, default: null },
+    updatedBy: {
+      portal: { type: String, enum: ['admin', 'teacher'], default: null },
+      userId: { type: String, default: null },
+      name: { type: String, default: null },
+    },
   },
   { _id: false }
 );
@@ -103,6 +114,10 @@ const moduleSchema = new Schema(
     moduleId: { type: String, required: true }, // e.g. "mod-2"
     title: { type: String, required: true },
     order: { type: Number, required: true },
+    // What the module covers, shown to admins/teachers editing it and to
+    // students on the syllabus. Defaults to empty, so every module that
+    // predates this field keeps behaving exactly as it did.
+    description: { type: String, default: '' },
     // A module-level default, so tagging a whole unit does not mean editing
     // every lesson in it. An individual lesson still overrides this.
     subject: { type: String, default: null, uppercase: true, trim: true },
@@ -110,6 +125,18 @@ const moduleSchema = new Schema(
     // the module. Same shape and rules as a lesson's; absent on most modules.
     video: { type: lessonVideoSchema, default: undefined },
     lessons: [lessonSchema],
+    // Overrides the course's own `progressionGatingEnabled` for the gate
+    // leading INTO this module (see services/courseGating.service.js).
+    // null (the default) means "inherit the course setting" - a module never
+    // silently opts itself out just because nobody has visited this field.
+    gatingEnabled: { type: Boolean, default: null },
+    // Same structural-edit bookkeeping as a lesson's, see above.
+    updatedAt: { type: Date, default: null },
+    updatedBy: {
+      portal: { type: String, enum: ['admin', 'teacher'], default: null },
+      userId: { type: String, default: null },
+      name: { type: String, default: null },
+    },
   },
   { _id: false }
 );
@@ -182,6 +209,16 @@ const courseSchema = new Schema(
     // real bug already fixed on Task/LiveClass/Quiz/Announcement).
     source: { type: String, enum: ['native', 'admin-portal'], default: 'native' },
     sourceId: { type: String },
+
+    // Course-wide default for the mandatory-progression gate (see
+    // services/courseGating.service.js): must a student finish a module's
+    // required assignment(s) and pass its quiz(zes) before the next module
+    // unlocks, and finish each lesson before the next one in the same module
+    // does? Defaults to true (every course is gated unless turned off),
+    // matching what the gating feature was built for; an admin can disable it
+    // per course here, or override one specific module via that module's own
+    // `gatingEnabled`.
+    progressionGatingEnabled: { type: Boolean, default: true },
   },
   { timestamps: true }
 );

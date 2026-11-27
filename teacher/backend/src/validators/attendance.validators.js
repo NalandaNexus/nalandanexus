@@ -10,6 +10,13 @@ export const markAttendanceValidator = [
   body('records.*.studentId').custom(objectId).withMessage('Each record needs a valid studentId'),
   body('records.*.status').isIn(['present', 'absent', 'late']).withMessage('status must be present, absent, or late'),
   body('records.*.remarks').optional({ nullable: true }).trim().isLength({ max: 500 }),
+  // Optional per-record optimistic-concurrency guard: when a teacher is
+  // correcting a mark they already saw (not filling in a blank one for the
+  // first time), the client sends back the updatedAt it loaded so a
+  // same-moment edit by a second course-access teacher is caught as a
+  // conflict (409 ATTENDANCE_CHANGED) instead of silently overwritten. null
+  // means "I saw this as never-yet-marked."
+  body('records.*.expectedUpdatedAt').optional({ nullable: true }).isISO8601().withMessage('expectedUpdatedAt must be a valid date'),
 ];
 
 export const listAttendanceValidator = [

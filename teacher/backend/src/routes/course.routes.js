@@ -14,6 +14,7 @@ router.use(authenticate, requireRole('teacher'));
 router.get('/', courseController.listCourses);
 router.get('/assigned', courseController.listAssigned);
 router.get('/assigned/:slug/students', slugParam, validate, courseController.listAssignedCourseStudents);
+router.get('/assigned/:slug/classes', slugParam, validate, courseController.listAssignedCourseClasses);
 router.post('/assigned/:slug/refresh', slugParam, validate, courseController.refreshAssignedCourseStudents);
 router.post('/', createCourseValidator, validate, courseController.createCourse);
 router.patch('/:id', objectIdParam('id'), updateCourseValidator, validate, courseController.updateCourse);
